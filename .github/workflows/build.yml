@@ -1,0 +1,23 @@
+name: Public build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Audit, test and build public artifacts
+        shell: powershell
+        run: ./scripts/Publish-Release.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PaperProgress-public
+          path: artifacts/release-*/*
+          if-no-files-found: error

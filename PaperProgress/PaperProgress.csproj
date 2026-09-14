@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>PaperProgress</AssemblyName>
+    <RootNamespace>PaperProgress</RootNamespace>
+    <Version>1.1.0</Version>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <Product>论文进度</Product>
+    <Description>离线论文进度桌面挂件</Description>
+  </PropertyGroup>
+  <ItemGroup><Resource Include="Assets\app.ico"/></ItemGroup>
+</Project>

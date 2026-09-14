@@ -1,0 +1,49 @@
+<Application x:Class="PaperProgress.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Application.Resources>
+    <SolidColorBrush x:Key="Ink" Color="#24352F"/>
+    <SolidColorBrush x:Key="Muted" Color="#78867F"/>
+    <SolidColorBrush x:Key="Accent" Color="#21846B"/>
+    <SolidColorBrush x:Key="AccentText" Color="White"/>
+    <SolidColorBrush x:Key="Soft" Color="#E6F0E9"/>
+    <SolidColorBrush x:Key="Card" Color="White"/>
+    <SolidColorBrush x:Key="Line" Color="#D8E2D8"/>
+    <SolidColorBrush x:Key="WindowBackground" Color="#F3F6F1"/>
+    <Style TargetType="Window">
+      <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="Background" Value="{DynamicResource WindowBackground}"/>
+    </Style>
+    <Style TargetType="Button">
+      <Setter Property="Background" Value="{DynamicResource Soft}"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="Padding" Value="12,7"/><Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border x:Name="Body" Background="{TemplateBinding Background}" CornerRadius="7" Padding="{TemplateBinding Padding}">
+          <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Body" Property="Opacity" Value="0.78"/></Trigger>
+        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Body" Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter TargetName="Body" Property="BorderThickness" Value="2"/></Trigger>
+        <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Body" Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="{DynamicResource AccentText}"/></Style>
+    <Style TargetType="TextBox"><Setter Property="Padding" Value="9,7"/><Setter Property="BorderBrush" Value="{DynamicResource Line}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Background" Value="{DynamicResource Card}"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="VerticalContentAlignment" Value="Center"/></Style>
+    <Style TargetType="ComboBox"><Setter Property="Foreground" Value="#24352F"/><Setter Property="Padding" Value="8,5"/><Setter Property="MinHeight" Value="32"/></Style>
+    <Style TargetType="DatePicker"><Setter Property="Foreground" Value="#24352F"/></Style><Style TargetType="CheckBox"><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Cursor" Value="Hand"/></Style>
+    <Style x:Key="StageCheck" TargetType="CheckBox">
+      <Setter Property="Margin" Value="0,0,6,6"/><Setter Property="Padding" Value="7,5"/><Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+        <Border x:Name="StageBody" Background="{DynamicResource Soft}" CornerRadius="6" Padding="{TemplateBinding Padding}" BorderThickness="1" BorderBrush="Transparent">
+          <StackPanel Orientation="Horizontal"><Border x:Name="Box" Width="14" Height="14" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="3" Margin="0,0,5,0"><TextBlock x:Name="Tick" Text="✓" FontSize="11" Foreground="{DynamicResource AccentText}" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Hidden"/></Border><ContentPresenter VerticalAlignment="Center"/></StackPanel>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsChecked" Value="True"><Setter TargetName="StageBody" Property="Background" Value="{DynamicResource Soft}"/><Setter TargetName="Box" Property="Background" Value="{DynamicResource Accent}"/><Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter TargetName="Tick" Property="Visibility" Value="Visible"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/></Trigger>
+          <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="StageBody" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+          <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="StageBody" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="StageBody" Property="Opacity" Value="0.45"/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+  </Application.Resources>
+</Application>

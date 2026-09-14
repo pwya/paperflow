@@ -1,0 +1,2 @@
+#!/bin/sh
+exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Test-PublicTree.ps1 -Staged

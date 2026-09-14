@@ -85,8 +85,8 @@ public sealed class MainWindow : Window
         brand.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) ToggleCompact(); else if (e.LeftButton == MouseButtonState.Pressed) DragMove(); };
         var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var add = ActionButton("＋", AddPaper, true); add.ToolTip = "新增论文 · Ctrl+N"; add.Padding = new Thickness(10, 4, 10, 4); add.FontSize = 17; AutomationProperties.SetName(add, "新增论文"); chrome.Children.Add(add);
-        options.Content = "论文选项"; options.Padding = new Thickness(8, 6, 8, 6); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options);
-        pin.Padding = new Thickness(8, 6, 8, 6); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin);
+        options.Content = "论文选项"; options.FontSize = 12; options.Padding = new Thickness(8, 6, 8, 6); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options);
+        pin.FontSize = 12; pin.Padding = new Thickness(8, 6, 8, 6); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin);
         chrome.Children.Add(ActionButton("设置", OpenSettings));
         chrome.Children.Add(ActionButton("—", () => WindowState = WindowState.Minimized));
         var close = ActionButton("×", Close); close.ToolTip = "收起到系统托盘，双击托盘图标恢复"; chrome.Children.Add(close);

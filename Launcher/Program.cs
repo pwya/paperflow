@@ -39,7 +39,7 @@ internal static class Program
         var local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PaperFlow", "app-cache");
         Directory.CreateDirectory(local);
         // Diagnostic roots are explicit flags; normal users always use this launcher's
-        // own folder, so two machines can have different OneDrive absolute paths.
+        // own folder, so two machines can have different absolute paths for the synced copy.
         for (int i = 0; i + 1 < args.Length; i++) { if (args[i] == "--package-dir") shared = Path.GetFullPath(args[++i]); else if (args[i] == "--cache-dir") local = Path.GetFullPath(args[++i]); }
         Directory.CreateDirectory(local);
         var remembered = Path.Combine(local, "last-good.json");
@@ -67,7 +67,7 @@ internal static class Program
             problem = ex.Message;
             try { channel = Read(remembered); executable = CachedExe(local, channel); if (!Valid(executable, channel)) executable = null; } catch { executable = null; }
         }
-        if (executable == null) { MessageBox.Show("程序还没有完整同步到这台电脑。请等待 OneDrive 完成同步后重试。\n\n" + problem, "PaperFlow", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (executable == null) { MessageBox.Show("程序还没有完整同步到这台电脑。请等待网盘同步完成后重试。\n\n" + problem, "PaperFlow", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         try
         {
             // Test mode verifies hydration/checksum/fallback without opening a UI.

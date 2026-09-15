@@ -116,20 +116,20 @@ public sealed class SettingsWindow : Window
         // ---------- 同步与启动 ----------
         var sync = pages[2];
         Label(sync, "论文同步与备份", 20);
-        Label(sync, Result.SyncFolder == "" ? "当前为本机保存。通过 OneDrive 中的固定启动入口打开，即可连接其 data 目录。" : "正在使用 OneDrive 文件夹\n" + Result.SyncFolder, 11);
+        Label(sync, Result.SyncFolder == "" ? "当前只在本机保存。把安装文件夹放进任意会自动同步的网盘文件夹，再从那里的固定启动入口打开，就会自动连接旁边的 data 目录。" : "正在使用同步文件夹\n" + Result.SyncFolder, 11);
         if (Result.SyncFolder != "") sync.Children.Add(B("打开同步资料文件夹", () => OpenFolder(Result.SyncFolder)));
-        Label(sync, "其他电脑收到文件后，小部件自动刷新。云端到达时间由 OneDrive 决定。字体、主题、字号、界面缩放和窗口位置只保存在本机。", 11);
+        Label(sync, "其他电脑收到文件后，小部件自动刷新；到达时间由你用的网盘客户端决定。字体、主题、字号、界面缩放和窗口位置只保存在本机。", 11);
         var backup = new StackPanel { Orientation = Orientation.Horizontal }; backup.Children.Add(B("导出备份", export)); backup.Children.Add(B("导入备份", import)); backup.Children.Add(B("本地资料", () => OpenFolder(directory))); sync.Children.Add(backup);
         Label(sync, "启动", 16);
         var startup = new CheckBox { Content = "登录 Windows 时自动打开", IsChecked = StartupEntry.IsEnabled(), Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; sync.Children.Add(startup);
         Label(sync, "× 收起到托盘，双击托盘图标恢复。更新时请先从托盘菜单退出，再打开固定启动入口。", 11);
-        Label(sync, "更新通道和更新提示还没做（排在 1.6.0），现在更新靠 OneDrive 同步整个程序文件夹。", 11);
+        Label(sync, "更新通道和更新提示还没做（排在 1.6.0），现在更新靠网盘同步整个程序文件夹。", 11);
 
         // ---------- 关于与反馈 ----------
         var about = pages[3];
         Label(about, Product.Name, 20);
         Label(about, "版本 " + Product.Version + (Product.BuildCommit == "" ? " · 本地构建" : " · 提交 " + Product.BuildCommit), 12);
-        Label(about, "MIT 许可 · Copyright (c) 2026 Panwang Yuang\n本程序不联网、不上传任何资料，论文数据只存在你自己的电脑和 OneDrive 文件夹里。", 11);
+        Label(about, "MIT 许可 · Copyright (c) 2026 Panwang Yuang\n本程序不联网、不上传任何资料，论文数据只存在你自己的电脑和你选的同步文件夹里。", 11);
         var links = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 0) };
         links.Children.Add(B("打开主页", () => OpenUrl("https://panwangyuang.com")));
         links.Children.Add(B("写邮件反馈", () => OpenUrl("mailto:pwya1998@126.com?subject=PaperFlow%20%E5%8F%8D%E9%A6%88")));

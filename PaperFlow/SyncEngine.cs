@@ -22,7 +22,7 @@ public sealed class SyncEvent
     public List<SyncEdit> Edits { get; set; } = new();
 }
 
-// Each edit is an immutable, uniquely named file. OneDrive transports files; it never
+// Each edit is an immutable, uniquely named file. The synced folder transports files; it never
 // has to merge two devices writing the same papers.json. Scalar fields and each stage
 // are independent last-writer registers ordered by Lamport counter, device id, event id.
 public static class SyncProtocol
@@ -160,7 +160,7 @@ public sealed class SyncEngine
             SyncProtocol.Validate(ev);
             // Local append is the commit point, before any network filesystem operation.
             AtomicWrite(Path.Combine(localJournal, ev.Id + ".json"), JsonSerializer.Serialize(ev, Storage.JsonOptions));
-            events.Add(ev.Id, ev); status = Folder == "" ? "本机已保存" : "本机已保存 · 等待写入 OneDrive";
+            events.Add(ev.Id, ev); status = Folder == "" ? "本机已保存" : "本机已保存 · 等待写入同步文件夹";
         }
     }
     public bool Poll()
@@ -196,7 +196,7 @@ public sealed class SyncEngine
                 var destination = Path.Combine(shared, ev.Id + ".json");
                 if (!File.Exists(destination)) AtomicWrite(destination, JsonSerializer.Serialize(ev, Storage.JsonOptions));
             }
-            lock (gate) status = unreadable > 0 ? $"本机已保存 · {unreadable} 个同步文件暂无法读取，将重试" : "OneDrive 文件夹已更新 · " + DateTime.Now.ToString("HH:mm");
+            lock (gate) status = unreadable > 0 ? $"本机已保存 · {unreadable} 个同步文件暂无法读取，将重试" : "同步文件夹已更新 · " + DateTime.Now.ToString("HH:mm");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         { lock (gate) status = "本机已保存 · 同步待重试（" + ex.Message + "）"; }

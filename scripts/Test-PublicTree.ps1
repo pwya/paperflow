@@ -13,7 +13,9 @@ try {
         if ($file -like '*.ico') { continue }
         $content = if ($Staged) { (git show ":$file") -join "`n" } else { Get-Content -LiteralPath $file -Raw -Encoding UTF8 }
         # Scan the exact staged content, not merely the working-tree version.
-        if ($content -match '(?i)([A-Z]:[\\/](Users|OneDrive|Dev|stata_projects)[\\/]|notion\.site/[0-9a-f]{32}|-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})') { $problems.Add("Private path, page identifier or credential pattern: $file") }
+        # Cloud folder names stay in this deny pattern on purpose: it exists to catch a leaked
+        # personal install path, not to advertise any one provider.
+        if ($content -match '(?i)([A-Z]:[\\/](Users|OneDrive|Dropbox|Google|iCloud|Dev|stata_projects)[\\/]|notion\.site/[0-9a-f]{32}|-----BEGIN [A-Z ]*PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})') { $problems.Add("Private path, page identifier or credential pattern: $file") }
         $localName = [Environment]::UserName
         if ($localName.Length -ge 4 -and $content.Contains($localName)) { $problems.Add("Local username appears in source: $file") }
     }

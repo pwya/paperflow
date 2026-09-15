@@ -175,7 +175,7 @@ public sealed class MainWindow : Window
                 bool changed = await Task.Run(sync.Poll);
                 if (changed) { library.Papers = sync.Snapshot().Papers; store.Save(library); Render(); }
                 footer.Text = sync.Status;
-                footer.ToolTip = sync.Folder == "" ? store.DirectoryPath : "资料文件夹：" + sync.Folder + "\n跨设备到达时间由 OneDrive 决定，文件夹更新不等于云端上传已完成。";
+                footer.ToolTip = sync.Folder == "" ? store.DirectoryPath : "资料文件夹：" + sync.Folder + "\n跨设备到达时间由你的网盘客户端决定，文件夹更新不等于云端上传已完成。";
             }
             catch (Exception ex) { footer.Text = "同步需要留意 · " + ex.Message; }
             finally { polling = false; }

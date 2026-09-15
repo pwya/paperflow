@@ -9,6 +9,12 @@ public static class ViewRules
     public static readonly string[] PageModes = { "不翻页", "按优先级翻页", "按阶段分组翻页" };
     // The card shows priority as three dots: high fills all three, low fills one.
     public static int PriorityLevel(string priority) => priority switch { "高" => 3, "中" => 2, "低" => 1, _ => 2 };
+    // Used by the settings sliders to warn how many whole cards still fit on screen.
+    public static int EstimateVisiblePapers(double viewportHeight, double cardHeight, int cardCount)
+    {
+        if (cardCount <= 0 || cardHeight <= 1 || viewportHeight <= 1) return 0;
+        return Math.Clamp((int)Math.Floor(viewportHeight / cardHeight), 0, 999);
+    }
     public static int PageCount(Preferences p) => p.PageMode == PageModes[1] ? 3 : p.PageMode == PageModes[2] ? 2 : 1;
     public static bool SelectedStage(Paper paper, Preferences p) => p.HiddenStages.Contains(paper.CurrentStageIndex);
     public static List<Paper> Apply(IEnumerable<Paper> source, Preferences p, int? page = null)

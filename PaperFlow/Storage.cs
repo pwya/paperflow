@@ -105,7 +105,8 @@ public sealed class Storage
         s.Theme ??= "竹青"; s.AccentColor ??= ""; s.BackgroundColor ??= ""; s.FontName ??= "Microsoft YaHei UI";
         s.SyncFolder ??= ""; s.LauncherPath ??= "";
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;
-        s.TextSize = double.IsFinite(s.TextSize) ? Math.Clamp(s.TextSize, 10, 22) : 13;
+        s.TextSize = double.IsFinite(s.TextSize) ? Math.Clamp(s.TextSize, 9, 36) : 13;
+        s.UiScale = double.IsFinite(s.UiScale) ? Math.Clamp(s.UiScale, 0.8, 2) : 1;
         s.BarHeight = new[] { 14, 20, 28 }.Contains(s.BarHeight) ? s.BarHeight : 20;
         s.Width = double.IsFinite(s.Width) ? Math.Clamp(s.Width, 480, 1800) : 650;
         s.Height = double.IsFinite(s.Height) ? Math.Clamp(s.Height, 400, 1600) : 840;

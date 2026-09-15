@@ -18,7 +18,13 @@ public static class Appearance
         new("透明", "#18242D", "#1D2B36", "#FFFFFF", "#D2DEE7", "#91DCC5", "#354C55", "#769291", true)
     };
     public static Palette Current { get; private set; } = Presets[0];
+    // 界面缩放：间距、圆点、进度条、控件尺寸；字号：文字大小。两者相乘决定文字实际大小。
     public static double Scale { get; private set; } = 1;
+    public static double TextScale { get; private set; } = 1;
+    public static double EffectiveTextSize { get; private set; } = 13;
+    // Dialogs are normal windows: they grow with the widget's text but never past 250%,
+    // so the settings form always fits inside its own window.
+    public static double DialogScale => Math.Clamp(TextScale, 1, 2.5);
     public static double Opacity { get; private set; } = 1;
     public static string FontName { get; private set; } = "Microsoft YaHei UI";
     public static string AccentText => Luminance(Current.Accent) > 0.5 ? "#182D29" : "#FFFFFF";
@@ -54,7 +60,10 @@ public static class Appearance
         Current = Presets.FirstOrDefault(x => x.Name == p.Theme) ?? Presets[0];
         if (IsColor(p.AccentColor) && p.AccentColor != "") Current = Current with { Accent = p.AccentColor };
         if (IsColor(p.BackgroundColor) && p.BackgroundColor != "") Current = Current with { Window = p.BackgroundColor, Card = Mix(p.BackgroundColor, Current.Ink, .06) };
-        Scale = p.TextSize / 13; Opacity = p.BackgroundOpacity; FontName = p.FontName;
+        Scale = p.UiScale;
+        TextScale = p.TextSize / 13 * p.UiScale;
+        EffectiveTextSize = 13 * TextScale;
+        Opacity = p.BackgroundOpacity; FontName = p.FontName;
         var resources = Application.Current.Resources;
         foreach (var pair in new Dictionary<string, string> { ["Ink"] = Current.Ink, ["Muted"] = Current.Muted, ["Accent"] = Current.Accent, ["AccentText"] = AccentText, ["Soft"] = Current.Soft, ["Card"] = Current.Card, ["Line"] = Current.Border, ["WindowBackground"] = Current.Window }) resources[pair.Key] = Paint(pair.Value);
     }

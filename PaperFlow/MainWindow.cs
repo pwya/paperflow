@@ -46,12 +46,13 @@ public sealed class MainWindow : Window
     private DateTime displayDate = DateTime.Today;
     private bool ready;
     private readonly ScrollViewer scroller;
+    private Action? layoutChrome;
 
     public static SolidColorBrush Brush(string color) => Appearance.Map(color);
-    public static TextBlock Text(string text, double size = 13, string color = "#24352F") => new() { Text = text, FontSize = size * Appearance.Scale, Foreground = Brush(color), VerticalAlignment = VerticalAlignment.Center };
-    public static Button ActionButton(string text, Action action, bool primary = false)
+    public static TextBlock Text(string text, double size = 13, string color = "#24352F", double scale = -1) => new() { Text = text, FontSize = size * (scale < 0 ? Appearance.TextScale : scale), Foreground = Brush(color), VerticalAlignment = VerticalAlignment.Center };
+    public static Button ActionButton(string text, Action action, bool primary = false, double scale = -1)
     {
-        var button = new Button { Content = text, FontSize = 12, Margin = new Thickness(3, 0, 0, 0) };
+        var button = new Button { Content = text, FontSize = 12 * (scale < 0 ? Appearance.TextScale : scale), Margin = new Thickness(3, 0, 0, 0) };
         if (primary) button.SetResourceReference(StyleProperty, "PrimaryButton");
         button.Click += (_, _) => action();
         return button;
@@ -75,7 +76,7 @@ public sealed class MainWindow : Window
         // It keeps running and stays reachable from the tray icon.
         ShowInTaskbar = false;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResizeWithGrip; AllowsTransparency = true; Background = Brushes.Transparent;
-        FontFamily = new FontFamily(library.Settings.FontName); FontSize = library.Settings.TextSize;
+        FontFamily = new FontFamily(library.Settings.FontName); FontSize = Appearance.EffectiveTextSize;
         MinWidth = 480; MinHeight = 400;
         var area = SystemParameters.WorkArea;
         Width = Math.Min(library.Settings.Width, area.Width); Height = Math.Min(library.Settings.Height, area.Height);
@@ -91,23 +92,35 @@ public sealed class MainWindow : Window
 
         var heading = new Grid { Margin = new Thickness(14, 8, 10, 5), Background = Brushes.Transparent, ToolTip = "拖动标题栏或空白处移动小部件" };
         heading.ColumnDefinitions.Add(new ColumnDefinition()); heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        heading.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); heading.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var brand = new StackPanel { Orientation = Orientation.Horizontal };
         brand.Children.Add(brandIcon);
-        var brandTitle = Text("PaperFlow", 18); brandTitle.FontWeight = FontWeights.SemiBold; brandTitle.FontSize = 18; brandTitle.SetResourceReference(TextBlock.ForegroundProperty, "Ink"); brand.Children.Add(brandTitle);
+        var brandTitle = Text("PaperFlow", 18); brandTitle.FontWeight = FontWeights.SemiBold; brandTitle.SetResourceReference(TextBlock.ForegroundProperty, "Ink"); brand.Children.Add(brandTitle);
         heading.Children.Add(brand);
         var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var add = ActionButton("＋", AddPaper, true); add.ToolTip = "新增论文 · Ctrl+N"; add.Padding = new Thickness(10, 4, 10, 4); add.FontSize = 17; AutomationProperties.SetName(add, "新增论文"); chrome.Children.Add(add);
-        options.Content = "论文选项"; options.FontSize = 12; options.Padding = new Thickness(8, 6, 8, 6); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options);
-        pin.FontSize = 12; pin.Padding = new Thickness(8, 6, 8, 6); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin);
+        var add = ActionButton("＋", AddPaper, true); add.ToolTip = "新增论文 · Ctrl+N"; add.Padding = new Thickness(10 * Appearance.Scale, 4 * Appearance.Scale, 10 * Appearance.Scale, 4 * Appearance.Scale); add.FontSize = 17 * Appearance.TextScale; AutomationProperties.SetName(add, "新增论文"); chrome.Children.Add(add);
+        options.Content = "论文选项"; options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options);
+        pin.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin);
         chrome.Children.Add(ActionButton("设置", OpenSettings));
         // No taskbar button means minimising would hide the widget with nowhere to return
         // from, so the only place-away control is the collapse-to-tray button.
         var close = ActionButton("×", Close); close.ToolTip = "收起到系统托盘，双击托盘图标恢复"; chrome.Children.Add(close);
         Grid.SetColumn(chrome, 1); heading.Children.Add(chrome);
+        // Large text or a narrow window pushes the buttons onto a second row instead of
+        // clipping the title. Nothing is hidden, the header just reflows.
+        layoutChrome = () =>
+        {
+            if (heading.ActualWidth <= 0) return;
+            bool stacked = brand.DesiredSize.Width + chrome.DesiredSize.Width + 12 > heading.ActualWidth;
+            Grid.SetRow(chrome, stacked ? 1 : 0); Grid.SetColumn(chrome, stacked ? 0 : 1);
+            chrome.HorizontalAlignment = stacked ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            chrome.Margin = stacked ? new Thickness(0, 5, 0, 0) : new Thickness(0);
+        };
+        heading.SizeChanged += (_, _) => layoutChrome();
         DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
 
         var top = new StackPanel { Margin = new Thickness(17, 0, 17, 6), Background = Brushes.Transparent };
-        summary.FontSize = 11; summary.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); top.Children.Add(summary);
+        summary.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); top.Children.Add(summary);
         AutomationProperties.SetName(search, "搜索论文、学科、期刊"); search.ToolTip = "搜索论文、学科、期刊、合作者或备注";
         search.TextChanged += (_, _) => { if (ready) Render(); };
         filter.ItemsSource = new[] { "全部论文", "进行中", "已收录", "已归档" }; filter.SelectedIndex = 0; filter.Margin = new Thickness(7, 0, 0, 0);
@@ -117,7 +130,7 @@ public sealed class MainWindow : Window
         DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
 
         var foot = new Border { Padding = new Thickness(20, 8, 20, 10), BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = Brush("#E0E5DD") };
-        footer.Text = sync.Status; footer.FontSize = 10; footer.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); footer.TextTrimming = TextTrimming.CharacterEllipsis; foot.Child = footer;
+        footer.Text = sync.Status; footer.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); footer.TextTrimming = TextTrimming.CharacterEllipsis; foot.Child = footer;
         DockPanel.SetDock(foot, Dock.Bottom); root.Children.Add(foot);
         pager.Children.Add(ActionButton("‹ 上一页", () => TurnPage(-1)));
         pager.Children.Add(pageLabel);
@@ -228,7 +241,8 @@ public sealed class MainWindow : Window
         if (draggingPaper) return;
         Appearance.Apply(library.Settings);
         brandIcon.Source = Appearance.CreateHeaderIcon();
-        FontFamily = new FontFamily(Appearance.FontName); FontSize = library.Settings.TextSize;
+        FontFamily = new FontFamily(Appearance.FontName); FontSize = Appearance.EffectiveTextSize;
+        summary.FontSize = 11 * Appearance.TextScale; footer.FontSize = 10 * Appearance.TextScale; pageLabel.FontSize = 12 * Appearance.TextScale;
         frame.Background = Appearance.Paint(Appearance.Current.Window, Appearance.Opacity * (Appearance.Current.Glass ? .25 : 1));
         frame.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .75);
         pin.Content = library.Settings.Topmost ? "已置顶" : "置顶"; pin.ToolTip = "F12 切换置顶";
@@ -262,6 +276,37 @@ public sealed class MainWindow : Window
             else { var adjust = ActionButton("调整论文选项", OpenOptions); adjust.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(adjust); }
             cards.Children.Add(empty);
         }
+        Dispatcher.BeginInvoke(new Action(() => layoutChrome?.Invoke()), DispatcherPriority.Loaded);
+    }
+
+    // The settings sliders show how many whole cards fit in the live viewport.
+    internal int EstimateVisiblePapers()
+    {
+        var borders = cards.Children.OfType<Border>().Where(b => b.Tag is string).ToList();
+        if (borders.Count == 0) return 0;
+        double card = borders.Average(b => b.ActualHeight + b.Margin.Top + b.Margin.Bottom);
+        return ViewRules.EstimateVisiblePapers(scroller.ActualHeight, card, borders.Count);
+    }
+
+    // The settings dialog previews appearance live. Growing the widget with the text keeps
+    // the visible paper count from collapsing, but never past half of the work area.
+    private void PreviewAppearance(Preferences preview)
+    {
+        double before = Appearance.TextScale;
+        Appearance.Apply(preview); library.Settings = preview;
+        if (preview.AutoGrowWindow && before > 0.1)
+        {
+            double ratio = Appearance.TextScale / before;
+            if (Math.Abs(ratio - 1) > 0.01)
+            {
+                var area = SystemParameters.WorkArea;
+                Width = Math.Clamp(Width * ratio, MinWidth, Math.Max(MinWidth, area.Width / 2));
+                Height = Math.Clamp(Height * ratio, MinHeight, Math.Max(MinHeight, area.Height / 2));
+                Left = Math.Clamp(Left, area.Left, Math.Max(area.Left, area.Right - Width));
+                Top = Math.Clamp(Top, area.Top, Math.Max(area.Top, area.Bottom - Height));
+            }
+        }
+        Render();
     }
 
     private Border BuildCard(Paper p)
@@ -276,7 +321,9 @@ public sealed class MainWindow : Window
         titleArea.Children.Add(name); stack.Children.Add(titleArea);
         var metadata = string.Join(" / ", new[] { p.Subject, p.Language, p.Journal }.Where(v => !string.IsNullOrWhiteSpace(v)));
         var progressRow = new Grid { Margin = new Thickness(0, 2, 0, 3), ToolTip = "下一步：" + (p.NextAction != "" ? p.NextAction : p.NextStage) };
-        progressRow.ColumnDefinitions.Add(new ColumnDefinition()); progressRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(85 * Appearance.Scale) });
+        // The percentage and the next-action label are text, so their reserved width follows
+        // the text scale; using the layout scale alone clips them once the font grows.
+        progressRow.ColumnDefinitions.Add(new ColumnDefinition()); progressRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(85 * Appearance.TextScale) });
         var track = new Grid { Height = library.Settings.BarHeight, VerticalAlignment = VerticalAlignment.Center };
         track.Children.Add(new Border { Background = Brush("#EBEFE9"), CornerRadius = new CornerRadius(5) });
         var inner = new Grid(); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, p.Progress), GridUnitType.Star) }); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, 100 - p.Progress), GridUnitType.Star) });
@@ -287,7 +334,7 @@ public sealed class MainWindow : Window
         for (int i = 0; i < p.Stages.Count; i++)
         {
             int index = i; var stage = p.Stages[i];
-            var cb = new CheckBox { Content = Paper.StageLabels[i] + (stage.Skipped ? "（免）" : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontSize = (small ? 11 : 12) * Appearance.Scale };
+            var cb = new CheckBox { Content = Paper.StageLabels[i] + (stage.Skipped ? "（免）" : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontSize = (small ? 11 : 12) * Appearance.TextScale };
             cb.SetResourceReference(StyleProperty, "StageCheck"); AutomationProperties.SetName(cb, p.Title + " · " + Paper.StageLabels[i]);
             cb.Padding = new Thickness(small ? 4 : 5, 3, small ? 4 : 5, 3); cb.Margin = new Thickness(0, 0, 4, 3);
             cb.ToolTip = stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : i == 4 ? "勾选表示进入在审；继续勾选返修或收录后，移出在审分组。" : "点击切换；进度按适用阶段等权计算";
@@ -297,13 +344,13 @@ public sealed class MainWindow : Window
         due.Margin = new Thickness(4, 0, 5, 3); due.ToolTip = $"开始日期：{p.StartDate:yyyy-MM-dd}\n已开始 {p.ElapsedDays} 天"; checks.Children.Add(due);
         if (!string.IsNullOrWhiteSpace(p.NextAction))
         {
-            var next = Text("下一步 " + p.NextAction, 11, "#6C7C70"); next.MaxWidth = 150 * Appearance.Scale; next.TextTrimming = TextTrimming.CharacterEllipsis; next.ToolTip = p.NextAction; next.Margin = new Thickness(4, 0, 0, 3); checks.Children.Add(next); checks.OptionalTail = next;
+            var next = Text("下一步 " + p.NextAction, 11, "#6C7C70"); next.MaxWidth = 150 * Appearance.TextScale; next.TextTrimming = TextTrimming.CharacterEllipsis; next.ToolTip = p.NextAction; next.Margin = new Thickness(4, 0, 0, 3); checks.Children.Add(next); checks.OptionalTail = next;
         }
         // One settings entry per paper, anchored at the bottom right corner of the card.
         var bottom = new Grid();
         bottom.ColumnDefinitions.Add(new ColumnDefinition()); bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         bottom.Children.Add(checks);
-        var settings = new Button { Content = "⚙", FontSize = 13 * Appearance.Scale, Padding = new Thickness(7, 2, 7, 2), Margin = new Thickness(7, 0, 0, 3), VerticalAlignment = VerticalAlignment.Bottom, Foreground = Brush("#62766A") };
+        var settings = new Button { Content = "⚙", FontSize = 13 * Appearance.TextScale, Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), Margin = new Thickness(7, 0, 0, 3), VerticalAlignment = VerticalAlignment.Bottom, Foreground = Brush("#62766A") };
         settings.ToolTip = (metadata == "" ? "尚未填写学科、期刊等资料" : metadata + " · " + p.EffectiveStatus) + "\n编辑资料、修改记录、排序、复制、归档";
         settings.Click += (_, _) => PaperMenu(p, settings);
         AutomationProperties.SetName(settings, p.Title + " 的论文设置");
@@ -434,22 +481,22 @@ public sealed class MainWindow : Window
     private void ShowHistory(Paper p)
     {
         var box = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(18), Text = string.Join("\n\n", p.History.Select(h => $"{h.At:yyyy-MM-dd HH:mm:ss}   {h.Description}")) };
-        new Window { Title = "修改记录 · " + p.Title, Owner = this, Width = 560, Height = 500, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = box }.ShowDialog();
+        new Window { Title = "修改记录 · " + p.Title, Owner = this, Width = 560 * Appearance.DialogScale, Height = 500 * Appearance.DialogScale, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = box }.ShowDialog();
     }
     private void OpenSettings()
     {
         var original = Storage.CloneLibrary(library).Settings;
-        var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, preview => { Appearance.Apply(preview); library.Settings = preview; Render(); }) { Owner = this };
+        var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, PreviewAppearance, EstimateVisiblePapers) { Owner = this };
         if (dialog.ShowDialog() == true) Commit(l => l.Settings = dialog.Result);
         else Commit(l => l.Settings = original);
     }
     private void OpenOptions()
     {
-        var window = new Window { Title = "论文选项", Width = 490, Height = Math.Min(760, SystemParameters.WorkArea.Height - 30), Owner = this, ResizeMode = ResizeMode.CanResize, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var window = new Window { Title = "论文选项", Width = Math.Min(490 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40), Height = Math.Min(760 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30), Owner = this, ResizeMode = ResizeMode.CanResize, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var root = new DockPanel { Margin = new Thickness(22) }; window.Content = root;
         var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
         DockPanel.SetDock(controls, Dock.Bottom); root.Children.Add(controls);
-        var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto });
         body.Children.Add(Text("搜索与视图", 20));
         body.Children.Add(Text("搜索论文、期刊、学科或合作者", 11, "#78867F"));
         search.Margin = new Thickness(0, 9, 0, 12); body.Children.Add(search);

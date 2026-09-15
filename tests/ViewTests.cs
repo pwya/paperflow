@@ -13,6 +13,11 @@ static class ViewTests
         check(review.CurrentStageIndex == 4 && revision.CurrentStageIndex == 5 && accepted.CurrentStageIndex == 6, "later stages leave review bucket");
         check(Paper.Priorities.Select(ViewRules.PriorityLevel).SequenceEqual(new[] { 3, 2, 1 }), "title dots fill three, two or one for high, medium and low");
         check(ViewRules.PriorityLevel("") == 2 && ViewRules.PriorityLevel("高") == 3 && ViewRules.PriorityLevel("低") == 1, "dot count survives unknown and legacy values");
+        check(new Preferences().UiScale == 1 && !new Preferences().AutoGrowWindow, "new appearance settings default to 100% zoom and no auto grow");
+        check(ViewRules.EstimateVisiblePapers(600, 120, 4) == 5 && ViewRules.EstimateVisiblePapers(500, 120, 4) == 4, "visible estimate divides the viewport by the measured card");
+        check(ViewRules.EstimateVisiblePapers(100, 120, 4) == 0 && ViewRules.EstimateVisiblePapers(600, 0, 4) == 0 && ViewRules.EstimateVisiblePapers(600, 120, 0) == 0, "visible estimate refuses impossible input");
+        var extreme = Storage.Parse("{\"Version\":1,\"Settings\":{\"TextSize\":99,\"UiScale\":9},\"Papers\":[]}");
+        check(extreme.Settings.TextSize == 36 && extreme.Settings.UiScale == 2, "font size and zoom are clamped when loading");
         check(ViewRules.Apply(all, p).Select(x => x.Id).SequenceEqual(new[] { writing.Id, revision.Id, accepted.Id }), "review hidden by default, revision and accepted remain");
         p.HiddenStages.Add(6); check(ViewRules.Apply(all, p).Count == 2, "multiple hidden stages");
         p.HideSelectedStages = false; check(ViewRules.Apply(all, p).Count == 4, "hiding can be disabled");
@@ -34,6 +39,7 @@ static class ViewTests
         p.HiddenStages.Add(0); check(ViewRules.SelectedStage(new Paper(), p), "unstarted papers grouped as opening stage");
         var old = Storage.Parse("{\"Version\":1,\"Papers\":[{\"Title\":\"Legacy sample\"}]}");
         check(old.Papers.Single().Priority == "中" && old.Settings.TitleBold && old.Settings.HiddenStages.SequenceEqual(new[] { 4 }), "legacy defaults for new settings and priority");
+        check(old.Settings.UiScale == 1 && !old.Settings.AutoGrowWindow && old.Settings.TextSize == 13, "legacy files get 100% zoom, no auto grow and the default font size");
         old.Settings.TitleBold = false; old.Settings.PageMode = ViewRules.PageModes[1]; old.Settings.PageIndex = 2;
         var copy = Storage.CloneLibrary(old); check(!copy.Settings.TitleBold && copy.Settings.PageIndex == 2, "title weight and page survive save roundtrip");
         old.Papers[0].Priority = "invalid"; bool rejected = false; try { Storage.Validate(old); } catch (InvalidDataException) { rejected = true; }

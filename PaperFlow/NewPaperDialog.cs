@@ -9,7 +9,7 @@ public sealed class NewPaperDialog : Window
     public string PaperTitle { get; private set; } = "";
     public NewPaperDialog()
     {
-        Title = "新增论文"; Width = 420; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        Title = "新增论文"; Width = 420 * Appearance.DialogScale; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = true;
         var body = new StackPanel { Margin = new Thickness(24) }; Content = body;
         body.Children.Add(MainWindow.Text("写下论文标题", 20));

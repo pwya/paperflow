@@ -26,7 +26,8 @@ try {
     $appFolder = Join-Path $package "versions\$version"
     $publish = Join-Path $build 'dotnet-publish'
     [IO.Directory]::CreateDirectory($appFolder) | Out-Null
-    dotnet publish (Join-Path $source 'PaperFlow/PaperFlow.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -p:ContinuousIntegrationBuild=true -o $publish --nologo
+    # SourceRevisionId lands in the assembly informational version, which the About panel shows.
+    dotnet publish (Join-Path $source 'PaperFlow/PaperFlow.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:DebugType=None -p:DebugSymbols=false -p:ContinuousIntegrationBuild=true -p:SourceRevisionId=$commit -o $publish --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Application build failed.' }
     Copy-Item -LiteralPath (Join-Path $publish 'PaperFlow.exe') -Destination $appFolder
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'

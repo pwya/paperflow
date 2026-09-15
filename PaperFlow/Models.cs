@@ -88,6 +88,9 @@ public sealed class Preferences
     public double BackgroundOpacity { get; set; } = 1;
     public string FontName { get; set; } = "Microsoft YaHei UI";
     public double TextSize { get; set; } = 13;
+    // Overall zoom of the widget (layout and text together); TextSize only moves the text.
+    public double UiScale { get; set; } = 1;
+    public bool AutoGrowWindow { get; set; }
     public string SyncFolder { get; set; } = "";
     public string LauncherPath { get; set; } = "";
     public bool Topmost { get; set; } = true;

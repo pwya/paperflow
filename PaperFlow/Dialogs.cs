@@ -14,13 +14,13 @@ public sealed class PaperEditor : Window
     public PaperEditor(Paper paper)
     {
         Result = paper;
-        Title = "论文资料"; Width = 660; Height = Math.Min(780, SystemParameters.WorkArea.Height); MinHeight = 430; MinWidth = 530;
+        Title = "论文资料"; Width = Math.Min(660 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40); Height = Math.Min(780 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30); MinHeight = 430 * Appearance.DialogScale; MinWidth = Math.Min(530 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40);
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ShowInTaskbar = true;
         var root = new DockPanel { Margin = new Thickness(22) }; Content = root;
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
         DockPanel.SetDock(actions, Dock.Bottom); root.Children.Add(actions);
-        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
         root.Children.Add(scroll); var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; scroll.Content = body;
         var headline = MainWindow.Text("让下一步更清楚", 22); headline.Margin = new Thickness(0, 0, 0, 6); body.Children.Add(headline);
         var caption = MainWindow.Text("七阶段在小部件上直接勾选；这里保存论文的完整资料。", 12, "#78867F"); caption.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(caption);

@@ -72,5 +72,15 @@ static class SyncTests
         try { a.Commit(current, edit); check(false, "local failure rejects edit"); } catch (IOException) { check(true, "local failure rejects edit"); }
         check(a.Snapshot().Papers[0].Title == "Synthetic paper A", "failed append never mutates memory");
         File.Delete(localPath); Directory.Move(moved, localPath);
+        current = a.Snapshot(); edit = Storage.CloneLibrary(current);
+        edit.Papers.Add(new Paper { Title = "Synthetic B" }); edit.Papers.Add(new Paper { Title = "Synthetic C" }); a.Commit(current, edit); a.Poll(); b.Poll();
+        var ids = a.Snapshot().Papers.Select(p => p.Id).ToArray();
+        current = a.Snapshot(); edit = Storage.CloneLibrary(current); PaperOrder.MoveVisible(edit.Papers, ids, ids[2], ids[0], false); a.Commit(current, edit);
+        oldB = b.Snapshot(); nextB = Storage.CloneLibrary(oldB); nextB.Papers[0].ToggleStage(4, true); b.Commit(oldB, nextB);
+        a.Poll(); b.Poll(); a.Poll();
+        check(a.Snapshot().Papers.Select(p => p.Id).SequenceEqual(new[] { ids[2], ids[0], ids[1] }), "drag order remains after concurrent stage edit");
+        check(b.Snapshot().Papers.Select(p => p.Id).SequenceEqual(a.Snapshot().Papers.Select(p => p.Id)), "drag order synchronizes");
+        check(a.Snapshot().Papers.Single(p => p.Id == ids[0]).Stages[4].Done, "reordering preserves remote stage edit");
+        check(new SyncEngine(Local("a"), shared, seed).Snapshot().Papers[0].Id == ids[2], "drag order survives restart");
     }
 }

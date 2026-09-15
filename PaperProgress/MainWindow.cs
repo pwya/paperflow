@@ -32,6 +32,11 @@ public sealed class MainWindow : Window
     private readonly ComboBox sort = new();
     private readonly Button pin = new();
     private readonly Button compact = new();
+    private readonly Image brandIcon = new() { Width = 26, Height = 26, Margin = new Thickness(0, 0, 9, 0) };
+    private bool draggingPaper;
+    private string? draggedPaperId;
+    private const string PaperDragFormat = "PaperProgress.PaperId";
+    private DateTime nextDragScroll;
     private readonly Forms.NotifyIcon tray;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(2) };
     private bool quitting;
@@ -73,16 +78,16 @@ public sealed class MainWindow : Window
         frame.CornerRadius = new CornerRadius(12); frame.BorderThickness = new Thickness(1);
         var surface = new Grid(); surface.Children.Add(frame); Content = surface;
         AddResizeHandles(surface);
-        var root = new DockPanel { LastChildFill = true };
+        var root = new DockPanel { LastChildFill = true, Background = Brushes.Transparent };
+        root.MouseLeftButtonDown += DragWidget;
         frame.Child = root;
 
-        var heading = new Grid { Margin = new Thickness(16, 13, 10, 9), Background = Brushes.Transparent };
+        var heading = new Grid { Margin = new Thickness(14, 8, 10, 5), Background = Brushes.Transparent, ToolTip = "拖动标题栏或空白处移动挂件" };
         heading.ColumnDefinitions.Add(new ColumnDefinition()); heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var brand = new StackPanel { Orientation = Orientation.Horizontal };
-        brand.Children.Add(new Image { Source = Icon, Width = 26, Height = 26, Margin = new Thickness(0, 0, 9, 0) });
+        brand.Children.Add(brandIcon);
         var brandTitle = Text("论文进度", 18); brandTitle.FontWeight = FontWeights.SemiBold; brandTitle.FontSize = 18; brandTitle.SetResourceReference(TextBlock.ForegroundProperty, "Ink"); brand.Children.Add(brandTitle);
         heading.Children.Add(brand);
-        brand.MouseLeftButtonDown += (_, e) => { if (e.ClickCount == 2) ToggleCompact(); else if (e.LeftButton == MouseButtonState.Pressed) DragMove(); };
         var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var add = ActionButton("＋", AddPaper, true); add.ToolTip = "新增论文 · Ctrl+N"; add.Padding = new Thickness(10, 4, 10, 4); add.FontSize = 17; AutomationProperties.SetName(add, "新增论文"); chrome.Children.Add(add);
         options.Content = "论文选项"; options.FontSize = 12; options.Padding = new Thickness(8, 6, 8, 6); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options);
@@ -93,7 +98,7 @@ public sealed class MainWindow : Window
         Grid.SetColumn(chrome, 1); heading.Children.Add(chrome);
         DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
 
-        var top = new StackPanel { Margin = new Thickness(17, 0, 17, 10) };
+        var top = new StackPanel { Margin = new Thickness(17, 0, 17, 6), Background = Brushes.Transparent };
         summary.FontSize = 11; summary.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); top.Children.Add(summary);
         AutomationProperties.SetName(search, "搜索论文、学科、期刊"); search.ToolTip = "搜索论文、学科、期刊、合作者或备注";
         search.TextChanged += (_, _) => { if (ready) Render(); };
@@ -107,6 +112,15 @@ public sealed class MainWindow : Window
         footer.Text = sync.Status; footer.FontSize = 10; footer.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); footer.TextTrimming = TextTrimming.CharacterEllipsis; foot.Child = footer;
         DockPanel.SetDock(foot, Dock.Bottom); root.Children.Add(foot);
         scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new Thickness(13, 0, 9, 0), Content = cards };
+        scroller.AllowDrop = true;
+        scroller.PreviewDragOver += (_, e) =>
+        {
+            if (!draggingPaper || DateTime.UtcNow < nextDragScroll) return;
+            var point = e.GetPosition(scroller);
+            if (point.Y < 32) scroller.ScrollToVerticalOffset(scroller.VerticalOffset - 22);
+            else if (point.Y > scroller.ActualHeight - 32) scroller.ScrollToVerticalOffset(scroller.VerticalOffset + 22);
+            nextDragScroll = DateTime.UtcNow.AddMilliseconds(80);
+        };
         root.Children.Add(scroller);
 
         tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = "论文进度 · 双击打开", Visible = true };
@@ -190,7 +204,11 @@ public sealed class MainWindow : Window
 
     private void Render()
     {
+        // A nested OLE drag loop still runs the synchronization timer. Defer rebuilding
+        // controls until drop/cancel, while continuing to receive and save remote data.
+        if (draggingPaper) return;
         Appearance.Apply(library.Settings);
+        brandIcon.Source = Appearance.CreateHeaderIcon();
         FontFamily = new FontFamily(Appearance.FontName); FontSize = library.Settings.TextSize;
         frame.Background = Appearance.Paint(Appearance.Current.Window, Appearance.Opacity * (Appearance.Current.Glass ? .25 : 1));
         frame.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .75);
@@ -221,45 +239,104 @@ public sealed class MainWindow : Window
     private Border BuildCard(Paper p)
     {
         bool small = library.Settings.Compact;
-        var card = new Border { Background = Appearance.Paint(Appearance.Current.Card, Appearance.Opacity), CornerRadius = new CornerRadius(10), BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .8), BorderThickness = new Thickness(1), Padding = new Thickness(14, small ? 10 : 13, 14, small ? 7 : 10), Margin = new Thickness(6, 0, 6, 10) };
+        var card = new Border { Tag = p.Id, Background = Appearance.Paint(Appearance.Current.Card, Appearance.Opacity), CornerRadius = new CornerRadius(10), BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .8), BorderThickness = new Thickness(1), Padding = new Thickness(11, small ? 6 : 8, 11, small ? 3 : 5), Margin = new Thickness(4, 0, 4, 6) };
         var stack = new StackPanel(); card.Child = stack;
         var header = new Grid(); header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var name = Text(p.Title, small ? 14 : 16); name.FontWeight = FontWeights.SemiBold; name.TextTrimming = TextTrimming.CharacterEllipsis; name.ToolTip = p.Title;
-        header.Children.Add(name);
-        var status = new Border { Background = Brush(p.Stages[6].Done ? "#E6F3EC" : p.Status == "待返修" ? "#FFF0DB" : "#F0F2EE"), CornerRadius = new CornerRadius(5), Padding = new Thickness(7, 3, 7, 3), Margin = new Thickness(6, 0, 4, 0), Child = Text(p.EffectiveStatus, 11, p.Status == "待返修" ? "#9D6925" : "#567062") };
-        Grid.SetColumn(status, 1); header.Children.Add(status);
+        var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll };
+        var grip = Text("⠿", 13, "#8A948C"); grip.Margin = new Thickness(0, 0, 5, 0); titleArea.Children.Add(grip);
+        var name = Text(p.Title, small ? 14 : 15); name.FontWeight = FontWeights.SemiBold; name.TextTrimming = TextTrimming.CharacterEllipsis; name.ToolTip = p.Title + "\n拖动调整优先顺序";
+        titleArea.Children.Add(name); header.Children.Add(titleArea);
+        var metadata = string.Join(" / ", new[] { p.Subject, p.Language, p.Journal }.Where(v => !string.IsNullOrWhiteSpace(v)));
+        var details = ActionButton(metadata == "" ? "补充论文资料" : "论文资料", () => EditPaper(p));
+        details.FontSize = 10 * Appearance.Scale; details.Padding = new Thickness(4, 2, 4, 2); details.Background = Brushes.Transparent; details.Foreground = Brush("#78867F");
+        details.ToolTip = (metadata == "" ? "编辑论文资料" : metadata) + "\n状态：" + p.EffectiveStatus;
+        AutomationProperties.SetName(details, p.Title + " 的论文资料"); Grid.SetColumn(details, 1); header.Children.Add(details);
         var edit = ActionButton("···", () => PaperMenu(p, card)); edit.Padding = new Thickness(7, 1, 7, 1); edit.FontSize = 17; edit.ToolTip = "资料、排序、复制、归档"; AutomationProperties.SetName(edit, p.Title + " 的操作");
         Grid.SetColumn(edit, 2); header.Children.Add(edit); stack.Children.Add(header);
-        if (!small)
-        {
-            var metadata = new[] { p.Subject, p.Language, p.Journal }.Where(v => !string.IsNullOrWhiteSpace(v));
-            var meta = Text(string.Join("  /  ", metadata.DefaultIfEmpty("点击 ··· 补充论文资料")), 11, "#8A948C"); meta.Margin = new Thickness(0, 5, 0, 0); meta.TextTrimming = TextTrimming.CharacterEllipsis; stack.Children.Add(meta);
-        }
-        var progressRow = new Grid { Margin = new Thickness(0, small ? 7 : 10, 0, 9) };
+        var progressRow = new Grid { Margin = new Thickness(0, 2, 0, 3), ToolTip = "下一步：" + (p.NextAction != "" ? p.NextAction : p.NextStage) };
         progressRow.ColumnDefinitions.Add(new ColumnDefinition()); progressRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(65 * Appearance.Scale) });
         var track = new Grid { Height = library.Settings.BarHeight, VerticalAlignment = VerticalAlignment.Center };
         track.Children.Add(new Border { Background = Brush("#EBEFE9"), CornerRadius = new CornerRadius(5) });
         var inner = new Grid(); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, p.Progress), GridUnitType.Star) }); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, 100 - p.Progress), GridUnitType.Star) });
         var fill = new Border { Background = Brush(p.Stages[6].Done ? "#2F8B6D" : p.Status == "待返修" ? "#C69544" : "#4A9E83"), CornerRadius = new CornerRadius(5) }; inner.Children.Add(fill); track.Children.Add(inner);
         AutomationProperties.SetName(track, $"{p.Title} 进度 {p.Progress}%"); progressRow.Children.Add(track);
-        var pct = Text($"{p.Progress}%", small ? 21 : 25); pct.Foreground = Appearance.Paint(Appearance.ProgressInk); pct.FontWeight = FontWeights.SemiBold; pct.HorizontalAlignment = HorizontalAlignment.Right; Grid.SetColumn(pct, 1); progressRow.Children.Add(pct); stack.Children.Add(progressRow);
-        var checks = new WrapPanel();
+        var pct = Text($"{p.Progress}%", small ? 20 : 23); pct.Foreground = Appearance.Paint(Appearance.ProgressInk); pct.FontWeight = FontWeights.SemiBold; pct.HorizontalAlignment = HorizontalAlignment.Right; Grid.SetColumn(pct, 1); progressRow.Children.Add(pct); stack.Children.Add(progressRow);
+        var checks = new StageFlowPanel();
         for (int i = 0; i < p.Stages.Count; i++)
         {
             int index = i; var stage = p.Stages[i];
             var cb = new CheckBox { Content = stage.Skipped ? stage.Name + "（免）" : stage.Name, IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontSize = (small ? 11 : 12) * Appearance.Scale };
             cb.SetResourceReference(StyleProperty, "StageCheck"); AutomationProperties.SetName(cb, p.Title + " · " + stage.Name);
+            cb.Padding = new Thickness(small ? 4 : 5, 3, small ? 4 : 5, 3); cb.Margin = new Thickness(0, 0, 4, 3);
             cb.ToolTip = stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : "点击切换；进度按适用阶段等权计算";
             cb.Click += (_, _) => Commit(l => l.Papers.Single(x => x.Id == p.Id).ToggleStage(index, cb.IsChecked == true)); checks.Children.Add(cb);
         }
         stack.Children.Add(checks);
-        if (!small || !string.IsNullOrEmpty(p.NextAction) || p.DueDate != null)
+        var due = Text(p.DueDate != null && !p.Stages[6].Done ? p.DeadlineText : $"已开始 {p.ElapsedDays} 天", 11, p.DueDate?.Date < DateTime.Today && !p.Stages[6].Done ? "#BE624C" : "#8A948C");
+        due.Margin = new Thickness(4, 0, 5, 3); due.ToolTip = $"开始日期：{p.StartDate:yyyy-MM-dd}\n已开始 {p.ElapsedDays} 天"; checks.Children.Add(due);
+        if (!string.IsNullOrWhiteSpace(p.NextAction))
         {
-            var bottom = new Grid { Margin = new Thickness(0, 3, 0, 0) }; bottom.ColumnDefinitions.Add(new ColumnDefinition()); bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var next = Text("下一步  " + (p.NextAction != "" ? p.NextAction : p.NextStage), 11, "#6C7C70"); next.TextTrimming = TextTrimming.CharacterEllipsis; next.ToolTip = p.NextAction; bottom.Children.Add(next);
-            var due = Text(p.DueDate != null && !p.Stages[6].Done ? p.DeadlineText : $"已开始 {p.ElapsedDays} 天", 11, p.DueDate?.Date < DateTime.Today && !p.Stages[6].Done ? "#BE624C" : "#8A948C"); due.Margin = new Thickness(8, 0, 0, 0); Grid.SetColumn(due, 1); bottom.Children.Add(due); stack.Children.Add(bottom);
+            var next = Text("下一步 " + p.NextAction, 11, "#6C7C70"); next.MaxWidth = 150 * Appearance.Scale; next.TextTrimming = TextTrimming.CharacterEllipsis; next.ToolTip = p.NextAction; next.Margin = new Thickness(4, 0, 0, 3); checks.Children.Add(next); checks.OptionalTail = next;
         }
+        AttachPaperDrag(card, p.Id);
         return card;
+    }
+
+    private static DependencyObject? ParentOf(DependencyObject node) => node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+    private static bool InteractiveSource(DependencyObject? source)
+    {
+        for (var node = source; node != null; node = ParentOf(node))
+            if (node is ButtonBase or TextBoxBase or ComboBox or Thumb or ScrollBar) return true;
+        return false;
+    }
+    private void DragWidget(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || e.ClickCount != 1 || InteractiveSource(e.OriginalSource as DependencyObject)) return;
+        for (var node = e.OriginalSource as DependencyObject; node != null; node = ParentOf(node))
+            if (node is Border { Tag: string }) return; // Card gestures belong to paper ordering.
+        if (Mouse.LeftButton != MouseButtonState.Pressed) return;
+        e.Handled = true; DragMove(); SaveWindow();
+    }
+    private void AttachPaperDrag(Border card, string id)
+    {
+        Point? start = null;
+        card.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            start = InteractiveSource(e.OriginalSource as DependencyObject) ? null : e.GetPosition(card);
+            if (start != null) { card.CaptureMouse(); e.Handled = true; }
+        };
+        card.PreviewMouseLeftButtonUp += (_, _) => { start = null; if (card.IsMouseCaptured) card.ReleaseMouseCapture(); };
+        card.LostMouseCapture += (_, _) => { if (!draggingPaper) start = null; };
+        card.PreviewMouseMove += (_, e) =>
+        {
+            if (start == null || e.LeftButton != MouseButtonState.Pressed || draggingPaper) return;
+            var point = e.GetPosition(card);
+            if (Math.Abs(point.X - start.Value.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(point.Y - start.Value.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            start = null; draggingPaper = true; draggedPaperId = id;
+            card.ReleaseMouseCapture();
+            try { DragDrop.DoDragDrop(card, new DataObject(PaperDragFormat, id), DragDropEffects.Move); }
+            finally { draggingPaper = false; draggedPaperId = null; Render(); }
+            e.Handled = true;
+        };
+        void ClearMarker() { card.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .8); card.BorderThickness = new Thickness(1); }
+        card.AllowDrop = true;
+        card.DragOver += (_, e) =>
+        {
+            bool valid = draggingPaper && draggedPaperId != id && e.Data.GetData(PaperDragFormat) is string value && value == draggedPaperId;
+            e.Effects = valid ? DragDropEffects.Move : DragDropEffects.None; e.Handled = true;
+            if (!valid) { ClearMarker(); return; }
+            card.BorderBrush = Appearance.Paint(Appearance.Current.Accent);
+            card.BorderThickness = e.GetPosition(card).Y < card.ActualHeight / 2 ? new Thickness(1, 3, 1, 1) : new Thickness(1, 1, 1, 3);
+        };
+        card.DragLeave += (_, _) => ClearMarker();
+        card.Drop += (_, e) =>
+        {
+            ClearMarker(); e.Handled = true;
+            if (!draggingPaper || e.Data.GetData(PaperDragFormat) is not string source || source != draggedPaperId || source == id) return;
+            var visible = cards.Children.OfType<Border>().Select(c => c.Tag as string).Where(x => x != null).Cast<string>().ToList();
+            bool after = e.GetPosition(card).Y >= card.ActualHeight / 2;
+            if (Commit(l => { if (PaperOrder.MoveVisible(l.Papers, visible, source, id, after)) l.Papers.Single(p => p.Id == source).Record("调整论文优先顺序"); }, "已保存优先顺序")) sort.SelectedIndex = 0;
+        };
     }
 
     private void PaperMenu(Paper p, FrameworkElement anchor)

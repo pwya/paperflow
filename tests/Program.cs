@@ -50,4 +50,5 @@ var recovered = storage.Load(); Check(recovered.Papers.Count == 1 && storage.Rec
 Check(Directory.GetFiles(directory, "papers.damaged-*").Length == 1, "preserve corrupted data for recovery");
 Check(storage.Load().Papers.Count == 1, "recovery repairs active file");
 SyncTests.Run(Check);
+PaperOrderTests.Run(Check);
 Console.WriteLine($"PASS: {checks} checks. Test data: {directory}");

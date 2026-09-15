@@ -34,6 +34,21 @@ public static class Appearance
     {
         var c = (Color)ColorConverter.ConvertFromString(color); c.A = (byte)Math.Clamp(Math.Round(alpha * 255), 0, 255); return new SolidColorBrush(c);
     }
+    public static ImageSource CreateHeaderIcon()
+    {
+        var drawing = new DrawingGroup();
+        using (var canvas = drawing.Open())
+        {
+            var accent = Paint(Current.Accent); var ink = Paint(AccentText);
+            canvas.DrawRoundedRectangle(accent, null, new Rect(0, 0, 26, 26), 6, 6);
+            canvas.DrawGeometry(ink, null, Geometry.Parse("M7,5 L16,5 L20,9 L20,21 L7,21 Z"));
+            var line = new Pen(accent, 1.3);
+            canvas.DrawLine(line, new Point(10, 9), new Point(15, 9));
+            canvas.DrawLine(line, new Point(10, 12), new Point(17, 12));
+            canvas.DrawGeometry(null, new Pen(accent, 1.8), Geometry.Parse("M10,16 L12,18 L17,14"));
+        }
+        drawing.Freeze(); return new DrawingImage(drawing);
+    }
     public static void Apply(Preferences p)
     {
         Current = Presets.FirstOrDefault(x => x.Name == p.Theme) ?? Presets[0];

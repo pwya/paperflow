@@ -8,10 +8,10 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>PaperFlow</AssemblyName>
     <RootNamespace>PaperFlow</RootNamespace>
-    <Version>1.4.0</Version>
+    <Version>1.4.1</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Product>PaperFlow</Product>
-    <Description>PaperFlow 离线论文投稿进度桌面挂件</Description>
+    <Description>PaperFlow 离线论文投稿进度桌面小部件</Description>
   </PropertyGroup>
   <ItemGroup><Resource Include="Assets\app.ico"/></ItemGroup>
 </Project>

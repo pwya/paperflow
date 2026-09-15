@@ -71,6 +71,9 @@ public sealed class MainWindow : Window
         store = storage; library = initial; sync = synchronization;
         Title = "PaperFlow";
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/app.ico"));
+        // A desktop widget lives on the wallpaper, not in the taskbar or Alt+Tab list.
+        // It keeps running and stays reachable from the tray icon.
+        ShowInTaskbar = false;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResizeWithGrip; AllowsTransparency = true; Background = Brushes.Transparent;
         FontFamily = new FontFamily(library.Settings.FontName); FontSize = library.Settings.TextSize;
         MinWidth = 480; MinHeight = 400;
@@ -86,7 +89,7 @@ public sealed class MainWindow : Window
         root.MouseLeftButtonDown += DragWidget;
         frame.Child = root;
 
-        var heading = new Grid { Margin = new Thickness(14, 8, 10, 5), Background = Brushes.Transparent, ToolTip = "拖动标题栏或空白处移动挂件" };
+        var heading = new Grid { Margin = new Thickness(14, 8, 10, 5), Background = Brushes.Transparent, ToolTip = "拖动标题栏或空白处移动小部件" };
         heading.ColumnDefinitions.Add(new ColumnDefinition()); heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var brand = new StackPanel { Orientation = Orientation.Horizontal };
         brand.Children.Add(brandIcon);
@@ -97,7 +100,8 @@ public sealed class MainWindow : Window
         options.Content = "论文选项"; options.FontSize = 12; options.Padding = new Thickness(8, 6, 8, 6); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options);
         pin.FontSize = 12; pin.Padding = new Thickness(8, 6, 8, 6); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin);
         chrome.Children.Add(ActionButton("设置", OpenSettings));
-        chrome.Children.Add(ActionButton("—", () => WindowState = WindowState.Minimized));
+        // No taskbar button means minimising would hide the widget with nowhere to return
+        // from, so the only place-away control is the collapse-to-tray button.
         var close = ActionButton("×", Close); close.ToolTip = "收起到系统托盘，双击托盘图标恢复"; chrome.Children.Add(close);
         Grid.SetColumn(chrome, 1); heading.Children.Add(chrome);
         DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
@@ -430,7 +434,7 @@ public sealed class MainWindow : Window
     private void ShowHistory(Paper p)
     {
         var box = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(18), Text = string.Join("\n\n", p.History.Select(h => $"{h.At:yyyy-MM-dd HH:mm:ss}   {h.Description}")) };
-        new Window { Title = "修改记录 · " + p.Title, Owner = this, Width = 560, Height = 500, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = box }.ShowDialog();
+        new Window { Title = "修改记录 · " + p.Title, Owner = this, Width = 560, Height = 500, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = box }.ShowDialog();
     }
     private void OpenSettings()
     {
@@ -441,7 +445,7 @@ public sealed class MainWindow : Window
     }
     private void OpenOptions()
     {
-        var window = new Window { Title = "论文选项", Width = 490, Height = Math.Min(760, SystemParameters.WorkArea.Height - 30), Owner = this, ResizeMode = ResizeMode.CanResize, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var window = new Window { Title = "论文选项", Width = 490, Height = Math.Min(760, SystemParameters.WorkArea.Height - 30), Owner = this, ResizeMode = ResizeMode.CanResize, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var root = new DockPanel { Margin = new Thickness(22) }; window.Content = root;
         var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
         DockPanel.SetDock(controls, Dock.Bottom); root.Children.Add(controls);

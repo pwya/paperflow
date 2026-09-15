@@ -16,13 +16,14 @@ public sealed class PaperEditor : Window
         Result = paper;
         Title = "论文资料"; Width = 660; Height = Math.Min(780, SystemParameters.WorkArea.Height); MinHeight = 430; MinWidth = 530;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ShowInTaskbar = true;
         var root = new DockPanel { Margin = new Thickness(22) }; Content = root;
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
         DockPanel.SetDock(actions, Dock.Bottom); root.Children.Add(actions);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         root.Children.Add(scroll); var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; scroll.Content = body;
         var headline = MainWindow.Text("让下一步更清楚", 22); headline.Margin = new Thickness(0, 0, 0, 6); body.Children.Add(headline);
-        var caption = MainWindow.Text("七阶段在挂件上直接勾选；这里保存论文的完整资料。", 12, "#78867F"); caption.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(caption);
+        var caption = MainWindow.Text("七阶段在小部件上直接勾选；这里保存论文的完整资料。", 12, "#78867F"); caption.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(caption);
 
         TextBox Field(string label, string value, bool multiline = false)
         {
@@ -55,7 +56,7 @@ public sealed class PaperEditor : Window
         var outcome = Field("结局", paper.Outcome);
         var notes = Field("备注 / 投稿与返修历史", paper.Notes, true);
         body.Children.Add(MainWindow.Text($"已开始 {paper.ElapsedDays} 天   ·   上次编辑 {paper.UpdatedAt:yyyy-MM-dd HH:mm}", 11, "#78867F"));
-        body.Children.Add(new TextBlock { Text = "进度表示适用阶段的完成比例。勾选“收录”后，挂件显示已录用；若你用“收录”表示数据库收录，可在结局中另记录用时间。", TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = MainWindow.Brush("#78867F"), Margin = new Thickness(0, 10, 0, 0) });
+        body.Children.Add(new TextBlock { Text = "进度表示适用阶段的完成比例。勾选“收录”后，小部件显示已录用；若你用“收录”表示数据库收录，可在结局中另记录用时间。", TextWrapping = TextWrapping.Wrap, FontSize = 11, Foreground = MainWindow.Brush("#78867F"), Margin = new Thickness(0, 10, 0, 0) });
         var cancel = MainWindow.ActionButton("取消", () => DialogResult = false); cancel.IsCancel = true; actions.Children.Add(cancel);
         var save = MainWindow.ActionButton("保存资料", () =>
         {

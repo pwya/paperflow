@@ -17,6 +17,8 @@ public sealed class SettingsWindow : Window
         Result = JsonSerializer.Deserialize<Preferences>(JsonSerializer.Serialize(settings))!;
         Title = "外观与设置"; Width = 490; Height = Math.Min(780, SystemParameters.WorkArea.Height - 30); MinHeight = 420;
         ResizeMode = ResizeMode.CanResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        // The widget itself stays out of the taskbar; a window the user opened should not.
+        ShowInTaskbar = true;
         // Keep the settings form legible while a translucent/dark widget is previewed.
         Background = Brushes.White; Foreground = new SolidColorBrush(Color.FromRgb(36, 53, 47)); FontSize = 13;
         Resources["Ink"] = Foreground; Resources["Muted"] = Brushes.SlateGray; Resources["Card"] = Brushes.White;
@@ -28,7 +30,7 @@ public sealed class SettingsWindow : Window
         var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; scroll.Content = body;
         TextBlock Label(string text, double size = 13) { var label = new TextBlock { Text = text, FontSize = size, Foreground = Foreground, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9, 0, 6) }; body.Children.Add(label); return label; }
         void Preview() { if (ready) preview(JsonSerializer.Deserialize<Preferences>(JsonSerializer.Serialize(Result))!); }
-        Label("让挂件融入你的桌面", 21);
+        Label("让小部件融入你的桌面", 21);
         Label("外观即时预览；取消会恢复原来的设置。", 11);
         Label("主题");
         var themes = new ComboBox { ItemsSource = Appearance.Presets.Select(p => p.Name).ToArray(), SelectedItem = Result.Theme }; body.Children.Add(themes);
@@ -64,7 +66,7 @@ public sealed class SettingsWindow : Window
         Label("论文同步与备份", 16);
         Label(Result.SyncFolder == "" ? "当前为本机保存。通过 OneDrive 中的固定启动入口打开，即可连接其 data 目录。" : "正在使用 OneDrive 文件夹\n" + Result.SyncFolder, 11);
         if (Result.SyncFolder != "") body.Children.Add(MainWindow.ActionButton("打开同步资料文件夹", () => OpenFolder(Result.SyncFolder)));
-        Label("其他电脑收到文件后，挂件自动刷新。云端到达时间由 OneDrive 决定。字体、主题和窗口位置只保存在本机。", 11);
+        Label("其他电脑收到文件后，小部件自动刷新。云端到达时间由 OneDrive 决定。字体、主题和窗口位置只保存在本机。", 11);
         var backup = new StackPanel { Orientation = Orientation.Horizontal }; backup.Children.Add(MainWindow.ActionButton("导出备份", export)); backup.Children.Add(MainWindow.ActionButton("导入备份", import)); backup.Children.Add(MainWindow.ActionButton("本地资料", () => OpenFolder(directory))); body.Children.Add(backup);
         Label(Product.Name + " 版本 " + Product.Version + " · 本地离线可用\n× 收起到托盘；双击托盘图标恢复。更新时请先从托盘菜单退出，再打开固定启动入口。", 11);
         var cancel = MainWindow.ActionButton("取消", () => DialogResult = false); cancel.IsCancel = true; buttons.Children.Add(cancel);

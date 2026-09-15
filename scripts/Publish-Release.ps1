@@ -13,6 +13,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Source snapshot failed.' }
     $source = Join-Path $build 'source'
     Expand-Archive -LiteralPath $snapshot -DestinationPath $source
+    & (Join-Path $source 'scripts/Test-Channel.ps1')
     # Build the committed snapshot, even if someone edits the worktree during compilation.
     [xml]$project = Get-Content (Join-Path $source 'PaperProgress/PaperProgress.csproj')
     $version = [string]$project.Project.PropertyGroup.Version
@@ -55,9 +56,7 @@ try {
         else { Copy-Item -LiteralPath $exe -Destination $deployed }
         Copy-Item -LiteralPath $launcher -Destination (Join-Path $target 'PaperProgress.Launcher.exe') -Force
         $manifestPath = Join-Path $target 'channel.json'
-        $temporary = $manifestPath + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
-        [IO.File]::WriteAllText($temporary, ($channel | ConvertTo-Json), $encoding)
-        if (Test-Path -LiteralPath $manifestPath) { [IO.File]::Replace($temporary, $manifestPath, $null) } else { [IO.File]::Move($temporary, $manifestPath) }
+        & (Join-Path $source 'scripts/Write-Channel.ps1') -Path $manifestPath -Content ($channel | ConvertTo-Json)
         # Deliberately never copy, replace, enumerate or package the target data folder.
         Write-Output "Private app deployed: $target (data untouched)."
     }

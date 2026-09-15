@@ -130,7 +130,8 @@ public sealed class MainWindow : Window
         sort.SelectionChanged += (_, _) => { if (ready) Render(); };
         DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
 
-        var foot = new Border { Padding = new Thickness(20, 8, 20, 10), BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = Brush("#E0E5DD") };
+        var foot = new Border { Padding = new Thickness(20, 8, 20, 10), BorderThickness = new Thickness(0, 1, 0, 0) };
+        foot.SetResourceReference(Border.BorderBrushProperty, "Line");
         footer.Text = sync.Status; footer.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); footer.TextTrimming = TextTrimming.CharacterEllipsis; foot.Child = footer;
         DockPanel.SetDock(foot, Dock.Bottom); root.Children.Add(foot);
         pager.Children.Add(ActionButton("‹ 上一页", () => TurnPage(-1)));

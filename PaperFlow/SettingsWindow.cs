@@ -29,7 +29,10 @@ public sealed class SettingsWindow : Window
         ShowInTaskbar = true;
         // Keep the settings form legible while a translucent/dark widget is previewed.
         // 设置窗口跟着主题走（深色主题就是深色的），不再固定白底。
-        Background = MainWindow.Brush(Appearance.Current.Window); Foreground = MainWindow.Brush(Appearance.Current.Ink); FontSize = 13 * scale;
+        // 窗口自己也要跟着主题实时变，否则换了主题之后控件变成浅色文字、窗口还是深色底，就成了看不清。
+        SetResourceReference(BackgroundProperty, "WindowBackground");
+        SetResourceReference(ForegroundProperty, "Ink");
+        FontSize = 13 * scale;
         var root = new DockPanel { Margin = new Thickness(18 * scale) }; Content = root;
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14 * scale, 0, 0) }; DockPanel.SetDock(buttons, Dock.Bottom); root.Children.Add(buttons);
 
@@ -48,7 +51,7 @@ public sealed class SettingsWindow : Window
 
         TextBlock Label(Panel page, string text, double size = 13)
         {
-            var label = new TextBlock { Text = text, FontSize = size * scale, Foreground = Foreground, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9 * Appearance.Scale, 0, 6 * Appearance.Scale) };
+            var label = new TextBlock { Text = text, FontSize = size * scale, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9 * Appearance.Scale, 0, 6 * Appearance.Scale) };
             page.Children.Add(label); return label;
         }
         void Preview() { if (ready) preview(JsonSerializer.Deserialize<Preferences>(JsonSerializer.Serialize(Result))!); }
@@ -65,7 +68,9 @@ public sealed class SettingsWindow : Window
         ListBoxItem? selected = null;
         foreach (var group in Themes.Grouped())
         {
-            themeList.Items.Add(new ListBoxItem { Content = group.Key, IsEnabled = false, Focusable = false, FontSize = 11.5 * scale, Foreground = MainWindow.Brush(Appearance.Current.Muted), Padding = new Thickness(2, 10 * Appearance.Scale, 0, 4 * Appearance.Scale), Background = Brushes.Transparent });
+            var heading = new ListBoxItem { Content = group.Key, IsEnabled = false, Focusable = false, FontSize = 11.5 * scale, Padding = new Thickness(2, 10 * Appearance.Scale, 0, 4 * Appearance.Scale), Background = Brushes.Transparent };
+            heading.SetResourceReference(ForegroundProperty, "Muted");
+            themeList.Items.Add(heading);
             foreach (var theme in group)
             {
                 var row = ThemeRow(theme);
@@ -114,7 +119,8 @@ public sealed class SettingsWindow : Window
         var size = new Slider { Minimum = 9, Maximum = 36, TickFrequency = 1, IsSnapToTickEnabled = true, Value = Result.TextSize, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; look.Children.Add(size);
         var zoomLabel = Label(look, "界面缩放（文字和间距一起缩放）");
         var zoom = new Slider { Minimum = 80, Maximum = 200, TickFrequency = 5, IsSnapToTickEnabled = true, Value = Result.UiScale * 100, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; look.Children.Add(zoom);
-        var fit = new TextBlock { FontSize = 11 * scale, Foreground = Brushes.SlateGray, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8 * Appearance.Scale) }; look.Children.Add(fit);
+        var fit = new TextBlock { FontSize = 11 * scale, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8 * Appearance.Scale) };
+        fit.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); look.Children.Add(fit);
         var grow = new CheckBox { Content = "调整字号或界面缩放时，自动放大窗口（最多占屏幕工作区的一半）", IsChecked = Result.AutoGrowWindow, Margin = new Thickness(0, 4 * Appearance.Scale, 0, 8 * Appearance.Scale) }; look.Children.Add(grow);
         grow.Click += (_, _) => { Result.AutoGrowWindow = grow.IsChecked == true; Preview(); };
         void RefreshFit()
@@ -174,12 +180,18 @@ public sealed class SettingsWindow : Window
     private static ListBoxItem ThemeRow(Theme theme)
     {
         var swatch = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        // 色点必须是每套主题自己的固定颜色，不能跟着当前主题变。
         foreach (var color in new[] { theme.Window, theme.Card, theme.Accent })
-            swatch.Children.Add(new System.Windows.Shapes.Ellipse { Width = 12, Height = 12, Margin = new Thickness(0, 0, 3, 0), Fill = MainWindow.Brush(color), Stroke = MainWindow.Brush("#00000022"), StrokeThickness = 1 });
+            swatch.Children.Add(new System.Windows.Shapes.Ellipse { Width = 12, Height = 12, Margin = new Thickness(0, 0, 3, 0), Fill = Appearance.Paint(color) });
         var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         line.Children.Add(swatch);
         line.Children.Add(new TextBlock { Text = theme.Name, VerticalAlignment = VerticalAlignment.Center, FontSize = 12.5 * Appearance.DialogScale });
-        if (theme.Dark) line.Children.Add(new TextBlock { Text = "深色", FontSize = 10 * Appearance.DialogScale, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Foreground = MainWindow.Brush(Appearance.Current.Muted) });
+        if (theme.Dark)
+        {
+            var dark = new TextBlock { Text = "深色", FontSize = 10 * Appearance.DialogScale, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            dark.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+            line.Children.Add(dark);
+        }
         return new ListBoxItem { Content = line, Tag = theme, Padding = new Thickness(6, 6, 6, 6), Background = Brushes.Transparent };
     }
     private static void OpenUrl(string target) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true }); } catch (Exception) { } }

@@ -11,9 +11,6 @@ namespace PaperFlow;
 public sealed class SettingsWindow : Window
 {
     public Preferences Result { get; }
-    private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string RunValue = "PaperFlow";
-    private const string LegacyRunValue = "PaperProgress";
     private bool ready;
     public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview)
     {
@@ -63,7 +60,7 @@ public sealed class SettingsWindow : Window
         Label("进度条厚度");
         var bars = new ComboBox { ItemsSource = new[] { "醒目 · 14", "粗 · 20", "特粗 · 28" }, SelectedIndex = Array.IndexOf(new[] { 14, 20, 28 }, Result.BarHeight) }; body.Children.Add(bars);
         bars.SelectionChanged += (_, _) => { Result.BarHeight = new[] { 14, 20, 28 }[Math.Max(0, bars.SelectedIndex)]; Preview(); };
-        var startup = new CheckBox { Content = "登录 Windows 时自动打开", IsChecked = IsStartupEnabled(), Margin = new Thickness(0, 18, 0, 6) }; body.Children.Add(startup);
+        var startup = new CheckBox { Content = "登录 Windows 时自动打开", IsChecked = StartupEntry.IsEnabled(), Margin = new Thickness(0, 18, 0, 6) }; body.Children.Add(startup);
         Label("论文同步与备份", 16);
         Label(Result.SyncFolder == "" ? "当前为本机保存。通过 OneDrive 中的固定启动入口打开，即可连接其 data 目录。" : "正在使用 OneDrive 文件夹\n" + Result.SyncFolder, 11);
         if (Result.SyncFolder != "") body.Children.Add(MainWindow.ActionButton("打开同步资料文件夹", () => OpenFolder(Result.SyncFolder)));
@@ -73,24 +70,10 @@ public sealed class SettingsWindow : Window
         var cancel = MainWindow.ActionButton("取消", () => DialogResult = false); cancel.IsCancel = true; buttons.Children.Add(cancel);
         buttons.Children.Add(MainWindow.ActionButton("保存设置", () =>
         {
-            try { if ((startup.IsChecked == true) != IsStartupEnabled()) SetStartup(startup.IsChecked == true, Result.LauncherPath); DialogResult = true; }
+            try { if ((startup.IsChecked == true) != StartupEntry.IsEnabled()) StartupEntry.Write(startup.IsChecked == true, Result.LauncherPath); DialogResult = true; }
             catch (Exception ex) { MessageBox.Show(this, "开机启动设置未能保存。\n" + ex.Message); }
         }, true)); ready = true;
     }
     private static void OpenFolder(string folder) { Directory.CreateDirectory(folder); System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true }); }
     private sealed class DialogOwner : System.Windows.Forms.IWin32Window { public IntPtr Handle { get; } public DialogOwner(IntPtr handle) { Handle = handle; } }
-    private static bool IsStartupEnabled()
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(RunKey);
-        return key?.GetValue(RunValue) is string || key?.GetValue(LegacyRunValue) is string;
-    }
-    private static void SetStartup(bool enabled, string launcher)
-    {
-        using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-        if (!enabled) { key.DeleteValue(RunValue, false); key.DeleteValue(LegacyRunValue, false); return; }
-        string path = launcher != "" ? launcher : Environment.ProcessPath ?? throw new IOException("找不到启动程序。");
-        if (!File.Exists(path)) throw new IOException("启动入口不可用，请从 OneDrive 中的启动器打开后再设置。");
-        key.SetValue(RunValue, "\"" + path + "\"");
-        key.DeleteValue(LegacyRunValue, false);
-    }
 }

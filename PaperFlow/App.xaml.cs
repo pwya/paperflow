@@ -54,6 +54,7 @@ public partial class App : Application
             if (syncIndex >= 0 && e.Args.Length > syncIndex + 1) library.Settings.SyncFolder = Path.GetFullPath(e.Args[syncIndex + 1]);
             int launcherIndex = Array.IndexOf(e.Args, "--launcher");
             if (launcherIndex >= 0 && e.Args.Length > launcherIndex + 1) library.Settings.LauncherPath = Path.GetFullPath(e.Args[launcherIndex + 1]);
+            StartupEntry.Migrate(library.Settings.LauncherPath);
             var sync = new SyncEngine(dataDirectory, library.Settings.SyncFolder, library);
             library.Papers = sync.Snapshot().Papers;
             storage.Save(library);

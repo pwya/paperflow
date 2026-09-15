@@ -82,7 +82,9 @@ public sealed class Preferences
     public List<string> VisiblePriorities { get; set; } = new() { "高", "中", "低" };
     public string PageMode { get; set; } = "不翻页";
     public int PageIndex { get; set; }
-    public string Theme { get; set; } = "竹青";
+    public string Theme { get; set; } = Themes.Default;
+    public string ListLayout { get; set; } = Themes.CardLayout;
+    public bool FollowSystemTheme { get; set; }
     public string AccentColor { get; set; } = "";
     public string BackgroundColor { get; set; } = "";
     public double BackgroundOpacity { get; set; } = 1;

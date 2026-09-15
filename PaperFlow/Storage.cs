@@ -102,12 +102,15 @@ public sealed class Storage
         s.VisiblePriorities = (s.VisiblePriorities ?? Paper.Priorities.ToList()).Where(Paper.Priorities.Contains).Distinct().ToList();
         if (!ViewRules.PageModes.Contains(s.PageMode)) s.PageMode = "不翻页";
         s.PageIndex = Math.Clamp(s.PageIndex, 0, ViewRules.PageCount(s) - 1);
-        s.Theme ??= "竹青"; s.AccentColor ??= ""; s.BackgroundColor ??= ""; s.FontName ??= "Microsoft YaHei UI";
+        s.Theme = Themes.IsKnown(s.Theme ?? "") ? Themes.Migrate(s.Theme!) : Themes.Default;
+        if (!Themes.Layouts.Contains(s.ListLayout)) s.ListLayout = Themes.CardLayout;
+        s.AccentColor ??= ""; s.BackgroundColor ??= ""; s.FontName ??= "Microsoft YaHei UI";
         s.SyncFolder ??= ""; s.LauncherPath ??= "";
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;
         s.TextSize = double.IsFinite(s.TextSize) ? Math.Clamp(s.TextSize, 9, 36) : 13;
         s.UiScale = double.IsFinite(s.UiScale) ? Math.Clamp(s.UiScale, 0.8, 2) : 1;
-        s.BarHeight = new[] { 14, 20, 28 }.Contains(s.BarHeight) ? s.BarHeight : 20;
+        // 0 means “follow the theme”; the rest are explicit overrides.
+        s.BarHeight = new[] { 0, 6, 14, 20, 28 }.Contains(s.BarHeight) ? s.BarHeight : 0;
         s.Width = double.IsFinite(s.Width) ? Math.Clamp(s.Width, 480, 1800) : 650;
         s.Height = double.IsFinite(s.Height) ? Math.Clamp(s.Height, 400, 1600) : 840;
         s.Left = double.IsFinite(s.Left) ? s.Left : -1; s.Top = double.IsFinite(s.Top) ? s.Top : -1;

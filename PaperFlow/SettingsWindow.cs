@@ -28,10 +28,8 @@ public sealed class SettingsWindow : Window
         // The widget itself stays out of the taskbar; a window the user opened should not.
         ShowInTaskbar = true;
         // Keep the settings form legible while a translucent/dark widget is previewed.
-        Background = Brushes.White; Foreground = new SolidColorBrush(Color.FromRgb(36, 53, 47)); FontSize = 13 * scale;
-        Resources["Ink"] = Foreground; Resources["Muted"] = Brushes.SlateGray; Resources["Card"] = Brushes.White;
-        Resources["Soft"] = new SolidColorBrush(Color.FromRgb(233, 238, 234)); Resources["Line"] = Brushes.LightGray;
-        Resources["Accent"] = new SolidColorBrush(Color.FromRgb(33, 132, 107)); Resources["AccentText"] = Brushes.White;
+        // 设置窗口跟着主题走（深色主题就是深色的），不再固定白底。
+        Background = MainWindow.Brush(Appearance.Current.Window); Foreground = MainWindow.Brush(Appearance.Current.Ink); FontSize = 13 * scale;
         var root = new DockPanel { Margin = new Thickness(18 * scale) }; Content = root;
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14 * scale, 0, 0) }; DockPanel.SetDock(buttons, Dock.Bottom); root.Children.Add(buttons);
 
@@ -58,9 +56,41 @@ public sealed class SettingsWindow : Window
         // ---------- 外观 ----------
         var look = pages[0];
         Label(look, "让外观像你自己的桌面", 20);
-        Label(look, "所有改动都会立刻作用在挂件上；点取消会恢复打开设置前的样子。", 11);
-        Label(look, "主题");
-        var themes = new ComboBox { ItemsSource = Appearance.Presets.Select(p => p.Name).ToArray(), SelectedItem = Result.Theme }; look.Children.Add(themes);
+        Label(look, "所有改动都会立刻作用在挂件上；点取消会恢复打开设置前的样子。实心预览是你正在用的那套。", 11);
+        Label(look, "布局");
+        var layoutPicker = new ComboBox { ItemsSource = Themes.Layouts, SelectedItem = Result.ListLayout }; look.Children.Add(layoutPicker);
+        layoutPicker.SelectionChanged += (_, _) => { Result.ListLayout = layoutPicker.SelectedItem as string ?? Themes.CardLayout; Preview(); };
+        Label(look, "主题（按风格分组，共 " + Themes.All.Length + " 套）");
+        var themeList = new ListBox { MaxHeight = 280 * scale, BorderThickness = new Thickness(0), Background = Brushes.Transparent };
+        ListBoxItem? selected = null;
+        foreach (var group in Themes.Grouped())
+        {
+            themeList.Items.Add(new ListBoxItem { Content = group.Key, IsEnabled = false, Focusable = false, FontSize = 11.5 * scale, Foreground = MainWindow.Brush(Appearance.Current.Muted), Padding = new Thickness(2, 10 * Appearance.Scale, 0, 4 * Appearance.Scale), Background = Brushes.Transparent });
+            foreach (var theme in group)
+            {
+                var row = ThemeRow(theme);
+                if (theme.Name == Themes.Migrate(Result.Theme)) selected = row;
+                themeList.Items.Add(row);
+            }
+        }
+        look.Children.Add(themeList);
+        themeList.SelectionChanged += (_, _) =>
+        {
+            if (themeList.SelectedItem is ListBoxItem item && item.Tag is Theme picked)
+            {
+                Result.Theme = picked.Name; Result.AccentColor = ""; Result.BackgroundColor = "";
+                if (picked.Glass) Result.BackgroundOpacity = 0.35;
+                Preview();
+            }
+        };
+        if (selected != null) themeList.SelectedItem = selected;
+        var follow = new CheckBox { Content = "跟随 Windows 的浅色/深色设置", IsChecked = Result.FollowSystemTheme, Margin = new Thickness(0, 8 * Appearance.Scale, 0, 4 * Appearance.Scale) }; look.Children.Add(follow);
+        follow.Click += (_, _) => { Result.FollowSystemTheme = follow.IsChecked == true; Preview(); };
+        Label(look, "进度条厚度");
+        var barLabels = new[] { "跟随主题", "细 · 6", "中 · 14", "粗 · 20", "特粗 · 28" };
+        var barValues = new[] { 0, 6, 14, 20, 28 };
+        var bars = new ComboBox { ItemsSource = barLabels, SelectedIndex = Math.Max(0, Array.IndexOf(barValues, Result.BarHeight)) }; look.Children.Add(bars);
+        bars.SelectionChanged += (_, _) => { Result.BarHeight = barValues[Math.Max(0, bars.SelectedIndex)]; Preview(); };
         var colors = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10 * Appearance.Scale, 0, 2) }; look.Children.Add(colors);
         void Pick(bool accent)
         {
@@ -76,7 +106,6 @@ public sealed class SettingsWindow : Window
         var opacity = new Slider { Minimum = 5, Maximum = 100, Value = Result.BackgroundOpacity * 100, TickFrequency = 5, IsSnapToTickEnabled = true, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; look.Children.Add(opacity);
         void OpacityChanged() { Result.BackgroundOpacity = opacity.Value / 100; opacityLabel.Text = $"背景不透明度 · {opacity.Value:0}%（文字保持清晰）"; Preview(); }
         opacity.ValueChanged += (_, _) => OpacityChanged(); OpacityChanged();
-        themes.SelectionChanged += (_, _) => { Result.Theme = themes.SelectedItem as string ?? "竹青"; Result.AccentColor = ""; Result.BackgroundColor = ""; opacity.Value = Result.Theme == "透明" ? 35 : 100; Preview(); };
         Label(look, "字体");
         var fonts = new ComboBox { ItemsSource = Fonts.SystemFontFamilies.Select(f => f.Source).Append(Result.FontName).Distinct().OrderBy(n => n).ToList(), SelectedItem = Result.FontName, MaxDropDownHeight = 260 }; look.Children.Add(fonts);
         fonts.SelectionChanged += (_, _) => { Result.FontName = fonts.SelectedItem as string ?? "Microsoft YaHei UI"; Preview(); };
@@ -100,10 +129,6 @@ public sealed class SettingsWindow : Window
         size.ValueChanged += (_, _) => SizeChanged(); SizeChanged();
         void ZoomChanged() { Result.UiScale = zoom.Value / 100; zoomLabel.Text = $"界面缩放 · {zoom.Value:0}%（文字和间距一起缩放）"; Preview(); RefreshFit(); }
         zoom.ValueChanged += (_, _) => ZoomChanged(); ZoomChanged();
-        Label(look, "进度条厚度");
-        var bars = new ComboBox { ItemsSource = new[] { "醒目 · 14", "粗 · 20", "特粗 · 28" }, SelectedIndex = Array.IndexOf(new[] { 14, 20, 28 }, Result.BarHeight) }; look.Children.Add(bars);
-        bars.SelectionChanged += (_, _) => { Result.BarHeight = new[] { 14, 20, 28 }[Math.Max(0, bars.SelectedIndex)]; Preview(); };
-
         // ---------- 视图与分页 ----------
         var view = pages[1];
         Label(view, "列表怎么显示", 20);
@@ -145,6 +170,18 @@ public sealed class SettingsWindow : Window
         }, true)); ready = true; RefreshFit();
     }
     private static void OpenFolder(string folder) { Directory.CreateDirectory(folder); OpenUrl(folder); }
+    // 主题列表的一行：三个色点做预览（底色 / 卡片 / 强调色），右边是名字。
+    private static ListBoxItem ThemeRow(Theme theme)
+    {
+        var swatch = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        foreach (var color in new[] { theme.Window, theme.Card, theme.Accent })
+            swatch.Children.Add(new System.Windows.Shapes.Ellipse { Width = 12, Height = 12, Margin = new Thickness(0, 0, 3, 0), Fill = MainWindow.Brush(color), Stroke = MainWindow.Brush("#00000022"), StrokeThickness = 1 });
+        var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        line.Children.Add(swatch);
+        line.Children.Add(new TextBlock { Text = theme.Name, VerticalAlignment = VerticalAlignment.Center, FontSize = 12.5 * Appearance.DialogScale });
+        if (theme.Dark) line.Children.Add(new TextBlock { Text = "深色", FontSize = 10 * Appearance.DialogScale, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0), Foreground = MainWindow.Brush(Appearance.Current.Muted) });
+        return new ListBoxItem { Content = line, Tag = theme, Padding = new Thickness(6, 6, 6, 6), Background = Brushes.Transparent };
+    }
     private static void OpenUrl(string target) { try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true }); } catch (Exception) { } }
     private sealed class DialogOwner : System.Windows.Forms.IWin32Window { public IntPtr Handle { get; } public DialogOwner(IntPtr handle) { Handle = handle; } }
 }

@@ -8,16 +8,17 @@ namespace PaperFlow;
 
 public static class Appearance
 {
-    public sealed record Palette(string Name, string Window, string Card, string Ink, string Muted, string Accent, string Soft, string Border, bool Glass = false);
-    public static readonly Palette[] Presets = {
-        new("竹青", "#F3F6F1", "#FFFFFF", "#24392F", "#74857A", "#21846B", "#E6F0E9", "#D8E2D8"),
-        new("纸白", "#F2F2F2", "#FFFFFF", "#2D333B", "#737C88", "#596776", "#ECEFF2", "#DCDDE2"),
-        new("雾蓝", "#EFF4FA", "#FAFCFF", "#253A55", "#6C819B", "#477FB3", "#E2EDF7", "#CEDCEC"),
-        new("暖杏", "#FAF3E9", "#FFFCF7", "#544237", "#9A8575", "#B87944", "#F4E8D8", "#EADBC9"),
-        new("夜墨", "#181E27", "#252D39", "#E9EDF5", "#A6B2C4", "#70BDB0", "#344653", "#404C5C"),
-        new("透明", "#18242D", "#1D2B36", "#FFFFFF", "#D2DEE7", "#91DCC5", "#354C55", "#769291", true)
-    };
-    public static Palette Current { get; private set; } = Presets[0];
+    public static Theme Current { get; private set; } = Themes.Find(Themes.Default);
+    public static string Layout { get; private set; } = Themes.CardLayout;
+    public static string ChipStyle { get; private set; } = "text";
+    public static int BarHeight { get; private set; } = 6;
+    public static bool Dark => Current.Dark;
+    public static bool Shadow => Current.Shadow;
+    public static string HeaderStyle => Current.HeaderStyle;
+    public static double CardRadius => Current.CardRadius * Scale;
+    public static double ButtonRadius => Current.ButtonRadius * Scale;
+    public static double ChipRadius => Current.ChipRadius * Scale;
+    public static string[] Tags => Current.Tags ?? Array.Empty<string>();
     // 界面缩放：间距、圆点、进度条、控件尺寸；字号：文字大小。两者相乘决定文字实际大小。
     public static double Scale { get; private set; } = 1;
     public static double TextScale { get; private set; } = 1;
@@ -28,8 +29,21 @@ public static class Appearance
     public static double Opacity { get; private set; } = 1;
     public static string FontName { get; private set; } = "Microsoft YaHei UI";
     public static string AccentText => Luminance(Current.Accent) > 0.5 ? "#182D29" : "#FFFFFF";
-    public static string ProgressInk => Current.Name is "夜墨" or "透明" ? Current.Accent : Mix(Current.Accent, "#18352B", 0.25);
+    public static string ProgressInk => Dark ? Current.Accent : Mix(Current.Accent, "#18352B", 0.25);
+    // 百分比在标题行右侧，字号和颜色跟着风格走：纸感/标签/极简用次要灰，柔光/夜航才用强调色。
+    public static double PercentSize => Current.Family switch { "纸感" => 18, "柔光" => 21, "夜航" => 20, "标签" => 18, "极简" => 16, _ => 23 };
+    public static bool PercentAccent => Current.Family is "柔光" or "夜航";
     public static bool IsColor(string color) => color.Length == 0 || System.Text.RegularExpressions.Regex.IsMatch(color, "^#[0-9a-fA-F]{6}$");
+    // Windows 的“应用模式”：浅色 = 1，深色 = 0。读不到就当作浅色。
+    public static bool SystemIsDark()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return key?.GetValue("AppsUseLightTheme") is int value && value == 0;
+        }
+        catch (Exception) { return false; }
+    }
     private static double Luminance(string color) { var c = (Color)ColorConverter.ConvertFromString(color); return (c.R * .299 + c.G * .587 + c.B * .114) / 255; }
     private static string Mix(string a, string b, double weight)
     {
@@ -57,15 +71,22 @@ public static class Appearance
     }
     public static void Apply(Preferences p)
     {
-        Current = Presets.FirstOrDefault(x => x.Name == p.Theme) ?? Presets[0];
+        Current = Themes.Find(p.Theme);
+        if (p.FollowSystemTheme) Current = Themes.Follow(Current, SystemIsDark());
         if (IsColor(p.AccentColor) && p.AccentColor != "") Current = Current with { Accent = p.AccentColor };
         if (IsColor(p.BackgroundColor) && p.BackgroundColor != "") Current = Current with { Window = p.BackgroundColor, Card = Mix(p.BackgroundColor, Current.Ink, .06) };
         Scale = p.UiScale;
         TextScale = p.TextSize / 13 * p.UiScale;
         EffectiveTextSize = 13 * TextScale;
+        Layout = Themes.Layouts.Contains(p.ListLayout) ? p.ListLayout : Themes.CardLayout;
+        BarHeight = p.BarHeight > 0 ? p.BarHeight : Current.BarHeight;
+        // The list layout drops the chip blocks regardless of the theme, otherwise rows get too tall.
+        ChipStyle = Layout == Themes.ListLayout ? "text" : Current.ChipStyle;
         Opacity = p.BackgroundOpacity; FontName = p.FontName;
         var resources = Application.Current.Resources;
         foreach (var pair in new Dictionary<string, string> { ["Ink"] = Current.Ink, ["Muted"] = Current.Muted, ["Accent"] = Current.Accent, ["AccentText"] = AccentText, ["Soft"] = Current.Soft, ["Card"] = Current.Card, ["Line"] = Current.Border, ["WindowBackground"] = Current.Window }) resources[pair.Key] = Paint(pair.Value);
+        resources["ButtonCorner"] = new CornerRadius(ButtonRadius);
+        resources["InputCorner"] = new CornerRadius(ButtonRadius);
     }
     public static SolidColorBrush Map(string original) => Paint(original switch
     {

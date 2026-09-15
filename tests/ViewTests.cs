@@ -18,6 +18,16 @@ static class ViewTests
         check(ViewRules.EstimateVisiblePapers(100, 120, 4) == 0 && ViewRules.EstimateVisiblePapers(600, 0, 4) == 0 && ViewRules.EstimateVisiblePapers(600, 120, 0) == 0, "visible estimate refuses impossible input");
         var extreme = Storage.Parse("{\"Version\":1,\"Settings\":{\"TextSize\":99,\"UiScale\":9},\"Papers\":[]}");
         check(extreme.Settings.TextSize == 36 && extreme.Settings.UiScale == 2, "font size and zoom are clamped when loading");
+        check(Themes.All.Length >= 20, "the theme catalogue ships a full set of options");
+        check(Themes.All.Select(t => t.Name).Distinct().Count() == Themes.All.Length, "theme names are unique");
+        check(Themes.All.All(t => t.Pair == "" || Themes.All.Any(o => o.Name == t.Pair)), "every light/dark pair points at a real theme");
+        check(Themes.Grouped().Count() >= 5, "themes are grouped into families for the picker");
+        check(Themes.Find("竹青").Name == "经典 · 竹青" && Themes.Find("夜墨").Dark, "legacy theme names migrate to the classic family");
+        check(Themes.Find("不存在的主题").Name == Themes.Default, "an unknown theme falls back to the default");
+        check(Themes.Follow(Themes.Find("纸感 · 竹青"), true).Name == "夜航 · 霜蓝" && Themes.Follow(Themes.Find("夜航 · 霜蓝"), false).Name == "纸感 · 竹青", "follow-system swaps between the paired light and dark themes");
+        var stored = Storage.Parse("{\"Version\":1,\"Settings\":{\"Theme\":\"暖杏\",\"ListLayout\":\"乱七八糟\",\"BarHeight\":33},\"Papers\":[]}");
+        check(stored.Settings.Theme == "经典 · 暖杏" && stored.Settings.ListLayout == Themes.CardLayout && stored.Settings.BarHeight == 0, "stored settings migrate the theme and clamp layout and bar height");
+        check(new Preferences().Theme == Themes.Default && new Preferences().ListLayout == Themes.CardLayout, "new installs start on the redesigned default");
         check(ViewRules.Apply(all, p).Select(x => x.Id).SequenceEqual(new[] { writing.Id, revision.Id, accepted.Id }), "review hidden by default, revision and accepted remain");
         p.HiddenStages.Add(6); check(ViewRules.Apply(all, p).Count == 2, "multiple hidden stages");
         p.HideSelectedStages = false; check(ViewRules.Apply(all, p).Count == 4, "hiding can be disabled");

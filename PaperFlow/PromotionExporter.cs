@@ -15,7 +15,7 @@ namespace PaperFlow;
 // desktop capture or existing runtime settings can be supplied to this exporter.
 public static class PromotionExporter
 {
-    private sealed record Scene(string File, string Title, string Description, string Detail, string Theme, string Mode, int Page, int[] Hidden, bool Bold, int Height);
+    private sealed record Scene(string File, string Title, string Description, string Detail, string Theme, string Mode, int Page, int[] Hidden, bool Bold, int Height, string Layout = Themes.CardLayout);
     public static Library CreateSample()
     {
         var library = new Library();
@@ -41,17 +41,18 @@ public static class PromotionExporter
         Directory.CreateDirectory(directory);
         var work = Path.Combine(Path.GetTempPath(), "PaperFlow-promotion-" + Guid.NewGuid().ToString("N"));
         var scenes = new[] {
-            new Scene("01-多论文总览", "把精力留给\n能推进的论文", "七个阶段，一眼看清进度。\n把在审论文暂时收起，\n让眼前的任务更清楚。", "多论文同屏  /  标题左侧三点优先级  /  右下角统一论文设置", "雾蓝", ViewRules.PageModes[0], 0, new[] {4}, true, 800),
-            new Scene("02-优先级分页", "先做重要的事", "高、中、低三档优先级。\n标题最左边的三个点，\n让轻重缓急清楚可见。", "标题左侧三点优先级  /  按优先级翻页：高 → 中 → 低", "竹青", ViewRules.PageModes[1], 0, new[] {4}, true, 540),
-            new Scene("03-阶段分页-推进", "正在推进的\n留在第一页", "把在审与收录单独分组。\n第一页只看当下能做的事，\n需要时再翻页查看其余论文。", "阶段分组  /  本页排除在审与收录", "暖杏", ViewRules.PageModes[2], 0, new[] {4,6}, true, 700),
-            new Scene("04-阶段分页-在审", "等待中的论文\n也有自己的位置", "第二页只看在审与收录。\n隐藏只改变视图，\n论文资料和进度仍完整保留。", "阶段分组  /  本页仅在审与收录", "雾蓝", ViewRules.PageModes[2], 1, new[] {4,6}, true, 540),
-            new Scene("05-夜墨与常规标题", "让桌面\n保持你的节奏", "主题、颜色、字体、字号可调。\n标题可以取消加粗，\n把小部件调成适合自己的样子。", "夜墨主题  /  常规字重  /  独立本机外观", "夜墨", ViewRules.PageModes[0], 0, new[] {4}, false, 800)
+            new Scene("01-纸感总览", "把精力留给\n能推进的论文", "七个阶段，一眼看清进度。\n标题最左边的三个点表示优先级，\n进度条细而安静。", "纸感主题  /  多论文同屏  /  右下角统一论文设置", "纸感 · 竹青", ViewRules.PageModes[0], 0, new[] {4}, true, 800),
+            new Scene("02-标签分页", "先做重要的事", "高、中、低三档优先级。\n阶段按类别分色，\n一眼看得出卡在哪一步。", "标签主题  /  按优先级翻页：高 → 中 → 低", "标签 · 蓝", ViewRules.PageModes[1], 0, new[] {4}, true, 540),
+            new Scene("03-阶段分页-推进", "正在推进的\n留在第一页", "把在审与收录单独分组。\n第一页只看当下能做的事，\n需要时再翻页查看其余论文。", "阶段分组  /  本页排除在审与收录", "纸感 · 雾蓝", ViewRules.PageModes[2], 0, new[] {4,6}, true, 700),
+            new Scene("04-阶段分页-在审", "等待中的论文\n也有自己的位置", "第二页只看在审与收录。\n隐藏只改变视图，\n论文资料和进度仍完整保留。", "深色主题  /  阶段分组  /  本页仅在审与收录", "夜航 · 霜蓝", ViewRules.PageModes[2], 1, new[] {4,6}, true, 540),
+            new Scene("05-柔光与常规标题", "让桌面\n保持你的节奏", "二十多套主题，五种排版风格，\n还可以跟随 Windows 的深浅色，\n把小部件调成适合自己的样子。", "柔光主题  /  常规字重  /  独立本机外观", "柔光 · 陶土", ViewRules.PageModes[0], 0, new[] {4}, false, 800),
+            new Scene("06-极简列表", "论文多的时候\n一屏看更多", "换成列表布局，去掉卡片，\n只用一条分隔线，\n一屏能看八到十篇。", "极简主题  /  列表布局  /  细进度条", "极简 · 白", ViewRules.PageModes[0], 0, new[] {4}, true, 800, Themes.ListLayout)
         };
         var descriptions = new List<string> { "# " + Product.Name + " " + Product.Version + " 宣传素材", "所有论文均为代码生成的虚构示例，未读取任何真实资料、同步目录或桌面画面。", "界面原图为真实 WPF 界面的 2 倍像素导出；宣传大图为 2880×1920 PNG。" };
         foreach (var scene in scenes)
         {
             var library = CreateSample();
-            library.Settings = new Preferences { Width = 1060, Height = scene.Height, Theme = scene.Theme, TextSize = 16, BarHeight = 20, TitleBold = scene.Bold, HiddenStages = scene.Hidden.ToList(), PageMode = scene.Mode, PageIndex = scene.Page, Topmost = false };
+            library.Settings = new Preferences { Width = 1060, Height = scene.Height, Theme = scene.Theme, ListLayout = scene.Layout, TextSize = 16, BarHeight = 0, TitleBold = scene.Bold, HiddenStages = scene.Hidden.ToList(), PageMode = scene.Mode, PageIndex = scene.Page, Topmost = false };
             var local = Path.Combine(work, scene.File); var storage = new Storage(local); var sync = new SyncEngine(local, "", library);
             var window = new MainWindow(storage, library, sync, true) { ShowInTaskbar = false, ShowActivated = false, Left = -20000, Top = -20000, Width = 1060, Height = scene.Height };
             window.Show(); await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); window.UpdateLayout();

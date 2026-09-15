@@ -47,6 +47,7 @@ public sealed class MainWindow : Window
     private bool ready;
     private readonly ScrollViewer scroller;
     private Action? layoutChrome;
+    private readonly List<Button> quietChrome = new();
 
     public static SolidColorBrush Brush(string color) => Appearance.Map(color);
     public static TextBlock Text(string text, double size = 13, string color = "#24352F", double scale = -1) => new() { Text = text, FontSize = size * (scale < 0 ? Appearance.TextScale : scale), Foreground = Brush(color), VerticalAlignment = VerticalAlignment.Center };
@@ -99,12 +100,12 @@ public sealed class MainWindow : Window
         heading.Children.Add(brand);
         var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var add = ActionButton("＋", AddPaper, true); add.ToolTip = "新增论文 · Ctrl+N"; add.Padding = new Thickness(10 * Appearance.Scale, 4 * Appearance.Scale, 10 * Appearance.Scale, 4 * Appearance.Scale); add.FontSize = 17 * Appearance.TextScale; AutomationProperties.SetName(add, "新增论文"); chrome.Children.Add(add);
-        options.Content = "论文选项"; options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options);
-        pin.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin);
-        chrome.Children.Add(ActionButton("设置", OpenSettings));
+        options.Content = "论文选项"; options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options); quietChrome.Add(options);
+        pin.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin); quietChrome.Add(pin);
+        var settingsButton = ActionButton("设置", OpenSettings); chrome.Children.Add(settingsButton); quietChrome.Add(settingsButton);
         // No taskbar button means minimising would hide the widget with nowhere to return
         // from, so the only place-away control is the collapse-to-tray button.
-        var close = ActionButton("×", Close); close.ToolTip = "收起到系统托盘，双击托盘图标恢复"; chrome.Children.Add(close);
+        var close = ActionButton("×", Close); close.ToolTip = "收起到系统托盘，双击托盘图标恢复"; chrome.Children.Add(close); quietChrome.Add(close);
         Grid.SetColumn(chrome, 1); heading.Children.Add(chrome);
         // Large text or a narrow window pushes the buttons onto a second row instead of
         // clipping the title. Nothing is hidden, the header just reflows.
@@ -243,6 +244,10 @@ public sealed class MainWindow : Window
         brandIcon.Source = Appearance.CreateHeaderIcon();
         FontFamily = new FontFamily(Appearance.FontName); FontSize = Appearance.EffectiveTextSize;
         summary.FontSize = 11 * Appearance.TextScale; footer.FontSize = 10 * Appearance.TextScale; pageLabel.FontSize = 12 * Appearance.TextScale;
+        // 顶部按钮跟着风格走：纸感/极简/标签只用文字，柔光用描边，夜航和经典用浅色块。
+        string chromeStyle = Appearance.HeaderStyle switch { "plain" => "QuietButton", "outline" => "OutlineButton", _ => "SoftButton" };
+        foreach (var button in quietChrome) button.SetResourceReference(StyleProperty, chromeStyle);
+        foreach (var button in quietChrome) button.Foreground = Appearance.HeaderStyle == "plain" ? Brush("#78867F") : Brush("#24352F");
         frame.Background = Appearance.Paint(Appearance.Current.Window, Appearance.Opacity * (Appearance.Current.Glass ? .25 : 1));
         frame.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .75);
         pin.Content = library.Settings.Topmost ? "已置顶" : "置顶"; pin.ToolTip = "F12 切换置顶";
@@ -311,32 +316,64 @@ public sealed class MainWindow : Window
 
     private Border BuildCard(Paper p)
     {
-        bool small = library.Settings.Compact;
-        var card = new Border { Tag = p.Id, Background = Appearance.Paint(Appearance.Current.Card, Appearance.Opacity), CornerRadius = new CornerRadius(10), BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .8), BorderThickness = new Thickness(1), Padding = new Thickness(11, small ? 6 : 8, 11, small ? 3 : 5), Margin = new Thickness(4, 0, 4, 6) };
+        bool list = Appearance.Layout == Themes.ListLayout;
+        bool small = library.Settings.Compact || list;
+        var card = new Border { Tag = p.Id };
+        if (list)
+        {
+            // 列表布局：没有卡片，只有一条分隔线，一屏能看更多篇。
+            card.Background = Brushes.Transparent;
+            card.CornerRadius = new CornerRadius(0);
+            card.BorderThickness = new Thickness(0, 0, 0, 1);
+            card.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .7);
+            card.Padding = new Thickness(3 * Appearance.Scale, 6 * Appearance.Scale, 3 * Appearance.Scale, 8 * Appearance.Scale);
+            card.Margin = new Thickness(6, 0, 6, 0);
+        }
+        else
+        {
+            card.Background = Appearance.Paint(Appearance.Current.Card, Appearance.Opacity);
+            card.CornerRadius = new CornerRadius(Appearance.CardRadius);
+            card.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .8);
+            card.BorderThickness = new Thickness(Appearance.Shadow ? 0 : 1);
+            card.Padding = new Thickness(13 * Appearance.Scale, small ? 7 * Appearance.Scale : 10 * Appearance.Scale, 13 * Appearance.Scale, small ? 5 * Appearance.Scale : 8 * Appearance.Scale);
+            card.Margin = new Thickness(5, 0, 5, 7);
+            if (Appearance.Shadow)
+            {
+                var shadow = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 12 * Appearance.Scale, ShadowDepth = 2 * Appearance.Scale, Direction = 270, Opacity = 0.10, Color = Colors.Black };
+                card.Effect = shadow;
+            }
+        }
         var stack = new StackPanel(); card.Child = stack;
         var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Margin = new Thickness(0, 0, 0, 1) };
         var dots = PriorityDots(p);
         titleArea.Children.Add(dots);
         var name = Text(p.Title, small ? 14 : 15); name.FontWeight = library.Settings.TitleBold ? FontWeights.SemiBold : FontWeights.Normal; name.TextTrimming = TextTrimming.CharacterEllipsis; name.VerticalAlignment = VerticalAlignment.Center; name.ToolTip = p.Title + "\n拖动调整优先顺序";
-        titleArea.Children.Add(name); stack.Children.Add(titleArea);
+        titleArea.Children.Add(name);
+        // 百分比放在标题行右侧，不跟进度条挤在一起，也不再抢戏。
+        var titleRow = new Grid();
+        titleRow.ColumnDefinitions.Add(new ColumnDefinition()); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        titleRow.Children.Add(titleArea);
+        var pct = Text($"{p.Progress}%", Appearance.PercentSize); pct.FontWeight = FontWeights.SemiBold; pct.VerticalAlignment = VerticalAlignment.Center; pct.Margin = new Thickness(10, 0, 0, 0);
+        pct.Foreground = Appearance.PercentAccent ? Appearance.Paint(Appearance.Current.Accent) : Brush("#78867F");
+        AutomationProperties.SetName(pct, $"{p.Title} 进度 {p.Progress}%");
+        Grid.SetColumn(pct, 1); titleRow.Children.Add(pct); stack.Children.Add(titleRow);
         var metadata = string.Join(" / ", new[] { p.Subject, p.Language, p.Journal }.Where(v => !string.IsNullOrWhiteSpace(v)));
-        var progressRow = new Grid { Margin = new Thickness(0, 2, 0, 3), ToolTip = "下一步：" + (p.NextAction != "" ? p.NextAction : p.NextStage) };
-        // The percentage and the next-action label are text, so their reserved width follows
-        // the text scale; using the layout scale alone clips them once the font grows.
-        progressRow.ColumnDefinitions.Add(new ColumnDefinition()); progressRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(85 * Appearance.TextScale) });
-        var track = new Grid { Height = library.Settings.BarHeight, VerticalAlignment = VerticalAlignment.Center };
+        var progressRow = new Grid { Margin = new Thickness(0, 4 * Appearance.Scale, 0, 5 * Appearance.Scale), ToolTip = "下一步：" + (p.NextAction != "" ? p.NextAction : p.NextStage) };
+        var track = new Grid { Height = Appearance.BarHeight * Appearance.Scale, VerticalAlignment = VerticalAlignment.Center };
         track.Children.Add(new Border { Background = Brush("#EBEFE9"), CornerRadius = new CornerRadius(5) });
         var inner = new Grid(); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, p.Progress), GridUnitType.Star) }); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, 100 - p.Progress), GridUnitType.Star) });
         var fill = new Border { Background = Brush(p.Stages[6].Done ? "#2F8B6D" : p.Status == "待返修" ? "#C69544" : "#4A9E83"), CornerRadius = new CornerRadius(5) }; inner.Children.Add(fill); track.Children.Add(inner);
         AutomationProperties.SetName(track, $"{p.Title} 进度 {p.Progress}%"); progressRow.Children.Add(track);
-        var pct = Text($"{p.Progress}%", small ? 20 : 23); pct.Foreground = Appearance.Paint(Appearance.ProgressInk); pct.FontWeight = FontWeights.SemiBold; pct.HorizontalAlignment = HorizontalAlignment.Right; Grid.SetColumn(pct, 1); progressRow.Children.Add(pct); stack.Children.Add(progressRow);
+        stack.Children.Add(progressRow);
         var checks = new StageFlowPanel();
         for (int i = 0; i < p.Stages.Count; i++)
         {
             int index = i; var stage = p.Stages[i];
             var cb = new CheckBox { Content = Paper.StageLabels[i] + (stage.Skipped ? "（免）" : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontSize = (small ? 11 : 12) * Appearance.TextScale };
-            cb.SetResourceReference(StyleProperty, "StageCheck"); AutomationProperties.SetName(cb, p.Title + " · " + Paper.StageLabels[i]);
-            cb.Padding = new Thickness(small ? 4 : 5, 3, small ? 4 : 5, 3); cb.Margin = new Thickness(0, 0, 4, 3);
+            cb.SetResourceReference(StyleProperty, Appearance.ChipStyle switch { "pill" => "StagePill", "tag" => "StageTag", "chip" => "StageCheck", _ => "StageText" });
+            AutomationProperties.SetName(cb, p.Title + " · " + Paper.StageLabels[i]);
+            if (Appearance.ChipStyle == "tag") cb.Background = Appearance.Paint(Appearance.Tags.Length == 0 ? Appearance.Current.Accent : Appearance.Tags[i % Appearance.Tags.Length]);
+            cb.Padding = new Thickness(small ? 4 : 5, 3, small ? 4 : 5, 3); cb.Margin = new Thickness(0, 0, Appearance.ChipStyle == "text" ? 12 * Appearance.Scale : 4, 3);
             cb.ToolTip = stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : i == 4 ? "勾选表示进入在审；继续勾选返修或收录后，移出在审分组。" : "点击切换；进度按适用阶段等权计算";
             cb.Click += (_, _) => Commit(l => l.Papers.Single(x => x.Id == p.Id).ToggleStage(index, cb.IsChecked == true)); checks.Children.Add(cb);
         }

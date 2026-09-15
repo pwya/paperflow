@@ -13,6 +13,22 @@ public partial class App : Application
     {
         base.OnStartup(e);
         int promoIndex = Array.IndexOf(e.Args, "--promotional-assets");
+        int galleryIndex = Array.IndexOf(e.Args, "--theme-gallery");
+        if (galleryIndex >= 0)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    if (galleryIndex + 1 >= e.Args.Length) throw new ArgumentException("请指定主题一览图的输出目录。");
+                    await ThemeGallery.Generate(Path.GetFullPath(e.Args[galleryIndex + 1]));
+                    Shutdown(0);
+                }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Shutdown(1); }
+            }));
+            return; // 主题一览同样不加载正式资料。
+        }
         if (promoIndex >= 0)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;

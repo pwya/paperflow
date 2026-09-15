@@ -6,7 +6,7 @@ using System.Windows.Automation;
 using System.Windows.Controls;
 using Microsoft.Win32;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 public sealed class PaperEditor : Window
 {

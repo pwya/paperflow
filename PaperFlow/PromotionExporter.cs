@@ -9,7 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 // Deterministic synthetic-only exports. No input library, personal directory,
 // desktop capture or existing runtime settings can be supplied to this exporter.
@@ -39,7 +39,7 @@ public static class PromotionExporter
     public static async Task Generate(string directory)
     {
         Directory.CreateDirectory(directory);
-        var work = Path.Combine(Path.GetTempPath(), "PaperProgress-promotion-" + Guid.NewGuid().ToString("N"));
+        var work = Path.Combine(Path.GetTempPath(), "PaperFlow-promotion-" + Guid.NewGuid().ToString("N"));
         var scenes = new[] {
             new Scene("01-多论文总览", "把精力留给\n能推进的论文", "七个阶段，一眼看清进度。\n把在审论文暂时收起，\n让眼前的任务更清楚。", "多论文同屏  /  标题左侧三点优先级  /  右下角统一论文设置", "雾蓝", ViewRules.PageModes[0], 0, new[] {4}, true, 800),
             new Scene("02-优先级分页", "先做重要的事", "高、中、低三档优先级。\n标题最左边的三个点，\n让轻重缓急清楚可见。", "标题左侧三点优先级  /  按优先级翻页：高 → 中 → 低", "竹青", ViewRules.PageModes[1], 0, new[] {4}, true, 540),
@@ -47,7 +47,7 @@ public static class PromotionExporter
             new Scene("04-阶段分页-在审", "等待中的论文\n也有自己的位置", "第二页只看在审与收录。\n隐藏只改变视图，\n论文资料和进度仍完整保留。", "阶段分组  /  本页仅在审与收录", "雾蓝", ViewRules.PageModes[2], 1, new[] {4,6}, true, 540),
             new Scene("05-夜墨与常规标题", "让桌面\n保持你的节奏", "主题、颜色、字体、字号可调。\n标题可以取消加粗，\n把挂件调成适合自己的样子。", "夜墨主题  /  常规字重  /  独立本机外观", "夜墨", ViewRules.PageModes[0], 0, new[] {4}, false, 800)
         };
-        var descriptions = new List<string> { "# PaperProgress 1.3 宣传素材", "所有论文均为代码生成的虚构示例，未读取任何真实资料、同步目录或桌面画面。", "界面原图为真实 WPF 界面的 2 倍像素导出；宣传大图为 2880×1920 PNG。" };
+        var descriptions = new List<string> { "# " + Product.Name + " " + Product.Version + " 宣传素材", "所有论文均为代码生成的虚构示例，未读取任何真实资料、同步目录或桌面画面。", "界面原图为真实 WPF 界面的 2 倍像素导出；宣传大图为 2880×1920 PNG。" };
         foreach (var scene in scenes)
         {
             var library = CreateSample();
@@ -70,7 +70,7 @@ public static class PromotionExporter
                     var formatted = new FormattedText(text, CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight, new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, bold ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal), size, brush, 1.5) { MaxTextWidth = 650 };
                     canvas.DrawText(formatted, new Point(x, y));
                 }
-                Text("PAPERPROGRESS  /  论文进度", 92, 88, 22, muted);
+                Text("PAPERFLOW  /  论文投稿进度挂件", 92, 88, 22, muted);
                 Text(scene.Title, 92, 256, 58, ink, true);
                 Text(scene.Description, 96, 480, 27, muted);
                 canvas.DrawRoundedRectangle(Appearance.Paint(dark ? "#354D65" : "#DDE8EF"), null, new Rect(94, 716, 558, 74), 14, 14);
@@ -87,7 +87,7 @@ public static class PromotionExporter
             window.CloseDemonstration();
         }
         File.WriteAllLines(Path.Combine(directory, "素材说明.md"), descriptions, new System.Text.UTF8Encoding(false));
-        File.WriteAllText(Path.Combine(directory, "export-complete.json"), System.Text.Json.JsonSerializer.Serialize(new { Version = "1.3.0", SyntheticOnly = true, Scenes = scenes.Length, Images = scenes.Length * 2 }));
+        File.WriteAllText(Path.Combine(directory, "export-complete.json"), System.Text.Json.JsonSerializer.Serialize(new { Version = Product.Version, SyntheticOnly = true, Scenes = scenes.Length, Images = scenes.Length * 2 }));
     }
     private static void Save(BitmapSource bitmap, string path)
     {

@@ -20,7 +20,7 @@ git commit -m "Describe the fix"
 从干净提交构建并部署。将下列 `$privateInstall` 设为自己的个人安装文件夹；不要把该值写入仓库文件。
 
 ```powershell
-$privateInstall = Join-Path $env:OneDriveConsumer 'Apps/PaperProgress'
+$privateInstall = Join-Path $env:OneDriveConsumer 'Apps/PaperFlow'
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 -PrivateTarget $privateInstall
 ```
 

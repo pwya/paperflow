@@ -7,11 +7,13 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
 
-namespace PaperProgress;
+namespace PaperFlow;
 public sealed class SettingsWindow : Window
 {
     public Preferences Result { get; }
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+    private const string RunValue = "PaperFlow";
+    private const string LegacyRunValue = "PaperProgress";
     private bool ready;
     public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview)
     {
@@ -67,7 +69,7 @@ public sealed class SettingsWindow : Window
         if (Result.SyncFolder != "") body.Children.Add(MainWindow.ActionButton("打开同步资料文件夹", () => OpenFolder(Result.SyncFolder)));
         Label("其他电脑收到文件后，挂件自动刷新。云端到达时间由 OneDrive 决定。字体、主题和窗口位置只保存在本机。", 11);
         var backup = new StackPanel { Orientation = Orientation.Horizontal }; backup.Children.Add(MainWindow.ActionButton("导出备份", export)); backup.Children.Add(MainWindow.ActionButton("导入备份", import)); backup.Children.Add(MainWindow.ActionButton("本地资料", () => OpenFolder(directory))); body.Children.Add(backup);
-        Label("版本 " + (typeof(App).Assembly.GetName().Version?.ToString(3) ?? "") + " · 本地离线可用\n× 收起到托盘；双击托盘图标恢复。更新时请先从托盘菜单退出，再打开固定启动入口。", 11);
+        Label(Product.Name + " 版本 " + Product.Version + " · 本地离线可用\n× 收起到托盘；双击托盘图标恢复。更新时请先从托盘菜单退出，再打开固定启动入口。", 11);
         var cancel = MainWindow.ActionButton("取消", () => DialogResult = false); cancel.IsCancel = true; buttons.Children.Add(cancel);
         buttons.Children.Add(MainWindow.ActionButton("保存设置", () =>
         {
@@ -77,13 +79,18 @@ public sealed class SettingsWindow : Window
     }
     private static void OpenFolder(string folder) { Directory.CreateDirectory(folder); System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true }); }
     private sealed class DialogOwner : System.Windows.Forms.IWin32Window { public IntPtr Handle { get; } public DialogOwner(IntPtr handle) { Handle = handle; } }
-    private static bool IsStartupEnabled() { using var key = Registry.CurrentUser.OpenSubKey(RunKey); return key?.GetValue("PaperProgress") is string; }
+    private static bool IsStartupEnabled()
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(RunKey);
+        return key?.GetValue(RunValue) is string || key?.GetValue(LegacyRunValue) is string;
+    }
     private static void SetStartup(bool enabled, string launcher)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-        if (!enabled) { key.DeleteValue("PaperProgress", false); return; }
+        if (!enabled) { key.DeleteValue(RunValue, false); key.DeleteValue(LegacyRunValue, false); return; }
         string path = launcher != "" ? launcher : Environment.ProcessPath ?? throw new IOException("找不到启动程序。");
         if (!File.Exists(path)) throw new IOException("启动入口不可用，请从 OneDrive 中的启动器打开后再设置。");
-        key.SetValue("PaperProgress", "\"" + path + "\"");
+        key.SetValue(RunValue, "\"" + path + "\"");
+        key.DeleteValue(LegacyRunValue, false);
     }
 }

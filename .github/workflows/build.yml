@@ -18,6 +18,6 @@ jobs:
         run: ./scripts/Publish-Release.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: PaperProgress-public
+          name: PaperFlow-public
           path: artifacts/release-*/*
           if-no-files-found: error

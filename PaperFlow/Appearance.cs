@@ -4,7 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 public static class Appearance
 {

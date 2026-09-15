@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-$root = Join-Path ([IO.Path]::GetTempPath()) ('PaperProgress-channel-' + [guid]::NewGuid().ToString('N'))
+$root = Join-Path ([IO.Path]::GetTempPath()) ('PaperFlow-channel-' + [guid]::NewGuid().ToString('N'))
 $path = Join-Path $root 'channel.json'
 $writer = Join-Path $PSScriptRoot 'Write-Channel.ps1'
 & $writer -Path $path -Content '{"version":"1.0.0"}'

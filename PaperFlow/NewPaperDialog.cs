@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Automation;
 
-namespace PaperProgress;
+namespace PaperFlow;
 public sealed class NewPaperDialog : Window
 {
     public string PaperTitle { get; private set; } = "";

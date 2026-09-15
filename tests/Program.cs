@@ -1,4 +1,4 @@
-using PaperProgress;
+using PaperFlow;
 using System.Text.Json;
 
 int checks = 0;
@@ -22,7 +22,7 @@ paper.StartDate = DateTime.Today.AddDays(2); Check(paper.ElapsedDays == 0, "futu
 paper.DueDate = DateTime.Today.AddDays(-3); Check(paper.DeadlineText == "已逾期 3 天", "overdue");
 var cloned = Storage.Clone(paper); cloned.Stages[0].Done = false; Check(paper.Stages[0].Done, "deep copy stages");
 
-var directory = Path.Combine(Path.GetTempPath(), "PaperProgress-tests-" + Guid.NewGuid().ToString("N"));
+var directory = Path.Combine(Path.GetTempPath(), "PaperFlow-tests-" + Guid.NewGuid().ToString("N"));
 var storage = new Storage(directory);
 var library = storage.Load(); library.Papers.Add(paper); storage.Save(library);
 Check(storage.Load().Papers[0].Title == paper.Title, "unicode roundtrip");
@@ -52,4 +52,23 @@ Check(storage.Load().Papers.Count == 1, "recovery repairs active file");
 SyncTests.Run(Check);
 PaperOrderTests.Run(Check);
 ViewTests.Run(Check);
+
+// Renaming the product moved the local runtime root; the old root must migrate once,
+// keep the sync device identity, and never overwrite a root that already has data.
+var legacyRoot = Path.Combine(Path.GetTempPath(), "PaperFlow-legacy-" + Guid.NewGuid().ToString("N"));
+var renamedRoot = Path.Combine(Path.GetTempPath(), "PaperFlow-current-" + Guid.NewGuid().ToString("N"));
+Check(Storage.MigrateLegacyRoot(legacyRoot, renamedRoot) == null, "migration no-ops when there is no legacy snapshot");
+Directory.CreateDirectory(Path.Combine(legacyRoot, "journal"));
+File.WriteAllText(Path.Combine(legacyRoot, "papers.json"), JsonSerializer.Serialize(library, Storage.JsonOptions));
+File.WriteAllText(Path.Combine(legacyRoot, "device-id.txt"), Guid.NewGuid().ToString("N"));
+File.WriteAllText(Path.Combine(legacyRoot, "journal", "synthetic-event.json"), "{\"Version\":1}");
+Check(Storage.MigrateLegacyRoot(legacyRoot, renamedRoot) != null, "migration reports a migrated legacy snapshot");
+Check(File.Exists(Path.Combine(renamedRoot, "papers.json")), "migration copies the snapshot");
+Check(File.Exists(Path.Combine(renamedRoot, "device-id.txt")), "migration keeps the sync device identity");
+Check(File.Exists(Path.Combine(renamedRoot, "journal", "synthetic-event.json")), "migration copies the sync journal");
+Check(File.Exists(Path.Combine(legacyRoot, "papers.json")), "migration leaves the old root untouched");
+Check(Storage.Parse(File.ReadAllText(Path.Combine(renamedRoot, "papers.json"))).Papers.Count == library.Papers.Count, "migrated snapshot still parses");
+File.WriteAllText(Path.Combine(legacyRoot, "papers.json"), "{ damaged");
+Check(Storage.MigrateLegacyRoot(legacyRoot, renamedRoot) == null, "migration never runs twice over existing data");
+Check(Storage.Parse(File.ReadAllText(Path.Combine(renamedRoot, "papers.json"))).Papers.Count == library.Papers.Count, "migration never overwrites the new root");
 Console.WriteLine($"PASS: {checks} checks. Test data: {directory}");

@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
-$assetDirectory = Join-Path $PSScriptRoot '..\PaperProgress\Assets'
+$assetDirectory = Join-Path $PSScriptRoot '..\PaperFlow\Assets'
 [IO.Directory]::CreateDirectory($assetDirectory) | Out-Null
 $images = [Collections.Generic.List[byte[]]]::new()
 $sizes = @(16, 24, 32, 48, 64, 128, 256)

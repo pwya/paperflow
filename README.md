@@ -1,10 +1,12 @@
-# 论文进度 · PaperProgress
+# PaperFlow · 论文投稿进度挂件
 
-Windows 桌面论文进度挂件。多篇论文同时显示粗进度条，点击阶段即可更新；无需注册应用账号。
+Windows 桌面挂件，盯住多篇论文的投稿进度。同时显示粗进度条，点击阶段即可更新；无需注册应用账号，也不联网。
+
+1.4.0 起产品名由 PaperProgress 改为 PaperFlow。首次启动会把 `%LOCALAPPDATA%/PaperProgress` 中的本机资料复制到 `%LOCALAPPDATA%/PaperFlow`，原目录保持不动，论文、修改记录和同步设备标识都不受影响。
 
 ## 使用
 
-下载 Windows x64 发布包，完整解压到自己选择的文件夹，打开 `PaperProgress.Launcher.exe`。发行包自带 .NET 8；启动器使用 Windows 自带的 .NET Framework 4.x。面向 Windows 10/11 x64，尚未覆盖其他系统与 ARM 原生版本。源码构建需要 .NET 8 SDK。
+下载 Windows x64 发布包，完整解压到自己选择的文件夹，打开 `PaperFlow.Launcher.exe`。发行包自带 .NET 8；启动器使用 Windows 自带的 .NET Framework 4.x。面向 Windows 10/11 x64，尚未覆盖其他系统与 ARM 原生版本。源码构建需要 .NET 8 SDK。
 
 - 右上角 `＋` 新增论文，自动生成七个阶段：开题、语料&数据整理、初稿、自修、在审、返修、收录。旧“投稿”的勾选直接显示为“在审”，进度保持原样。
 - 每个阶段等权，自动显示完成数、百分比和粗进度条；无需返修时可在资料里选择跳过返修，分母相应调整。
@@ -20,7 +22,7 @@ Windows 桌面论文进度挂件。多篇论文同时显示粗进度条，点击
 
 从 1.2 升级时，请在各台电脑从托盘退出，再打开相同启动器更新到 1.3 或以上，以读取新增的优先级字段。旧版会拒绝不认识的新字段；已有历史事件不用修改。
 
-将**完整发行包**解压到 OneDrive 内，在各台电脑打开各自同步下来的 `PaperProgress.Launcher.exe`。启动器自动使用旁边的 `data` 文件夹，不要求各台电脑有相同盘符或用户名。建议把整个安装文件夹设为“始终保留在此设备上”。每台电脑使用同一份个人资料库；开发测试使用独立 `--data-dir`，不要用默认个人目录测试。
+将**完整发行包**解压到 OneDrive 内，在各台电脑打开各自同步下来的 `PaperFlow.Launcher.exe`。启动器自动使用旁边的 `data` 文件夹，不要求各台电脑有相同盘符或用户名。建议把整个安装文件夹设为“始终保留在此设备上”。每台电脑使用同一份个人资料库；开发测试使用独立 `--data-dir`，不要用默认个人目录测试。
 
 论文修改先保存到本机，每两秒尝试与共享文件夹交换记录；另一台电脑收到 OneDrive 文件后自动刷新。离线也能编辑，联网后续传。OneDrive 自身暂停、离线或仍在下载时会有延迟，应用不能确认云端上传完成。页脚“文件夹已更新”仅代表应用已读写本地同步目录。[Microsoft 同步说明](https://support.microsoft.com/en-us/onedrive/sync-your-computer-s-files-and-folders-with-onedrive)
 
@@ -35,8 +37,8 @@ Windows 桌面论文进度挂件。多篇论文同时显示粗进度条，点击
 | 本仓库 | 源码、合成测试、图标、文档、构建脚本 | 可以 |
 | 安装文件夹 `versions`、启动器、`channel.json` | 程序版本 | 可由干净构建发布 |
 | 安装文件夹 `data/events-v1` | 私人论文修改记录 | 绝不提交 |
-| `%LOCALAPPDATA%/PaperProgress` | 私人快照、备份、本机日志与设置 | 绝不提交 |
-| `%LOCALAPPDATA%/PaperProgress/app-cache` | 校验后的本机程序缓存 | 无需提交 |
+| `%LOCALAPPDATA%/PaperFlow` | 私人快照、备份、本机日志与设置 | 绝不提交 |
+| `%LOCALAPPDATA%/PaperFlow/app-cache` | 校验后的本机程序缓存 | 无需提交 |
 
 源码仓库放在 OneDrive **以外**，避免多台电脑同步同一个 `.git`。其他电脑开发时使用各自的 Git clone。公开包由 Git 提交和干净构建生成，绝不压缩正在使用的安装目录。见 [开发与发布](docs/RELEASING.md) 和 [隐私边界](SECURITY.md)。
 
@@ -44,20 +46,22 @@ Windows 桌面论文进度挂件。多篇论文同时显示粗进度条，点击
 
 开发者从同一个提交生成公开源码包、程序包，并可将该程序版本部署到个人 OneDrive 安装目录。数据目录不参与构建和部署。其他电脑收到新版后，从托盘完全退出，再打开原来的启动器即可切换。运行中的旧版不会被强行重启。
 
+改名那一版把程序、启动器和本机目录一起换了名字。旧的启动器仍然可用，它会读同一份 `channel.json` 并启动新程序；旧版本机资料在首次启动新版时自动迁移。开机启动项会从 `PaperProgress` 改写到 `PaperFlow`。
+
 启动器检查文件长度和 SHA-256，将程序复制到本机缓存后运行；新版未完整同步时优先使用已有的可用缓存版本。首次安装没有缓存时需要等待文件同步完整。哈希只检测传输损坏，不是数字签名；当前未提供代码签名，也没有从 GitHub 自动下载更新。
 
 ## 开发
 
 ```powershell
 git config core.hooksPath .githooks
-dotnet build PaperProgress/PaperProgress.csproj
-dotnet run --project tests/PaperProgress.Tests.csproj -c Release
+dotnet build PaperFlow/PaperFlow.csproj
+dotnet run --project tests/PaperFlow.Tests.csproj -c Release
 ```
 
 测试仅使用随机临时目录和合成论文。手动调试也请传独立路径：
 
 ```powershell
-dotnet run --project PaperProgress -- --data-dir "$env:TEMP/PaperProgress-ui-test" --sync-dir "$env:TEMP/PaperProgress-sync-test"
+dotnet run --project PaperFlow -- --data-dir "$env:TEMP/PaperFlow-ui-test" --sync-dir "$env:TEMP/PaperFlow-sync-test"
 ```
 
 MIT License。图标由仓库脚本生成，不包含外部品牌素材。
@@ -73,9 +77,9 @@ MIT License。图标由仓库脚本生成，不包含外部品牌素材。
 ## 宣传图片
 
 ```powershell
-./PaperProgress.Launcher.exe
+./PaperFlow.Launcher.exe
 # 开发环境中执行专门的合成数据导出：
-dotnet run --project PaperProgress -- --promotional-assets "$env:TEMP/PaperProgress-promotion"
+dotnet run --project PaperFlow -- --promotional-assets "$env:TEMP/PaperFlow-promotion"
 ```
 
-宣传导出分支只创建内置的虚构论文及临时目录，完全不加载正式资料、同步目录或桌面画面。输出五套 2 倍像素的真实界面图和 2880×1920 宣传 PNG，均标注虚构演示数据。正式发行包使用 `versions/<版本>/PaperProgress.exe --promotional-assets <输出目录>` 调用此分支。
+宣传导出分支只创建内置的虚构论文及临时目录，完全不加载正式资料、同步目录或桌面画面。输出五套 2 倍像素的真实界面图和 2880×1920 宣传 PNG，均标注虚构演示数据。正式发行包使用 `versions/<版本>/PaperFlow.exe --promotional-assets <输出目录>` 调用此分支。

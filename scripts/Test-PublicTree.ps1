@@ -5,7 +5,7 @@ Push-Location $root
 try {
     $files = if ($Staged) { @(git -c core.quotepath=false diff --cached --name-only --diff-filter=ACMR) } else { @(git -c core.quotepath=false ls-files) }
     if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Git files.' }
-    $allowed = '^(README\.md|LICENSE|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|\.gitignore|\.gitattributes|PaperProgress/[^/]+\.(cs|xaml|csproj)|PaperProgress/Assets/app\.ico|Launcher/[^/]+\.cs|tests/[^/]+\.(cs|csproj)|scripts/[^/]+\.ps1|docs/[^/]+\.md|\.github/workflows/[^/]+\.ya?ml|\.githooks/pre-commit)$'
+    $allowed = '^(README\.md|LICENSE|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|\.gitignore|\.gitattributes|PaperFlow/[^/]+\.(cs|xaml|csproj)|PaperFlow/Assets/app\.ico|Launcher/[^/]+\.cs|tests/[^/]+\.(cs|csproj)|scripts/[^/]+\.ps1|docs/[^/]+\.md|\.github/workflows/[^/]+\.ya?ml|\.githooks/pre-commit)$'
     $problems = [Collections.Generic.List[string]]::new()
     foreach ($file in $files) {
         if ($file -notmatch $allowed) { $problems.Add("Unapproved public path: $file"); continue }

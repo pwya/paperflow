@@ -5,7 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 public sealed class SyncEdit
 {

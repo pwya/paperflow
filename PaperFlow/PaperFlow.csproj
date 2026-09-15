@@ -6,12 +6,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <AssemblyName>PaperProgress</AssemblyName>
-    <RootNamespace>PaperProgress</RootNamespace>
-    <Version>1.3.0</Version>
+    <AssemblyName>PaperFlow</AssemblyName>
+    <RootNamespace>PaperFlow</RootNamespace>
+    <Version>1.4.0</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
-    <Product>论文进度</Product>
-    <Description>离线论文进度桌面挂件</Description>
+    <Product>PaperFlow</Product>
+    <Description>PaperFlow 离线论文投稿进度桌面挂件</Description>
   </PropertyGroup>
   <ItemGroup><Resource Include="Assets\app.ico"/></ItemGroup>
 </Project>

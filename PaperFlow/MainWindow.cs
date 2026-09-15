@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 using Forms = System.Windows.Forms;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 public sealed class MainWindow : Window
 {
@@ -38,7 +38,7 @@ public sealed class MainWindow : Window
     private readonly Image brandIcon = new() { Width = 26, Height = 26, Margin = new Thickness(0, 0, 9, 0) };
     private bool draggingPaper;
     private string? draggedPaperId;
-    private const string PaperDragFormat = "PaperProgress.PaperId";
+    private const string PaperDragFormat = "PaperFlow.PaperId";
     private DateTime nextDragScroll;
     private readonly Forms.NotifyIcon tray;
     private readonly DispatcherTimer timer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -69,7 +69,7 @@ public sealed class MainWindow : Window
     {
         this.demonstration = demonstration;
         store = storage; library = initial; sync = synchronization;
-        Title = "论文进度";
+        Title = "PaperFlow";
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/app.ico"));
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResizeWithGrip; AllowsTransparency = true; Background = Brushes.Transparent;
         FontFamily = new FontFamily(library.Settings.FontName); FontSize = library.Settings.TextSize;
@@ -90,7 +90,7 @@ public sealed class MainWindow : Window
         heading.ColumnDefinitions.Add(new ColumnDefinition()); heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var brand = new StackPanel { Orientation = Orientation.Horizontal };
         brand.Children.Add(brandIcon);
-        var brandTitle = Text("论文进度", 18); brandTitle.FontWeight = FontWeights.SemiBold; brandTitle.FontSize = 18; brandTitle.SetResourceReference(TextBlock.ForegroundProperty, "Ink"); brand.Children.Add(brandTitle);
+        var brandTitle = Text("PaperFlow", 18); brandTitle.FontWeight = FontWeights.SemiBold; brandTitle.FontSize = 18; brandTitle.SetResourceReference(TextBlock.ForegroundProperty, "Ink"); brand.Children.Add(brandTitle);
         heading.Children.Add(brand);
         var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var add = ActionButton("＋", AddPaper, true); add.ToolTip = "新增论文 · Ctrl+N"; add.Padding = new Thickness(10, 4, 10, 4); add.FontSize = 17; AutomationProperties.SetName(add, "新增论文"); chrome.Children.Add(add);
@@ -131,9 +131,9 @@ public sealed class MainWindow : Window
         };
         root.Children.Add(scroller);
 
-        tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = "论文进度 · 双击打开", Visible = !demonstration };
+        tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = "PaperFlow · 双击打开", Visible = !demonstration };
         var trayMenu = new Forms.ContextMenuStrip();
-        trayMenu.Items.Add("显示论文进度", null, (_, _) => Dispatcher.Invoke(Reveal));
+        trayMenu.Items.Add("显示 PaperFlow", null, (_, _) => Dispatcher.Invoke(Reveal));
         trayMenu.Items.Add("始终置顶 / 取消置顶", null, (_, _) => Dispatcher.Invoke(TogglePin));
         trayMenu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(ExitApplication));
         tray.ContextMenuStrip = trayMenu;
@@ -164,7 +164,7 @@ public sealed class MainWindow : Window
             finally { polling = false; }
         };
         if (!demonstration) timer.Start(); ready = true; Render();
-        if (demonstration) { footer.Text = "演示数据 · 所有论文均为虚构 · PaperProgress 1.3"; footer.ToolTip = null; }
+        if (demonstration) { footer.Text = "演示数据 · 所有论文均为虚构 · " + Product.Name + " " + Product.Version; footer.ToolTip = null; }
         SessionEndingHook();
     }
 

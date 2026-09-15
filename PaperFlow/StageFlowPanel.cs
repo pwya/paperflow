@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Controls;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 // Keep all stages and dates visible. An optional next-action label only uses spare
 // space in the final row; the full action is always available on the progress tooltip.

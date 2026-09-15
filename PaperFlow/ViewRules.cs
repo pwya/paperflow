@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 public static class ViewRules
 {

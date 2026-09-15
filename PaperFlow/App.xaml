@@ -1,4 +1,4 @@
-<Application x:Class="PaperProgress.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+<Application x:Class="PaperFlow.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Application.Resources>
     <SolidColorBrush x:Key="Ink" Color="#24352F"/>
     <SolidColorBrush x:Key="Muted" Color="#78867F"/>

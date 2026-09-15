@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Windows;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 public partial class App : Application
 {
@@ -28,19 +28,26 @@ public partial class App : Application
             }));
             return; // Never load the normal data folder in promotional export mode.
         }
-        var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PaperProgress");
+        var localRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var dataDirectory = Path.Combine(localRoot, "PaperFlow");
+        var legacyDirectory = Path.Combine(localRoot, "PaperProgress");
+        bool explicitDataDirectory = false;
+        string? migrationNotice = null;
         int overrideIndex = Array.IndexOf(e.Args, "--data-dir");
-        if (overrideIndex >= 0 && e.Args.Length > overrideIndex + 1) dataDirectory = Path.GetFullPath(e.Args[overrideIndex + 1]);
+        if (overrideIndex >= 0 && e.Args.Length > overrideIndex + 1) { dataDirectory = Path.GetFullPath(e.Args[overrideIndex + 1]); explicitDataDirectory = true; }
         string suffix = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(dataDirectory.ToUpperInvariant())))[..16];
-        instance = new Mutex(true, "Local\\PaperProgress-" + suffix, out bool created);
+        instance = new Mutex(true, "Local\\PaperFlow-" + suffix, out bool created);
         if (!created)
         {
             // The running instance polls this local signal to reveal its window.
+            Directory.CreateDirectory(dataDirectory);
             File.WriteAllText(Path.Combine(dataDirectory, "show.signal"), "show");
             Shutdown(); return;
         }
         try
         {
+            // Runs after the single-instance check so two windows never migrate at once.
+            if (!explicitDataDirectory) migrationNotice = Storage.MigrateLegacyRoot(legacyDirectory, dataDirectory);
             var storage = new Storage(dataDirectory);
             var library = storage.Load();
             int syncIndex = Array.IndexOf(e.Args, "--sync-dir");
@@ -55,10 +62,11 @@ public partial class App : Application
             MainWindow = window;
             window.Show();
             if (storage.RecoveryNotice != null) MessageBox.Show(window, storage.RecoveryNotice, "已恢复备份");
+            else if (migrationNotice != null) MessageBox.Show(window, migrationNotice + "\n\n原目录 %LOCALAPPDATA%\\PaperProgress 未被修改，确认新版本正常后可以自行删除。", "PaperFlow 已升级", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            MessageBox.Show("无法打开论文资料，程序没有覆盖原数据。\n\n" + ex.Message, "论文进度", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show("无法打开论文资料，程序没有覆盖原数据。\n\n" + ex.Message, "PaperFlow", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }

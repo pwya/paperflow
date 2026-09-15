@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 
-namespace PaperProgress;
+namespace PaperFlow;
 
 public sealed class Storage
 {
@@ -15,6 +15,40 @@ public sealed class Storage
     public string? RecoveryNotice { get; private set; }
     public string? BackupNotice { get; private set; }
     public Storage(string directory) { DirectoryPath = directory; }
+
+    // Renaming the product renamed the local runtime root. Copy the previous root once,
+    // without touching or deleting it, so an upgrade keeps papers, journal, device
+    // identity and backups. An explicitly supplied data directory is never migrated.
+    private static readonly string[] MigratedEntries = { "papers.json", "papers.previous.json", "journal-initialized.txt", "device-id.txt", "journal", "backups" };
+    public static string? MigrateLegacyRoot(string legacy, string current)
+    {
+        try
+        {
+            if (string.Equals(Path.GetFullPath(legacy), Path.GetFullPath(current), StringComparison.OrdinalIgnoreCase)) return null;
+            if (File.Exists(Path.Combine(current, "papers.json"))) return null;
+            if (!File.Exists(Path.Combine(legacy, "papers.json"))) return null;
+            Directory.CreateDirectory(current);
+            foreach (var entry in MigratedEntries)
+            {
+                var source = Path.Combine(legacy, entry);
+                var target = Path.Combine(current, entry);
+                if (Directory.Exists(source)) Copytree(source, target);
+                else if (File.Exists(source) && !File.Exists(target)) File.Copy(source, target, false);
+            }
+            return File.Exists(Path.Combine(current, "papers.json")) ? "已把原 PaperProgress 的本机资料迁移到新目录，原目录保持不动。" : null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A failed migration must not block startup; the shared journal can rebuild.
+            return null;
+        }
+    }
+    private static void Copytree(string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (var file in Directory.GetFiles(source)) { var copy = Path.Combine(target, Path.GetFileName(file)); if (!File.Exists(copy)) File.Copy(file, copy, false); }
+        foreach (var folder in Directory.GetDirectories(source)) Copytree(folder, Path.Combine(target, Path.GetFileName(folder)));
+    }
 
     public Library Load()
     {

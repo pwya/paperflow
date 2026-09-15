@@ -5,7 +5,7 @@
 1. 在独立开发目录复现，修复源码并为数据、同步或更新方面的问题补充有意义的回归检查。
 2. 执行测试和构建；界面改动需实际检查外观、点击和设置保存。
 3. 安装提交钩子：`git config core.hooksPath .githooks`。提交前看完整暂存差异，运行 `scripts/Test-PublicTree.ps1 -Staged`。
-4. 修改 `PaperProgress/PaperProgress.csproj` 中版本号，更新 CHANGELOG，再提交。已部署版本不能覆盖为不同内容。
+4. 修改 `PaperFlow/PaperFlow.csproj` 中版本号，更新 CHANGELOG，再提交。已部署版本不能覆盖为不同内容。
 5. 使用 [发布流程](docs/RELEASING.md)。公开版本和自用版本来自同一源码，不维护私人代码分支。
 
 CI 只验证和生成制品；创建远程仓库、推送和发布 Release 由维护者执行。不得把个人安装文件夹作为源码 PR。

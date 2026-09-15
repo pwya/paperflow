@@ -1,11 +1,11 @@
-using PaperProgress;
+using PaperFlow;
 using System.Text.Json;
 
 static class SyncTests
 {
     public static void Run(Action<bool, string> check)
     {
-        var root = Path.Combine(Path.GetTempPath(), "PaperProgress-sync-tests-" + Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "PaperFlow-sync-tests-" + Guid.NewGuid().ToString("N"));
         string Local(string name) => Path.Combine(root, name);
         var shared = Local("shared");
         var seed = new Library { Papers = new() { new Paper { Title = "Synthetic paper A" } } };

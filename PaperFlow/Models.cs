@@ -93,6 +93,9 @@ public sealed class Preferences
     // Overall zoom of the widget (layout and text together); TextSize only moves the text.
     public double UiScale { get; set; } = 1;
     public bool AutoGrowWindow { get; set; }
+    // 背景图片只在本机使用，路径不参与同步。
+    public string BackgroundImage { get; set; } = "";
+    public double ImageScrim { get; set; } = 0.35;
     public string SyncFolder { get; set; } = "";
     public string LauncherPath { get; set; } = "";
     public bool Topmost { get; set; } = true;

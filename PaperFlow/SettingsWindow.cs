@@ -111,6 +111,31 @@ public sealed class SettingsWindow : Window
         var opacity = new Slider { Minimum = 5, Maximum = 100, Value = Result.BackgroundOpacity * 100, TickFrequency = 5, IsSnapToTickEnabled = true, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; look.Children.Add(opacity);
         void OpacityChanged() { Result.BackgroundOpacity = opacity.Value / 100; opacityLabel.Text = $"背景不透明度 · {opacity.Value:0}%（文字保持清晰）"; Preview(); }
         opacity.ValueChanged += (_, _) => OpacityChanged(); OpacityChanged();
+        Label(look, "背景图片");
+        var imageRow = new StackPanel { Orientation = Orientation.Horizontal }; look.Children.Add(imageRow);
+        var imageName = new TextBlock { FontSize = 11 * scale, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 4 * Appearance.Scale) };
+        imageName.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); look.Children.Add(imageName);
+        void RefreshImageName()
+        {
+            if (Result.BackgroundImage == "") { imageName.Text = "当前没有背景图片，用的是主题底色。"; return; }
+            imageName.Text = File.Exists(Result.BackgroundImage)
+                ? "正在使用：" + Path.GetFileName(Result.BackgroundImage) + "\n文字要看清，把上面的不透明度和下面的遮罩一起调到合适为止。"
+                : "找不到文件：" + Result.BackgroundImage + "\n换一张，或者点清除。";
+        }
+        void PickImage()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog { Title = "选择背景图片", Filter = "图片 (*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif)|*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.gif|所有文件 (*.*)|*.*" };
+            if (dialog.ShowDialog(this) != true) return;
+            Result.BackgroundImage = dialog.FileName; Preview(); RefreshImageName();
+        }
+        imageRow.Children.Add(B("选择图片…", PickImage));
+        imageRow.Children.Add(B("清除", () => { Result.BackgroundImage = ""; Preview(); RefreshImageName(); }));
+        imageRow.Children.Add(B("打开所在文件夹", () => { if (Result.BackgroundImage != "" && File.Exists(Result.BackgroundImage)) OpenFolder(Path.GetDirectoryName(Result.BackgroundImage)!); }));
+        var scrimLabel = Label(look, "图片遮罩");
+        var scrim = new Slider { Minimum = 0, Maximum = 95, TickFrequency = 5, IsSnapToTickEnabled = true, Value = Result.ImageScrim * 100, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; look.Children.Add(scrim);
+        void ScrimChanged() { Result.ImageScrim = scrim.Value / 100; scrimLabel.Text = $"图片遮罩 · {scrim.Value:0}%（越大文字越清楚，越小越看得见图片）"; Preview(); }
+        scrim.ValueChanged += (_, _) => ScrimChanged(); ScrimChanged();
+        RefreshImageName();
         Label(look, "字体");
         var fonts = new ComboBox { ItemsSource = Fonts.SystemFontFamilies.Select(f => f.Source).Append(Result.FontName).Distinct().OrderBy(n => n).ToList(), SelectedItem = Result.FontName, MaxDropDownHeight = 260 }; look.Children.Add(fonts);
         fonts.SelectionChanged += (_, _) => { Result.FontName = fonts.SelectedItem as string ?? "Microsoft YaHei UI"; Preview(); };

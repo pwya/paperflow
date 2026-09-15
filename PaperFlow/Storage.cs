@@ -109,6 +109,7 @@ public sealed class Storage
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;
         s.TextSize = double.IsFinite(s.TextSize) ? Math.Clamp(s.TextSize, 9, 36) : 13;
         s.UiScale = double.IsFinite(s.UiScale) ? Math.Clamp(s.UiScale, 0.8, 2) : 1;
+        s.ImageScrim = double.IsFinite(s.ImageScrim) ? Math.Clamp(s.ImageScrim, 0, 0.95) : 0.35;
         // 0 means “follow the theme”; the rest are explicit overrides.
         s.BarHeight = new[] { 0, 6, 14, 20, 28 }.Contains(s.BarHeight) ? s.BarHeight : 0;
         s.Width = double.IsFinite(s.Width) ? Math.Clamp(s.Width, 480, 1800) : 650;

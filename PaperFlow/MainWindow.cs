@@ -24,6 +24,7 @@ public sealed class MainWindow : Window
     private Library library;
     private bool polling;
     private readonly Border frame = new();
+    private readonly Border scrim = new();
     private readonly Button options = new();
     private readonly StackPanel cards = new();
     private readonly TextBlock summary = new();
@@ -89,7 +90,10 @@ public sealed class MainWindow : Window
         AddResizeHandles(surface);
         var root = new DockPanel { LastChildFill = true, Background = Brushes.Transparent };
         root.MouseLeftButtonDown += DragWidget;
-        frame.Child = root;
+        // 图片在最底层，上面盖一层主题色遮罩保证文字可读，再上面才是内容。
+        scrim.CornerRadius = new CornerRadius(12); scrim.Visibility = Visibility.Collapsed; scrim.IsHitTestVisible = false;
+        var layered = new Grid(); layered.Children.Add(scrim); layered.Children.Add(root);
+        frame.Child = layered;
 
         var heading = new Grid { Margin = new Thickness(14, 8, 10, 5), Background = Brushes.Transparent, ToolTip = "拖动标题栏或空白处移动小部件" };
         heading.ColumnDefinitions.Add(new ColumnDefinition()); heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -195,9 +199,22 @@ public sealed class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr handle);
 
     private void SessionEndingHook() => Application.Current.SessionEnding += (_, _) => SaveWindow();
-    private void Reveal() { Show(); WindowState = WindowState.Normal; Activate(); }
+    private void Reveal() { Show(); WindowState = WindowState.Normal; Activate(); HideFromAltTab(); }
+
+    // 任务栏按钮靠 ShowInTaskbar=false 去掉，Alt+Tab 则需要 WS_EX_TOOLWINDOW。
+    // 两个都要，缺一个就会在其中一个地方露出来。
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hWnd, int index);
+    [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hWnd, int index, int value);
+    private const int GwlExStyle = -20, WsExToolWindow = 0x00000080, WsExAppWindow = 0x00040000;
+    private void HideFromAltTab()
+    {
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (handle == IntPtr.Zero) return;
+        SetWindowLong(handle, GwlExStyle, (GetWindowLong(handle, GwlExStyle) | WsExToolWindow) & ~WsExAppWindow);
+    }
     private void ExitApplication() { if (!SaveWindow()) return; quitting = true; Close(); }
     internal void CloseDemonstration() { if (!demonstration) throw new InvalidOperationException("仅供演示导出。"); quitting = true; Close(); }
+    protected override void OnSourceInitialized(EventArgs e) { base.OnSourceInitialized(e); HideFromAltTab(); }
 
     // Write a complete candidate snapshot before adopting it, so failed writes do not appear saved.
     private bool Commit(Action<Library> edit, string notice = "已保存")
@@ -249,7 +266,19 @@ public sealed class MainWindow : Window
         string chromeStyle = Appearance.HeaderStyle switch { "plain" => "QuietButton", "outline" => "OutlineButton", _ => "SoftButton" };
         foreach (var button in quietChrome) button.SetResourceReference(StyleProperty, chromeStyle);
         foreach (var button in quietChrome) button.Foreground = Appearance.HeaderStyle == "plain" ? Brush("#78867F") : Brush("#24352F");
-        frame.Background = Appearance.Paint(Appearance.Current.Window, Appearance.Opacity * (Appearance.Current.Glass ? .25 : 1));
+        var picture = Appearance.BackgroundImage();
+        if (picture == null)
+        {
+            scrim.Visibility = Visibility.Collapsed;
+            frame.Background = Appearance.Paint(Appearance.Current.Window, Appearance.Opacity * (Appearance.Current.Glass ? .25 : 1));
+        }
+        else
+        {
+            // 图片铺满整个小部件，遮罩浓度由用户控制，文字可读性靠它保证。
+            frame.Background = new ImageBrush(picture) { Stretch = Stretch.UniformToFill, AlignmentX = AlignmentX.Center, AlignmentY = AlignmentY.Center, Opacity = Appearance.Opacity };
+            scrim.Visibility = Visibility.Visible;
+            scrim.Background = Appearance.Paint(Appearance.Current.Window, Appearance.Scrim * Appearance.Opacity);
+        }
         frame.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .75);
         pin.Content = library.Settings.Topmost ? "已置顶" : "置顶"; pin.ToolTip = "F12 切换置顶";
         pin.Foreground = library.Settings.Topmost ? Brush("#21846B") : Brush("#78867F");

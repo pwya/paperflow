@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace PaperFlow;
 
@@ -27,7 +29,32 @@ public static class Appearance
     // so the settings form always fits inside its own window.
     public static double DialogScale => Math.Clamp(TextScale, 1, 2.5);
     public static double Opacity { get; private set; } = 1;
+    public static string ImagePath { get; private set; } = "";
+    public static double Scrim { get; private set; } = 0.35;
     public static string FontName { get; private set; } = "Microsoft YaHei UI";
+    private static readonly Dictionary<string, BitmapImage> ImageCache = new();
+    // 背景图片：按最长边 1600 解码，避免超大图吃内存；同一路径只读一次。
+    public static ImageSource? BackgroundImage()
+    {
+        if (ImagePath == "" || !File.Exists(ImagePath)) return null;
+        string key = ImagePath + "|" + File.GetLastWriteTimeUtc(ImagePath).Ticks;
+        if (ImageCache.TryGetValue(key, out var cached)) return cached;
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.UriSource = new Uri(ImagePath);
+            bitmap.DecodePixelWidth = 1600;
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.CreateOptions = BitmapCreateOptions.IgnoreColorProfile;
+            bitmap.EndInit();
+            bitmap.Freeze();
+            if (ImageCache.Count > 8) ImageCache.Clear();
+            ImageCache[key] = bitmap;
+            return bitmap;
+        }
+        catch (Exception) { return null; }
+    }
     public static string AccentText => Luminance(Current.Accent) > 0.5 ? "#182D29" : "#FFFFFF";
     public static string ProgressInk => Dark ? Current.Accent : Mix(Current.Accent, "#18352B", 0.25);
     // 百分比在标题行右侧，字号和颜色跟着风格走：纸感/标签/极简用次要灰，柔光/夜航才用强调色。
@@ -80,6 +107,7 @@ public static class Appearance
         EffectiveTextSize = 13 * TextScale;
         Layout = Themes.Layouts.Contains(p.ListLayout) ? p.ListLayout : Themes.CardLayout;
         BarHeight = p.BarHeight > 0 ? p.BarHeight : Current.BarHeight;
+        ImagePath = p.BackgroundImage ?? ""; Scrim = p.ImageScrim;
         // The list layout drops the chip blocks regardless of the theme, otherwise rows get too tall.
         ChipStyle = Layout == Themes.ListLayout ? "text" : Current.ChipStyle;
         Opacity = p.BackgroundOpacity; FontName = p.FontName;

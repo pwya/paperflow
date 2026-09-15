@@ -15,7 +15,9 @@ try {
     Expand-Archive -LiteralPath $snapshot -DestinationPath $source
     & (Join-Path $source 'scripts/Test-Channel.ps1')
     # Build the committed snapshot, even if someone edits the worktree during compilation.
-    [xml]$project = Get-Content (Join-Path $source 'PaperFlow/PaperFlow.csproj')
+    # Windows PowerShell reads BOM-less files as ANSI, which mangles the Chinese product
+    # description and breaks the XML cast. Always read project files as UTF-8.
+    [xml]$project = Get-Content (Join-Path $source 'PaperFlow/PaperFlow.csproj') -Encoding UTF8
     $version = [string]$project.Project.PropertyGroup.Version
     if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use a three-part release version.' }
     dotnet run --project (Join-Path $source 'tests/PaperFlow.Tests.csproj') -c Release

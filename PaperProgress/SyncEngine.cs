@@ -27,7 +27,7 @@ public sealed class SyncEvent
 // are independent last-writer registers ordered by Lamport counter, device id, event id.
 public static class SyncProtocol
 {
-    private static readonly string[] ScalarNames = { "Title", "Subject", "Language", "Collaborators", "Journal", "Status", "NextAction", "Outcome", "Notes", "StartDate", "DueDate", "UpdatedAt", "Archived" };
+    private static readonly string[] ScalarNames = { "Title", "Subject", "Language", "Collaborators", "Journal", "Status", "Priority", "NextAction", "Outcome", "Notes", "StartDate", "DueDate", "UpdatedAt", "Archived" };
     private static readonly Dictionary<string, PropertyInfo> Scalars = ScalarNames.ToDictionary(n => n, n => typeof(Paper).GetProperty(n)!);
     private static JsonElement Json(object? value) => JsonSerializer.SerializeToElement(value);
     public static List<SyncEdit> Diff(Library before, Library after)
@@ -68,6 +68,7 @@ public static class SyncProtocol
                 var value = edit.Value.Deserialize(property.PropertyType);
                 if (property.PropertyType == typeof(string) && value is not string) throw new InvalidDataException("文字字段不能为空值。");
                 if (edit.Field == "Title" && (value is not string title || string.IsNullOrWhiteSpace(title) || title.Length > 500)) throw new InvalidDataException("论文标题无效。");
+                if (edit.Field == "Priority" && (value is not string priority || !Paper.Priorities.Contains(priority))) throw new InvalidDataException("优先级无效。");
                 if ((edit.Field == "StartDate" || edit.Field == "DueDate") && value is DateTime date && (date.Year < 1900 || date.Year > 2200)) throw new InvalidDataException("日期无效。");
             }
             else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal))

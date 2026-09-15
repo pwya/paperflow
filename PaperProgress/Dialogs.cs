@@ -32,6 +32,8 @@ public sealed class PaperEditor : Window
             AutomationProperties.SetName(input, label); body.Children.Add(input); return input;
         }
         var title = Field("论文标题", paper.Title);
+        body.Children.Add(MainWindow.Text("优先级", 12, "#62766A"));
+        var priority = new ComboBox { ItemsSource = Paper.Priorities, SelectedItem = paper.Priority, Margin = new Thickness(0, 5, 0, 12) }; body.Children.Add(priority);
         var subject = Field("学科", paper.Subject);
         var language = Field("语言", paper.Language);
         var collaborators = Field("合作者", paper.Collaborators);
@@ -62,6 +64,7 @@ public sealed class PaperEditor : Window
             if (invalidDate || start.SelectedDate == null || (!string.IsNullOrWhiteSpace(due.Text) && due.SelectedDate == null)) { MessageBox.Show(this, "请填写有效日期，截止日期也可以留空。"); return; }
             if (start.SelectedDate.Value.Year < 1900 || start.SelectedDate.Value.Year > 2200 || due.SelectedDate?.Year < 1900 || due.SelectedDate?.Year > 2200) { MessageBox.Show(this, "日期需在 1900—2200 年之间。"); return; }
             paper.Title = title.Text.Trim(); paper.Subject = subject.Text.Trim(); paper.Language = language.Text.Trim(); paper.Collaborators = collaborators.Text.Trim();
+            paper.Priority = priority.SelectedItem as string ?? "中";
             paper.Journal = journal.Text.Trim(); paper.Status = status.SelectedItem as string ?? "准备中"; paper.NextAction = next.Text.Trim();
             paper.StartDate = start.SelectedDate.Value.Date; paper.DueDate = due.SelectedDate?.Date; paper.Outcome = outcome.Text.Trim(); paper.Notes = notes.Text;
             bool skipped = skip.IsChecked == true;

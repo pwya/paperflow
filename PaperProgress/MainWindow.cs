@@ -20,6 +20,7 @@ public sealed class MainWindow : Window
 {
     private readonly Storage store;
     private readonly SyncEngine sync;
+    private readonly bool demonstration;
     private Library library;
     private bool polling;
     private readonly Border frame = new();
@@ -27,6 +28,8 @@ public sealed class MainWindow : Window
     private readonly StackPanel cards = new();
     private readonly TextBlock summary = new();
     private readonly TextBlock footer = new();
+    private readonly StackPanel pager = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 7) };
+    private readonly TextBlock pageLabel = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 12, 0), FontSize = 12 };
     private readonly TextBox search = new();
     private readonly ComboBox filter = new();
     private readonly ComboBox sort = new();
@@ -62,8 +65,9 @@ public sealed class MainWindow : Window
         return wrapper;
     }
 
-    public MainWindow(Storage storage, Library initial, SyncEngine synchronization)
+    public MainWindow(Storage storage, Library initial, SyncEngine synchronization, bool demonstration = false)
     {
+        this.demonstration = demonstration;
         store = storage; library = initial; sync = synchronization;
         Title = "论文进度";
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/app.ico"));
@@ -111,6 +115,10 @@ public sealed class MainWindow : Window
         var foot = new Border { Padding = new Thickness(20, 8, 20, 10), BorderThickness = new Thickness(0, 1, 0, 0), BorderBrush = Brush("#E0E5DD") };
         footer.Text = sync.Status; footer.FontSize = 10; footer.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); footer.TextTrimming = TextTrimming.CharacterEllipsis; foot.Child = footer;
         DockPanel.SetDock(foot, Dock.Bottom); root.Children.Add(foot);
+        pager.Children.Add(ActionButton("‹ 上一页", () => TurnPage(-1)));
+        pager.Children.Add(pageLabel);
+        pager.Children.Add(ActionButton("下一页 ›", () => TurnPage(1)));
+        DockPanel.SetDock(pager, Dock.Bottom); root.Children.Add(pager);
         scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new Thickness(13, 0, 9, 0), Content = cards };
         scroller.AllowDrop = true;
         scroller.PreviewDragOver += (_, e) =>
@@ -123,7 +131,7 @@ public sealed class MainWindow : Window
         };
         root.Children.Add(scroller);
 
-        tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = "论文进度 · 双击打开", Visible = true };
+        tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = "论文进度 · 双击打开", Visible = !demonstration };
         var trayMenu = new Forms.ContextMenuStrip();
         trayMenu.Items.Add("显示论文进度", null, (_, _) => Dispatcher.Invoke(Reveal));
         trayMenu.Items.Add("始终置顶 / 取消置顶", null, (_, _) => Dispatcher.Invoke(TogglePin));
@@ -155,7 +163,8 @@ public sealed class MainWindow : Window
             catch (Exception ex) { footer.Text = "同步需要留意 · " + ex.Message; }
             finally { polling = false; }
         };
-        timer.Start(); ready = true; Render();
+        if (!demonstration) timer.Start(); ready = true; Render();
+        if (demonstration) { footer.Text = "演示数据 · 所有论文均为虚构 · PaperProgress 1.3"; footer.ToolTip = null; }
         SessionEndingHook();
     }
 
@@ -169,6 +178,7 @@ public sealed class MainWindow : Window
     private void SessionEndingHook() => Application.Current.SessionEnding += (_, _) => SaveWindow();
     private void Reveal() { Show(); WindowState = WindowState.Normal; Activate(); }
     private void ExitApplication() { if (!SaveWindow()) return; quitting = true; Close(); }
+    internal void CloseDemonstration() { if (!demonstration) throw new InvalidOperationException("仅供演示导出。"); quitting = true; Close(); }
 
     // Write a complete candidate snapshot before adopting it, so failed writes do not appear saved.
     private bool Commit(Action<Library> edit, string notice = "已保存")
@@ -193,6 +203,11 @@ public sealed class MainWindow : Window
     });
     private void TogglePin() { if (Commit(l => l.Settings.Topmost = !l.Settings.Topmost)) Topmost = library.Settings.Topmost; }
     private void ToggleCompact() => Commit(l => l.Settings.Compact = !l.Settings.Compact);
+    private void TurnPage(int delta)
+    {
+        Commit(l => l.Settings.PageIndex = (l.Settings.PageIndex + delta + ViewRules.PageCount(l.Settings)) % ViewRules.PageCount(l.Settings));
+        scroller.ScrollToTop();
+    }
 
     private void AddPaper()
     {
@@ -223,15 +238,24 @@ public sealed class MainWindow : Window
         var term = search.Text.Trim();
         if (term != "") visible = visible.Where(p => string.Join(" ", p.Title, p.Subject, p.Language, p.Collaborators, p.Journal, p.Notes, p.Status, p.NextAction).Contains(term, StringComparison.OrdinalIgnoreCase));
         visible = sort.SelectedIndex switch { 1 => visible.OrderByDescending(p => p.UpdatedAt), 2 => visible.OrderBy(p => p.DueDate ?? DateTime.MaxValue), 3 => visible.OrderByDescending(p => p.Progress), _ => visible };
+        var candidates = visible.ToList();
+        var pagePapers = ViewRules.Apply(candidates, library.Settings);
+        summary.Text = $"{active.Count} 篇论文 · 当前显示 {pagePapers.Count} 篇" + (library.Settings.PageMode == ViewRules.PageModes[2] ? " · 阶段分组" : library.Settings.HideSelectedStages ? $" · 按阶段隐藏 {candidates.Count(p => ViewRules.SelectedStage(p, library.Settings))} 篇" : "");
+        summary.ToolTip = "隐藏和翻页仅改变显示，不删除论文。点击论文选项调整。";
+        pager.Visibility = ViewRules.PageCount(library.Settings) > 1 ? Visibility.Visible : Visibility.Collapsed;
+        pageLabel.Text = $"{ViewRules.PageTitle(library.Settings)} · {library.Settings.PageIndex + 1}/{ViewRules.PageCount(library.Settings)}";
+        pageLabel.Foreground = Brush("#24352F");
+        pageLabel.ToolTip = library.Settings.PageMode == ViewRules.PageModes[2] ? "所选阶段：" + string.Join("、", library.Settings.HiddenStages.Select(i => Paper.StageLabels[i])) : null;
         cards.Children.Clear();
-        foreach (var p in visible) cards.Children.Add(BuildCard(p));
+        foreach (var p in pagePapers) cards.Children.Add(BuildCard(p));
         if (cards.Children.Count == 0)
         {
             var empty = new StackPanel { Margin = new Thickness(20, 45, 20, 40) };
             var title = Text(library.Papers.Count == 0 ? "从第一篇论文开始" : "这里暂时没有论文", 22); title.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(title);
-            var hint = Text(library.Papers.Count == 0 ? "点击右上角 ＋，输入论文标题。\n七个阶段和进度条会自动准备好。" : "在论文选项中切换筛选，或试试其他搜索词。", 13, "#78867F");
+            var hint = Text(library.Papers.Count == 0 ? "点击右上角 ＋，输入论文标题。\n七个阶段和进度条会自动准备好。" : "论文可能在其他页，或被当前筛选隐藏。\n点击论文选项调整显示范围。", 13, "#78867F");
             hint.TextAlignment = TextAlignment.Center; hint.Margin = new Thickness(0, 15, 0, 20); empty.Children.Add(hint);
             if (library.Papers.Count == 0) { var demo = ActionButton("查看三篇示例", AddExamples); demo.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(demo); }
+            else { var adjust = ActionButton("调整论文选项", OpenOptions); adjust.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(adjust); }
             cards.Children.Add(empty);
         }
     }
@@ -241,20 +265,14 @@ public sealed class MainWindow : Window
         bool small = library.Settings.Compact;
         var card = new Border { Tag = p.Id, Background = Appearance.Paint(Appearance.Current.Card, Appearance.Opacity), CornerRadius = new CornerRadius(10), BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .8), BorderThickness = new Thickness(1), Padding = new Thickness(11, small ? 6 : 8, 11, small ? 3 : 5), Margin = new Thickness(4, 0, 4, 6) };
         var stack = new StackPanel(); card.Child = stack;
-        var header = new Grid(); header.ColumnDefinitions.Add(new ColumnDefinition()); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll };
-        var grip = Text("⠿", 13, "#8A948C"); grip.Margin = new Thickness(0, 0, 5, 0); titleArea.Children.Add(grip);
-        var name = Text(p.Title, small ? 14 : 15); name.FontWeight = FontWeights.SemiBold; name.TextTrimming = TextTrimming.CharacterEllipsis; name.ToolTip = p.Title + "\n拖动调整优先顺序";
-        titleArea.Children.Add(name); header.Children.Add(titleArea);
+        var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Margin = new Thickness(0, 0, 0, 1) };
+        var dots = PriorityDots(p);
+        titleArea.Children.Add(dots);
+        var name = Text(p.Title, small ? 14 : 15); name.FontWeight = library.Settings.TitleBold ? FontWeights.SemiBold : FontWeights.Normal; name.TextTrimming = TextTrimming.CharacterEllipsis; name.VerticalAlignment = VerticalAlignment.Center; name.ToolTip = p.Title + "\n拖动调整优先顺序";
+        titleArea.Children.Add(name); stack.Children.Add(titleArea);
         var metadata = string.Join(" / ", new[] { p.Subject, p.Language, p.Journal }.Where(v => !string.IsNullOrWhiteSpace(v)));
-        var details = ActionButton(metadata == "" ? "补充论文资料" : "论文资料", () => EditPaper(p));
-        details.FontSize = 10 * Appearance.Scale; details.Padding = new Thickness(4, 2, 4, 2); details.Background = Brushes.Transparent; details.Foreground = Brush("#78867F");
-        details.ToolTip = (metadata == "" ? "编辑论文资料" : metadata) + "\n状态：" + p.EffectiveStatus;
-        AutomationProperties.SetName(details, p.Title + " 的论文资料"); Grid.SetColumn(details, 1); header.Children.Add(details);
-        var edit = ActionButton("···", () => PaperMenu(p, card)); edit.Padding = new Thickness(7, 1, 7, 1); edit.FontSize = 17; edit.ToolTip = "资料、排序、复制、归档"; AutomationProperties.SetName(edit, p.Title + " 的操作");
-        Grid.SetColumn(edit, 2); header.Children.Add(edit); stack.Children.Add(header);
         var progressRow = new Grid { Margin = new Thickness(0, 2, 0, 3), ToolTip = "下一步：" + (p.NextAction != "" ? p.NextAction : p.NextStage) };
-        progressRow.ColumnDefinitions.Add(new ColumnDefinition()); progressRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(65 * Appearance.Scale) });
+        progressRow.ColumnDefinitions.Add(new ColumnDefinition()); progressRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(85 * Appearance.Scale) });
         var track = new Grid { Height = library.Settings.BarHeight, VerticalAlignment = VerticalAlignment.Center };
         track.Children.Add(new Border { Background = Brush("#EBEFE9"), CornerRadius = new CornerRadius(5) });
         var inner = new Grid(); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, p.Progress), GridUnitType.Star) }); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, 100 - p.Progress), GridUnitType.Star) });
@@ -265,24 +283,52 @@ public sealed class MainWindow : Window
         for (int i = 0; i < p.Stages.Count; i++)
         {
             int index = i; var stage = p.Stages[i];
-            var cb = new CheckBox { Content = stage.Skipped ? stage.Name + "（免）" : stage.Name, IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontSize = (small ? 11 : 12) * Appearance.Scale };
-            cb.SetResourceReference(StyleProperty, "StageCheck"); AutomationProperties.SetName(cb, p.Title + " · " + stage.Name);
+            var cb = new CheckBox { Content = Paper.StageLabels[i] + (stage.Skipped ? "（免）" : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontSize = (small ? 11 : 12) * Appearance.Scale };
+            cb.SetResourceReference(StyleProperty, "StageCheck"); AutomationProperties.SetName(cb, p.Title + " · " + Paper.StageLabels[i]);
             cb.Padding = new Thickness(small ? 4 : 5, 3, small ? 4 : 5, 3); cb.Margin = new Thickness(0, 0, 4, 3);
-            cb.ToolTip = stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : "点击切换；进度按适用阶段等权计算";
+            cb.ToolTip = stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : i == 4 ? "勾选表示进入在审；继续勾选返修或收录后，移出在审分组。" : "点击切换；进度按适用阶段等权计算";
             cb.Click += (_, _) => Commit(l => l.Papers.Single(x => x.Id == p.Id).ToggleStage(index, cb.IsChecked == true)); checks.Children.Add(cb);
         }
-        stack.Children.Add(checks);
         var due = Text(p.DueDate != null && !p.Stages[6].Done ? p.DeadlineText : $"已开始 {p.ElapsedDays} 天", 11, p.DueDate?.Date < DateTime.Today && !p.Stages[6].Done ? "#BE624C" : "#8A948C");
         due.Margin = new Thickness(4, 0, 5, 3); due.ToolTip = $"开始日期：{p.StartDate:yyyy-MM-dd}\n已开始 {p.ElapsedDays} 天"; checks.Children.Add(due);
         if (!string.IsNullOrWhiteSpace(p.NextAction))
         {
             var next = Text("下一步 " + p.NextAction, 11, "#6C7C70"); next.MaxWidth = 150 * Appearance.Scale; next.TextTrimming = TextTrimming.CharacterEllipsis; next.ToolTip = p.NextAction; next.Margin = new Thickness(4, 0, 0, 3); checks.Children.Add(next); checks.OptionalTail = next;
         }
-        AttachPaperDrag(card, p.Id);
+        // One settings entry per paper, anchored at the bottom right corner of the card.
+        var bottom = new Grid();
+        bottom.ColumnDefinitions.Add(new ColumnDefinition()); bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        bottom.Children.Add(checks);
+        var settings = new Button { Content = "⚙", FontSize = 13 * Appearance.Scale, Padding = new Thickness(7, 2, 7, 2), Margin = new Thickness(7, 0, 0, 3), VerticalAlignment = VerticalAlignment.Bottom, Foreground = Brush("#62766A") };
+        settings.ToolTip = (metadata == "" ? "尚未填写学科、期刊等资料" : metadata + " · " + p.EffectiveStatus) + "\n编辑资料、修改记录、排序、复制、归档";
+        settings.Click += (_, _) => PaperMenu(p, settings);
+        AutomationProperties.SetName(settings, p.Title + " 的论文设置");
+        Grid.SetColumn(settings, 1); bottom.Children.Add(settings); stack.Children.Add(bottom);
+        AttachPaperDrag(card, p.Id, dots, () => PriorityMenu(p, dots));
         return card;
     }
 
+    // Priority is shown as three dots at the left edge of the title row; the filled
+    // count and the colour both carry the level. The dots stay a drag handle, so a
+    // press that never moves opens the priority menu instead of reordering.
+    private static FrameworkElement PriorityDots(Paper p)
+    {
+        int level = ViewRules.PriorityLevel(p.Priority);
+        var color = Appearance.Paint(p.Priority switch { "高" => "#C2543F", "中" => "#BE8C31", _ => "#3E8A6C" });
+        double size = 6.5 * Appearance.Scale;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        for (int i = 0; i < 3; i++) row.Children.Add(new System.Windows.Shapes.Ellipse { Width = size, Height = size, Margin = new Thickness(i == 0 ? 0 : 3.4 * Appearance.Scale, 0, 0, 0), Fill = i < level ? color : Brush("#EBEFE9") });
+        var dots = new Border { Child = row, Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Padding = new Thickness(0, 3, 8 * Appearance.Scale, 3), VerticalAlignment = VerticalAlignment.Center, ToolTip = $"{p.Priority}优先级 · 三个点分别代表高、中、低\n点击修改，按住拖动调整顺序" };
+        AutomationProperties.SetName(dots, p.Title + " 的优先级：" + p.Priority);
+        return dots;
+    }
+
     private static DependencyObject? ParentOf(DependencyObject node) => node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+    private static bool IsWithin(DependencyObject? node, DependencyObject ancestor)
+    {
+        for (var current = node; current != null; current = ParentOf(current)) if (ReferenceEquals(current, ancestor)) return true;
+        return false;
+    }
     private static bool InteractiveSource(DependencyObject? source)
     {
         for (var node = source; node != null; node = ParentOf(node))
@@ -297,22 +343,31 @@ public sealed class MainWindow : Window
         if (Mouse.LeftButton != MouseButtonState.Pressed) return;
         e.Handled = true; DragMove(); SaveWindow();
     }
-    private void AttachPaperDrag(Border card, string id)
+    private void AttachPaperDrag(Border card, string id, FrameworkElement? leftmost = null, Action? leftmostClick = null)
     {
         Point? start = null;
+        bool leftmostPressed = false;
         card.PreviewMouseLeftButtonDown += (_, e) =>
         {
+            leftmostPressed = leftmost != null && e.OriginalSource is DependencyObject source && IsWithin(source, leftmost);
             start = InteractiveSource(e.OriginalSource as DependencyObject) ? null : e.GetPosition(card);
             if (start != null) { card.CaptureMouse(); e.Handled = true; }
         };
-        card.PreviewMouseLeftButtonUp += (_, _) => { start = null; if (card.IsMouseCaptured) card.ReleaseMouseCapture(); };
-        card.LostMouseCapture += (_, _) => { if (!draggingPaper) start = null; };
+        card.PreviewMouseLeftButtonUp += (_, e) =>
+        {
+            // The releasing element is the capture target, so the press location is remembered above.
+            bool pending = start != null, clickedLeftmost = leftmostPressed;
+            start = null; leftmostPressed = false;
+            if (card.IsMouseCaptured) card.ReleaseMouseCapture();
+            if (pending && clickedLeftmost && leftmostClick != null) { leftmostClick(); e.Handled = true; }
+        };
+        card.LostMouseCapture += (_, _) => { if (!draggingPaper) { start = null; leftmostPressed = false; } };
         card.PreviewMouseMove += (_, e) =>
         {
             if (start == null || e.LeftButton != MouseButtonState.Pressed || draggingPaper) return;
             var point = e.GetPosition(card);
             if (Math.Abs(point.X - start.Value.X) < SystemParameters.MinimumHorizontalDragDistance && Math.Abs(point.Y - start.Value.Y) < SystemParameters.MinimumVerticalDragDistance) return;
-            start = null; draggingPaper = true; draggedPaperId = id;
+            start = null; leftmostPressed = false; draggingPaper = true; draggedPaperId = id;
             card.ReleaseMouseCapture();
             try { DragDrop.DoDragDrop(card, new DataObject(PaperDragFormat, id), DragDropEffects.Move); }
             finally { draggingPaper = false; draggedPaperId = null; Render(); }
@@ -351,6 +406,17 @@ public sealed class MainWindow : Window
         Item(p.Archived ? "恢复到论文列表" : "归档（保留资料）", () => Commit(l => { var paper = l.Papers.Single(x => x.Id == p.Id); paper.Archived = !paper.Archived; paper.Record(paper.Archived ? "归档论文" : "恢复论文"); }));
         menu.IsOpen = true;
     }
+    private void PriorityMenu(Paper p, FrameworkElement anchor)
+    {
+        var menu = new ContextMenu { PlacementTarget = anchor };
+        foreach (var value in Paper.Priorities)
+        {
+            var item = new MenuItem { Header = value + "优先级", IsCheckable = true, IsChecked = p.Priority == value };
+            item.Click += (_, _) => Commit(l => { var paper = l.Papers.Single(x => x.Id == p.Id); if (paper.Priority != value) { paper.Priority = value; paper.Record("优先级设为" + value); } });
+            menu.Items.Add(item);
+        }
+        menu.IsOpen = true;
+    }
     private void MovePaper(string id, int delta)
     {
         sort.SelectedIndex = 0;
@@ -375,17 +441,43 @@ public sealed class MainWindow : Window
     }
     private void OpenOptions()
     {
-        var window = new Window { Title = "论文选项", Width = 400, Height = 370, Owner = this, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner };
-        var body = new StackPanel { Margin = new Thickness(22) }; window.Content = body;
+        var window = new Window { Title = "论文选项", Width = 490, Height = Math.Min(760, SystemParameters.WorkArea.Height - 30), Owner = this, ResizeMode = ResizeMode.CanResize, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var root = new DockPanel { Margin = new Thickness(22) }; window.Content = root;
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
+        DockPanel.SetDock(controls, Dock.Bottom); root.Children.Add(controls);
+        var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         body.Children.Add(Text("搜索与视图", 20));
         body.Children.Add(Text("搜索论文、期刊、学科或合作者", 11, "#78867F"));
         search.Margin = new Thickness(0, 9, 0, 12); body.Children.Add(search);
         body.Children.Add(Text("显示范围", 12)); filter.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(filter);
         body.Children.Add(Text("排序方式", 12)); sort.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(sort);
         var small = new CheckBox { Content = "紧凑视图（保留七阶段）", IsChecked = library.Settings.Compact }; small.Click += (_, _) => Commit(l => l.Settings.Compact = small.IsChecked == true); body.Children.Add(small);
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 18, 0, 0) };
-        controls.Children.Add(ActionButton("清除筛选", () => { search.Clear(); filter.SelectedIndex = 0; }));
-        controls.Children.Add(ActionButton("完成", window.Close, true)); body.Children.Add(controls);
+        void Label(string text) { var label = Text(text, 13); label.Margin = new Thickness(0, 16, 0, 7); body.Children.Add(label); }
+        void ChangeView(Action<Preferences> change) => Commit(l => { change(l.Settings); l.Settings.PageIndex = 0; });
+        Label("只显示这些优先级");
+        var priorities = new WrapPanel(); body.Children.Add(priorities);
+        foreach (var value in Paper.Priorities)
+        {
+            var check = new CheckBox { Content = value + "优先级", IsChecked = library.Settings.VisiblePriorities.Contains(value), Margin = new Thickness(0, 0, 18, 5) };
+            check.Click += (_, _) => ChangeView(p => { p.VisiblePriorities.Remove(value); if (check.IsChecked == true) p.VisiblePriorities.Add(value); }); priorities.Children.Add(check);
+        }
+        Label("暂时隐藏的阶段");
+        var hide = new CheckBox { Content = "隐藏所选阶段的论文", IsChecked = library.Settings.HideSelectedStages, Margin = new Thickness(0, 0, 0, 8) };
+        hide.Click += (_, _) => ChangeView(p => p.HideSelectedStages = hide.IsChecked == true); body.Children.Add(hide);
+        var stages = new WrapPanel(); body.Children.Add(stages);
+        for (int i = 0; i < Paper.StageLabels.Length; i++)
+        {
+            int index = i;
+            var check = new CheckBox { Content = Paper.StageLabels[i], IsChecked = library.Settings.HiddenStages.Contains(i), Margin = new Thickness(0, 0, 14, 7) };
+            check.Click += (_, _) => ChangeView(p => { p.HiddenStages.Remove(index); if (check.IsChecked == true) p.HiddenStages.Add(index); }); stages.Children.Add(check);
+        }
+        var explanation = Text("按最后一个已勾选阶段归类；未勾选时归入开题。\n例如：在审后进入返修，会重新显示。", 11, "#78867F"); explanation.TextWrapping = TextWrapping.Wrap; body.Children.Add(explanation);
+        Label("翻页方式");
+        var paging = new ComboBox { ItemsSource = ViewRules.PageModes, SelectedItem = library.Settings.PageMode }; body.Children.Add(paging);
+        paging.SelectionChanged += (_, _) => ChangeView(p => p.PageMode = paging.SelectedItem as string ?? ViewRules.PageModes[0]);
+        var pageHint = Text("优先级：高 → 中 → 低。\n阶段分组：第一页排除所选阶段，第二页只看所选阶段。\n阶段分页会将隐藏项放到第二页；优先级筛选仍生效。", 11, "#78867F"); pageHint.TextWrapping = TextWrapping.Wrap; pageHint.Margin = new Thickness(0, 8, 0, 0); body.Children.Add(pageHint);
+        controls.Children.Add(ActionButton("显示全部", () => { search.Clear(); filter.SelectedIndex = 0; ChangeView(p => { p.HideSelectedStages = false; p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
+        controls.Children.Add(ActionButton("完成", window.Close, true));
         window.Closed += (_, _) => { body.Children.Remove(search); body.Children.Remove(filter); body.Children.Remove(sort); };
         window.Loaded += (_, _) => search.Focus(); window.ShowDialog();
     }

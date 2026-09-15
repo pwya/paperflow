@@ -56,6 +56,8 @@ public sealed class SettingsWindow : Window
         var size = new Slider { Minimum = 10, Maximum = 22, TickFrequency = 1, IsSnapToTickEnabled = true, Value = Result.TextSize, Margin = new Thickness(0, 5, 0, 7) }; body.Children.Add(size);
         void SizeChanged() { Result.TextSize = size.Value; sizeLabel.Text = $"字号 · {size.Value:0}（论文标题与百分比按比例放大）"; Preview(); }
         size.ValueChanged += (_, _) => SizeChanged(); SizeChanged();
+        var bold = new CheckBox { Content = "论文标题加粗", IsChecked = Result.TitleBold, Margin = new Thickness(0, 6, 0, 6) }; body.Children.Add(bold);
+        bold.Click += (_, _) => { Result.TitleBold = bold.IsChecked == true; Preview(); };
         Label("进度条厚度");
         var bars = new ComboBox { ItemsSource = new[] { "醒目 · 14", "粗 · 20", "特粗 · 28" }, SelectedIndex = Array.IndexOf(new[] { 14, 20, 28 }, Result.BarHeight) }; body.Children.Add(bars);
         bars.SelectionChanged += (_, _) => { Result.BarHeight = new[] { 14, 20, 28 }[Math.Max(0, bars.SelectedIndex)]; Preview(); };

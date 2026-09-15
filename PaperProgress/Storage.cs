@@ -60,9 +60,14 @@ public sealed class Storage
             if (p.History == null || p.History.Any(h => h == null || h.Description == null)) throw new InvalidDataException("修改记录无效。");
             p.Subject ??= ""; p.Language ??= ""; p.Collaborators ??= ""; p.Journal ??= "";
             p.NextAction ??= ""; p.Outcome ??= ""; p.Notes ??= "";
+            if (!Paper.Priorities.Contains(p.Priority)) throw new InvalidDataException("优先级必须是高、中或低。");
             if (!Paper.Statuses.Contains(p.Status)) p.Status = "准备中";
         }
         var s = library.Settings;
+        s.HiddenStages = (s.HiddenStages ?? new() { 4 }).Where(i => i >= 0 && i < 7).Distinct().ToList();
+        s.VisiblePriorities = (s.VisiblePriorities ?? Paper.Priorities.ToList()).Where(Paper.Priorities.Contains).Distinct().ToList();
+        if (!ViewRules.PageModes.Contains(s.PageMode)) s.PageMode = "不翻页";
+        s.PageIndex = Math.Clamp(s.PageIndex, 0, ViewRules.PageCount(s) - 1);
         s.Theme ??= "竹青"; s.AccentColor ??= ""; s.BackgroundColor ??= ""; s.FontName ??= "Microsoft YaHei UI";
         s.SyncFolder ??= ""; s.LauncherPath ??= "";
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;

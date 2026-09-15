@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup><Compile Include="../PaperProgress/Models.cs" Link="Models.cs"/><Compile Include="../PaperProgress/Storage.cs" Link="Storage.cs"/><Compile Include="../PaperProgress/SyncEngine.cs" Link="SyncEngine.cs"/><Compile Include="../PaperProgress/PaperOrder.cs" Link="PaperOrder.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../PaperProgress/ViewRules.cs" Link="ViewRules.cs"/></ItemGroup>
 </Project>

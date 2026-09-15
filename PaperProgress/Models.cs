@@ -21,6 +21,9 @@ public sealed class Change
 public sealed class Paper
 {
     public static readonly string[] StageNames = { "开题", "语料&数据整理", "初稿", "自修", "投稿", "返修", "收录" };
+    // Stable stored names preserve historical event files; display names may evolve.
+    public static readonly string[] StageLabels = { "开题", "语料&数据整理", "初稿", "自修", "在审", "返修", "收录" };
+    public static readonly string[] Priorities = { "高", "中", "低" };
     public static readonly string[] Statuses = { "准备中", "写作中", "审稿中", "待返修", "已修回", "已录用", "准备转投", "暂停" };
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     public string Title { get; set; } = "";
@@ -29,6 +32,7 @@ public sealed class Paper
     public string Collaborators { get; set; } = "";
     public string Journal { get; set; } = "";
     public string Status { get; set; } = "准备中";
+    public string Priority { get; set; } = "中";
     public string NextAction { get; set; } = "";
     public string Outcome { get; set; } = "";
     public string Notes { get; set; } = "";
@@ -44,7 +48,8 @@ public sealed class Paper
     [JsonIgnore] public int Progress => Total == 0 ? 0 : (int)Math.Round(100.0 * Completed / Total, MidpointRounding.AwayFromZero);
     [JsonIgnore] public bool IsComplete => Total > 0 && Completed == Total;
     [JsonIgnore] public int ElapsedDays => Math.Max(0, (DateTime.Today - StartDate.Date).Days);
-    [JsonIgnore] public string NextStage => Stages.FirstOrDefault(s => !s.Done && !s.Skipped)?.Name ?? "阶段已全部完成";
+    [JsonIgnore] public string NextStage => Stages.FindIndex(s => !s.Done && !s.Skipped) is int i && i >= 0 ? StageLabels[i] : "阶段已全部完成";
+    [JsonIgnore] public int CurrentStageIndex => Math.Max(0, Stages.FindLastIndex(s => s.Done && !s.Skipped));
     [JsonIgnore] public string EffectiveStatus => Stages.Last().Done ? "已录用" : Status;
     [JsonIgnore] public string DeadlineText => DueDate is null ? "" : (DueDate.Value.Date - DateTime.Today).Days switch
     {
@@ -65,12 +70,18 @@ public sealed class Paper
         var stage = Stages[index];
         if (stage.Skipped || stage.Done == done) return;
         stage.Done = done;
-        Record($"{(done ? "完成" : "撤销完成")} · {stage.Name}");
+        Record($"{(done ? "完成" : "撤销完成")} · {StageLabels[index]}");
     }
 }
 
 public sealed class Preferences
 {
+    public bool TitleBold { get; set; } = true;
+    public bool HideSelectedStages { get; set; } = true;
+    public List<int> HiddenStages { get; set; } = new() { 4 };
+    public List<string> VisiblePriorities { get; set; } = new() { "高", "中", "低" };
+    public string PageMode { get; set; } = "不翻页";
+    public int PageIndex { get; set; }
     public string Theme { get; set; } = "竹青";
     public string AccentColor { get; set; } = "";
     public string BackgroundColor { get; set; } = "";

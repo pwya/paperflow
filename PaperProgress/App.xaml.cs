@@ -12,6 +12,22 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        int promoIndex = Array.IndexOf(e.Args, "--promotional-assets");
+        if (promoIndex >= 0)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    if (promoIndex + 1 >= e.Args.Length) throw new ArgumentException("请指定宣传图输出目录。");
+                    await PromotionExporter.Generate(Path.GetFullPath(e.Args[promoIndex + 1]));
+                    Shutdown(0);
+                }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Shutdown(1); }
+            }));
+            return; // Never load the normal data folder in promotional export mode.
+        }
         var dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PaperProgress");
         int overrideIndex = Array.IndexOf(e.Args, "--data-dir");
         if (overrideIndex >= 0 && e.Args.Length > overrideIndex + 1) dataDirectory = Path.GetFullPath(e.Args[overrideIndex + 1]);

@@ -2,17 +2,25 @@
 
 一个安静的 Windows 桌面小部件：把正在投的论文摆在一起，点一下就更新进度，一眼看得出哪篇卡在哪一步。
 
-不需要注册账号，不打开也不用联网；论文数据只存在你自己的电脑上。
+## 怎么下载
+
+**在 GitHub 下载**
+
+1. 点本页右上方的 **Releases**（或直接打开 https://github.com/pwya/paperflow/releases ）。
+2. 在最上面那个版本（标题是 `PaperFlow x.y.z`）下面找到 **Assets**，点开它。
+3. 点 `PaperFlow-x.y.z-win-x64.zip` 下载。
+4. 解压到一个文件夹，双击里面的 **`PaperFlow.Launcher.exe`** 就能用。
+
+**在 Gitee 下载（国内更快）**
+
+1. 打开 https://gitee.com/pan-wang-yuang/paperflow 。
+2. 点页面上方的 **发行版**。
+3. 点最新那个版本，在附件里下载 `PaperFlow-x.y.z-win-x64.zip`。
+4. 解压，双击 `PaperFlow.Launcher.exe`。
+
+程序自带运行环境，不需要另外安装什么。支持 Windows 10 / 11（64 位）。
 
 ![PaperFlow 总览](docs/images/01-overview.png)
-
-## 下载
-
-在 [Releases](https://github.com/pwya/paperflow/releases) 页面下载最新的 `PaperFlow-<版本>-win-x64.zip`，解压到任意文件夹，双击里面的 `PaperFlow.Launcher.exe` 就行。自带运行环境，不需要另外安装什么；面向 Windows 10 / 11（x64）。
-
-GitHub 下载慢的话，用国内镜像：[gitee.com/pan-wang-yuang/paperflow](https://gitee.com/pan-wang-yuang/paperflow/releases)（同一份程序，哈希一致；镜像可能比 GitHub 慢一步更新）。
-
-程序没有购买代码签名证书，所以**第一次打开时 Windows 可能弹一个蓝色的 SmartScreen 提示**：点“更多信息”，再点“仍要运行”，之后不会再问。介意这一点的话可以自己从源码构建。
 
 ## 怎么用
 
@@ -22,6 +30,8 @@ GitHub 下载慢的话，用国内镜像：[gitee.com/pan-wang-yuang/paperflow](
 - 卡片右下角的齿轮是这篇论文的完整资料：学科、合作者、目标期刊、当前状态、下一步、截止日期、备注和修改记录。
 - 右上角两个入口分工不同：`论文选项` 管你此刻看到什么（搜索、筛选、排序、翻页），`设置` 管长期偏好（主题、字号、背景图、界面语言、更新提示、开机启动）。
 - 点 `×` 只是收进系统托盘，双击托盘图标就能叫回来；要完全关闭请用托盘右键菜单里的“退出”。
+
+界面有中文和英文两版，在 设置 → 外观 → 界面语言 里切换。有新版本时窗口底部会出现一行提示，点一下就会下载并更新，不需要重新下载压缩包。
 
 ## 长什么样
 
@@ -49,14 +59,8 @@ GitHub 下载慢的话，用国内镜像：[gitee.com/pan-wang-yuang/paperflow](
 
 ![列表布局](docs/images/06-list.png)
 
-界面有中文和英文两版，在 设置 → 外观 → 界面语言 里切换。
-
-## 更新
-
-有新版时，窗口底部会出现一行提示：点“下载并安装”就会下载、校验并重启生效；不想被提醒的话，在 设置 → 同步与启动 里把更新提示设成“每天一次”或“不提示”。检查更新只读 GitHub 上的一份清单，只下载、不上传，不会把论文信息发出去。
-
 ## 反馈
 
 遇到问题或者想提建议：发邮件到 **pwya1998@126.com**，或者在 [Issues](https://github.com/pwya/paperflow/issues) 里开一条（截图和文字都可以）。
 
-MIT 许可。源码就在本仓库；构建与发布流程见 [docs/RELEASING.md](docs/RELEASING.md)，图标由仓库脚本生成、不含外部品牌素材。
+MIT 许可。源码就在本仓库。

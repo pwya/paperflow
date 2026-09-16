@@ -180,16 +180,17 @@ if ($Version) {
   if (-not (Test-Path -LiteralPath $localManifest)) { throw "missing $localManifest" }
   $manifest = Get-Content -LiteralPath $localManifest -Raw -Encoding UTF8 | ConvertFrom-Json
 
-  # A Gitee-flavoured manifest: same version, same checksum, but the download points at
+  # A Gitee-flavoured manifest: same version, same checksums, but the download points at
   # the Gitee copy so a user in China does not fall back to the slow GitHub download.
-  $assetName = "PaperFlow-$Version-win-x64.exe"
+  # The download is the zip; exeSha256/exeLength describe the program inside it.
+  $assetName = "PaperFlow-$Version-win-x64.zip"
   $giteeUrl = "https://gitee.com/$GiteeOwner/$GiteeRepo/releases/download/$tag/$assetName"
   # The file name matters: the attachment has to be called update.json so the app's
   # fixed URL .../releases/download/latest/update.json resolves.
   $manifestFolder = Join-Path ([IO.Path]::GetTempPath()) ("gitee-manifest-" + [guid]::NewGuid().ToString('N'))
   [IO.Directory]::CreateDirectory($manifestFolder) | Out-Null
   $giteeManifest = Join-Path $manifestFolder 'update.json'
-  [IO.File]::WriteAllText($giteeManifest, (@{ version = $manifest.version; url = $giteeUrl; sha256 = $manifest.sha256; length = $manifest.length } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+  [IO.File]::WriteAllText($giteeManifest, (@{ version = $manifest.version; url = $giteeUrl; sha256 = $manifest.sha256; length = $manifest.length; exeSha256 = $manifest.exeSha256; exeLength = $manifest.exeLength } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
 
   $release = Get-Release -Tag $tag
   if (-not $release) {
@@ -199,7 +200,6 @@ if ($Version) {
   } else { Write-Output ("Release {0} already exists" -f $tag) }
   Upload-Assets -Release $release -Label $tag -Files @(
     (Join-Path $ArtifactsDir $assetName),
-    (Join-Path $ArtifactsDir "PaperFlow-$Version-win-x64.zip"),
     (Join-Path $ArtifactsDir "PaperFlow-$Version-source.zip"),
     (Join-Path $ArtifactsDir 'build-info.json'),
     $giteeManifest

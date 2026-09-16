@@ -43,7 +43,7 @@ static class UpdateTests
             var payload = new byte[200_000];
             for (int i = 0; i < payload.Length; i++) payload[i] = (byte)(i * 31 % 251);
             string sha = Convert.ToHexString(SHA256.HashData(payload)).ToLowerInvariant();
-            var manifest = new UpdateManifest("9.9.9", "https://example.test/PaperFlow-9.9.9-win-x64.exe", sha, payload.Length);
+            var manifest = new UpdateManifest("9.9.9", "https://example.test/PaperFlow-9.9.9-win-x64.exe", sha, payload.Length, sha, payload.Length);
 
             using (var client = new HttpClient(new Stub(payload, manifest)))
             {
@@ -81,6 +81,46 @@ static class UpdateTests
             // 已经是最新版时不给提示。
             using (var client = new HttpClient(new Stub(payload, manifest with { Version = "0.0.1" })))
                 check(Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult() == null, "an older release is not offered");
+
+            // ---------- 压缩包更新（1.13.7 起只发压缩包，不再单独发 exe）----------
+            var zipBytes = BuildZip("versions/9.9.9/PaperFlow.exe", payload);
+            string zipHash = Convert.ToHexString(SHA256.HashData(zipBytes)).ToLowerInvariant();
+            var archiveManifest = new UpdateManifest("9.9.9", "https://example.test/PaperFlow-9.9.9-win-x64.zip", zipHash, zipBytes.Length, sha, payload.Length);
+            using (var client = new HttpClient(new Stub(zipBytes, null)))
+            {
+                var extracted = Updates.DownloadAsync(client, archiveManifest, Path.Combine(root, "zipcache"), null, CancellationToken.None).GetAwaiter().GetResult();
+                check(File.ReadAllBytes(extracted).SequenceEqual(payload), "a zip release extracts the program file inside it");
+                check(!Directory.GetFiles(Path.Combine(root, "zipcache"), "*.download").Any(), "the archive itself is cleaned up after extraction");
+                var package2 = Path.Combine(root, "package2"); Directory.CreateDirectory(package2);
+                var installed2 = Updates.Install(archiveManifest, extracted, package2);
+                check(File.ReadAllBytes(installed2).SequenceEqual(payload), "the extracted program installs exactly like before");
+                var channel2 = File.ReadAllText(Path.Combine(package2, "channel.json"));
+                check(channel2.Contains("\"sha256\":\"" + sha + "\"") && channel2.Contains("\"length\":200000"), "channel.json describes the program, not the zip");
+            }
+            // 包里没有那个程序文件 → 拒收
+            var missingEntry = BuildZip("versions/9.9.9/README.txt", payload);
+            using (var client = new HttpClient(new Stub(missingEntry, null)))
+            {
+                bool failed = false;
+                try { Updates.DownloadAsync(client, archiveManifest with { Sha256 = Convert.ToHexString(SHA256.HashData(missingEntry)).ToLowerInvariant(), Length = missingEntry.Length }, Path.Combine(root, "zipcache2"), null, CancellationToken.None).GetAwaiter().GetResult(); }
+                catch (InvalidDataException) { failed = true; }
+                check(failed, "a zip without the expected program file is rejected");
+            }
+            // 包里的程序被换过（压缩包哈希对得上、里面那个文件的哈希对不上）→ 拒收
+            var swapped = BuildZip("versions/9.9.9/PaperFlow.exe", payload.Reverse().ToArray());
+            using (var client = new HttpClient(new Stub(swapped, null)))
+            {
+                bool failed = false;
+                try { Updates.DownloadAsync(client, archiveManifest with { Sha256 = Convert.ToHexString(SHA256.HashData(swapped)).ToLowerInvariant(), Length = swapped.Length }, Path.Combine(root, "zipcache3"), null, CancellationToken.None).GetAwaiter().GetResult(); }
+                catch (InvalidDataException) { failed = true; }
+                check(failed, "a swapped program file inside the zip is rejected");
+            }
+            // 清单层面：压缩包地址必须带 exeSha256 / exeLength
+            Reject(() => UpdateManifest.Parse("{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.zip\",\"sha256\":\"" + zipHash + "\",\"length\":" + zipBytes.Length + "}", false), "a zip manifest without the inner checksum is rejected");
+            var parsedZip = UpdateManifest.Parse("{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.zip\",\"sha256\":\"" + zipHash + "\",\"length\":" + zipBytes.Length + ",\"exeSha256\":\"" + sha + "\",\"exeLength\":" + payload.Length + "}", false);
+            check(parsedZip.IsArchive && parsedZip.ExeSha256 == sha, "a zip manifest with both checksums parses");
+            var parsedExe = UpdateManifest.Parse("{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + sha + "\",\"length\":" + payload.Length + "}", false);
+            check(!parsedExe.IsArchive && parsedExe.ExeSha256 == sha && parsedExe.ExeLength == payload.Length, "older exe manifests still mean the same file for both fields");
 
             // ---------- 两个候选地址（Gitee 镜像 + GitHub）----------
             check(Updates.ManifestUrls.Count == 2 && Updates.ManifestUrls[0].Contains("gitee.com") && Updates.ManifestUrls[1].Contains("github.com"), "the mirror is tried first, GitHub stays as the second source");
@@ -153,6 +193,19 @@ static class UpdateTests
         if (!rejected) throw new Exception("FAILED: " + label);
     }
 
+    // A real zip in memory with one entry, used to test the archive update path.
+    private static byte[] BuildZip(string entryName, byte[] content)
+    {
+        using var stream = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, true))
+        {
+            var entry = archive.CreateEntry(entryName, System.IO.Compression.CompressionLevel.Fastest);
+            using var target = entry.Open();
+            target.Write(content, 0, content.Length);
+        }
+        return stream.ToArray();
+    }
+
     // 一个假的 GitHub：清单和 exe 都从内存里发出去，测试不需要网络。
     private sealed class Stub : HttpMessageHandler
     {
@@ -160,17 +213,18 @@ static class UpdateTests
         public static long LastBody = -1;
         public static bool LastHadCookies = true;
         private readonly byte[] payload;
-        private readonly UpdateManifest manifest;
-        public Stub(byte[] payload, UpdateManifest manifest) { this.payload = payload; this.manifest = manifest; }
+        private readonly UpdateManifest? manifest;
+        public Stub(byte[] payload, UpdateManifest? manifest) { this.payload = payload; this.manifest = manifest; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
         {
             LastMethod = request.Method.Method;
             LastBody = request.Content == null ? 0 : (request.Content.Headers.ContentLength ?? 0);
             LastHadCookies = request.Headers.Contains("Cookie");
-            bool program = request.RequestUri!.AbsolutePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+            bool program = request.RequestUri!.AbsolutePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || request.RequestUri!.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
             var response = new HttpResponseMessage(HttpStatusCode.OK);
             if (program) response.Content = new ByteArrayContent(payload);
-            else response.Content = new StringContent("{\"version\":\"" + manifest.Version + "\",\"url\":\"" + manifest.Url + "\",\"sha256\":\"" + manifest.Sha256 + "\",\"length\":" + manifest.Length + "}");
+            else if (manifest != null) response.Content = new StringContent("{\"version\":\"" + manifest.Version + "\",\"url\":\"" + manifest.Url + "\",\"sha256\":\"" + manifest.Sha256 + "\",\"length\":" + manifest.Length + "}");
+            else response.Content = new StringContent("{}");
             return Task.FromResult(response);
         }
     }

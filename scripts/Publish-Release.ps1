@@ -61,25 +61,40 @@ try {
     $appArchive = Join-Path $destination "PaperFlow-$version-win-x64.zip"
     Compress-Archive -Path (Join-Path $package '*') -DestinationPath $appArchive -Force
     Copy-Item -LiteralPath (Join-Path $package 'build-info.json') -Destination $destination
-    # 程序内自动更新的两样东西：单独的 exe，和一份固定名字的 update.json。
-    # 清单里的地址必须是真的 Release 附件地址；程序只会在 `/releases/latest/download/update.json`
+    # 只发压缩包：程序内更新下载的就是它，然后从里面取出 versions/<版本>/PaperFlow.exe。
+    # 清单里的地址必须是真的 Release 附件地址；程序只在 `/releases/latest/download/update.json`
     # 读这份清单，所以每个正式版本都要把它一起传上去。
     # 用 -f 拼，不用字符串插值：插值里 $version 后面的变量名容易被读断，1.13.0 就这么错过一次。
-    $assetName = 'PaperFlow-{0}-win-x64.exe' -f $version
+    $assetName = 'PaperFlow-{0}-win-x64.zip' -f $version
     $updateUrl = 'https://github.com/pwya/paperflow/releases/download/v{0}/{1}' -f $version, $assetName
-    Copy-Item -LiteralPath $exe -Destination (Join-Path $destination $assetName) -Force
+    $zipHash = (Get-FileHash -LiteralPath $appArchive -Algorithm SHA256).Hash.ToLowerInvariant()
     $update = @{
         version = $version
         url = $updateUrl
-        sha256 = $hash
-        length = (Get-Item -LiteralPath $exe).Length
+        sha256 = $zipHash
+        length = (Get-Item -LiteralPath $appArchive).Length
+        # 解压出来的那个程序文件自己的哈希与长度：启动器与 channel.json 要的是它。
+        exeSha256 = $hash
+        exeLength = (Get-Item -LiteralPath $exe).Length
     }
     [IO.File]::WriteAllText((Join-Path $destination 'update.json'), ($update | ConvertTo-Json), $encoding)
-    # 清单是程序内更新唯一的入口，这里逐项对一遍：名字、地址、哈希、大小都要和附件真身一致。
+    # 清单是程序内更新唯一的入口，这里逐项对一遍：压缩包、里面的程序、哈希、大小都要对上。
     $written = Get-Content -LiteralPath (Join-Path $destination 'update.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-    if (-not (Test-Path -LiteralPath (Join-Path $destination $assetName))) { throw 'The standalone executable for in-app updates is missing.' }
-    if ($written.version -ne $version -or $written.url -ne $updateUrl -or $written.sha256 -ne $hash) { throw 'The update manifest does not describe the published asset.' }
-    if ((Get-Item -LiteralPath (Join-Path $destination $assetName)).Length -ne [long]$written.length) { throw 'The update manifest length does not match the published asset.' }
+    if (-not (Test-Path -LiteralPath $appArchive)) { throw 'The Windows archive for in-app updates is missing.' }
+    if ($written.version -ne $version -or $written.url -ne $updateUrl -or $written.sha256 -ne $zipHash -or $written.exeSha256 -ne $hash) { throw 'The update manifest does not describe the published archive.' }
+    if ((Get-Item -LiteralPath $appArchive).Length -ne [long]$written.length) { throw 'The update manifest length does not match the published archive.' }
+    if ((Get-Item -LiteralPath $exe).Length -ne [long]$written.exeLength) { throw 'The update manifest program length does not match the built program.' }
+    # 真去压缩包里把那个文件抠出来算一遍哈希：自动更新就靠这一条路径。
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($appArchive)
+    try {
+        $entry = $archive.Entries | Where-Object { $_.FullName -eq "versions/$version/PaperFlow.exe" }
+        if (-not $entry) { throw 'The archive does not contain the versioned program file.' }
+        $probe = Join-Path ([IO.Path]::GetTempPath()) ('pf-archive-check-' + [guid]::NewGuid().ToString('N'))
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $probe, $true)
+        try { if ((Get-FileHash -LiteralPath $probe -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw 'The program inside the archive is not the built program.' } }
+        finally { [IO.File]::Delete($probe) }
+    } finally { $archive.Dispose() }
     if ($PrivateTarget) {
         $target = [IO.Path]::GetFullPath($PrivateTarget)
         if ($target.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or $target -eq $root) { throw 'The personal installation must be outside the source repository.' }

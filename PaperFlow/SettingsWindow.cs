@@ -306,7 +306,7 @@ public sealed class SettingsWindow : Window
         var about = pages[4];
         Label(about, Product.Name, 20);
         Label(about, Lang.F("版本 {0}", Product.Version), 12);
-        Label(about, Lang.T("MIT 许可 · Copyright (c) 2026 Panwang Yuang\n不需要注册账号，论文数据只存在你自己的电脑上。程序只在检查更新时访问 GitHub，只下载、不上传。"), 11);
+        Label(about, Lang.T("MIT 许可 · Copyright (c) 2026 Panwang Yuang\n不需要注册账号，论文数据只存在你自己的电脑上。程序只在检查更新时联网，而且只下载、不上传。"), 11);
         var links = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 0) };
         links.Children.Add(B(Lang.T("打开主页"), () => OpenUrl("https://panwangyuang.com")));
         links.Children.Add(B(Lang.T("开 GitHub issue"), () => OpenUrl("https://github.com/pwya/paperflow/issues/new")));

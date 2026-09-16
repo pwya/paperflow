@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -17,8 +18,12 @@ namespace PaperFlow;
 public sealed record UpdateFailure(string Message, bool Network);
 
 // 一份更新清单，就是发布时一起上传的 update.json 的内容。
-public sealed record UpdateManifest(string Version, string Url, string Sha256, long Length)
+// 现在下载的是一个 zip（里面是 versions/<版本>/PaperFlow.exe）：Sha256/Length 是压缩包的，
+// ExeSha256/ExeLength 是解压出来的那个程序文件的。老格式（url 直接指向 exe）仍然读得懂：
+// 那时 ExeSha256/ExeLength 就等于 Sha256/Length。
+public sealed record UpdateManifest(string Version, string Url, string Sha256, long Length, string ExeSha256, long ExeLength)
 {
+    public bool IsArchive => Url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
     // 清单是别人（Release 附件）给的，坏数据必须响亮拒绝，不能猜。
     public static UpdateManifest Parse(string json, bool allowInsecureUrl)
     {
@@ -31,8 +36,17 @@ public sealed record UpdateManifest(string Version, string Url, string Sha256, l
         if (length < 1 || length > 300_000_000) throw new InvalidDataException(Lang.T("更新清单的文件大小无效。"));
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttps && !(allowInsecureUrl && uri.Scheme == Uri.UriSchemeHttp)))
             throw new InvalidDataException(Lang.T("更新清单的下载地址无效。"));
-        if (!uri.AbsolutePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException(Lang.T("更新清单的下载地址不是程序文件。"));
-        return new UpdateManifest(version, url, sha.ToLowerInvariant(), length);
+        bool archive = uri.AbsolutePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+        if (!archive && !uri.AbsolutePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException(Lang.T("更新清单的下载地址不是程序文件。"));
+        string exeSha = root.TryGetProperty("exeSha256", out var rawExe) && rawExe.ValueKind == JsonValueKind.String ? rawExe.GetString()!.Trim().ToLowerInvariant() : "";
+        long exeLength = root.TryGetProperty("exeLength", out var rawExeLength) && rawExeLength.TryGetInt64(out var parsedExeLength) ? parsedExeLength : 0;
+        if (archive)
+        {
+            if (!Regex.IsMatch(exeSha, "^[a-fA-F0-9]{64}$")) throw new InvalidDataException(Lang.T("更新清单的校验值无效。"));
+            if (exeLength < 1 || exeLength > 300_000_000) throw new InvalidDataException(Lang.T("更新清单的文件大小无效。"));
+        }
+        else { exeSha = sha.ToLowerInvariant(); exeLength = length; }
+        return new UpdateManifest(version, url, sha.ToLowerInvariant(), length, exeSha, exeLength);
     }
     private static string Text(JsonElement root, string name)
         => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()!.Trim() : "";
@@ -125,7 +139,8 @@ public static class Updates
             int order = Version.Parse(mirror.Version).CompareTo(Version.Parse(upstream.Version));
             if (order > 0) return upstream;   // 镜像不许抢先
             if (order < 0) return upstream;   // 上游更新
-            if (!string.Equals(mirror.Sha256, upstream.Sha256, StringComparison.OrdinalIgnoreCase) || mirror.Length != upstream.Length)
+            if (!string.Equals(mirror.Sha256, upstream.Sha256, StringComparison.OrdinalIgnoreCase) || mirror.Length != upstream.Length
+                || !string.Equals(mirror.ExeSha256, upstream.ExeSha256, StringComparison.OrdinalIgnoreCase) || mirror.ExeLength != upstream.ExeLength)
                 throw new InvalidDataException(Lang.T("两个更新来源对同一个版本给的文件不一样，这次先不更新。"));
             return mirror;                    // 同版本同哈希：用镜像（走国内下载）
         }
@@ -166,7 +181,29 @@ public static class Updates
                 File.Delete(target);
                 throw new InvalidDataException(Lang.T("更新包校验失败，已丢弃，没有改动现在的程序。"));
             }
-            return target;
+            // 压缩包：从里面取出 versions/<版本>/PaperFlow.exe，再按清单里的 exeSha256/exeLength 校验一次。
+            if (!manifest.IsArchive) return target;
+            var extracted = target + ".exe";
+            try
+            {
+                using (var archive = System.IO.Compression.ZipFile.OpenRead(target))
+                {
+                    string wanted = "versions/" + manifest.Version + "/PaperFlow.exe";
+                    var entry = archive.Entries.FirstOrDefault(e => string.Equals(e.FullName.Replace('\\', '/'), wanted, StringComparison.OrdinalIgnoreCase))
+                        ?? throw new InvalidDataException(Lang.T("更新包里没有找到程序文件。"));
+                    if (entry.Length != manifest.ExeLength) throw new InvalidDataException(Lang.T("更新包里的程序文件大小不对。"));
+                    entry.ExtractToFile(extracted, true);
+                }
+                if (new FileInfo(extracted).Length != manifest.ExeLength || !Hash(extracted).Equals(manifest.ExeSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(Lang.T("更新包里的程序文件校验失败。"));
+            }
+            catch
+            {
+                if (File.Exists(extracted)) { try { File.Delete(extracted); } catch (IOException) { } }
+                throw;
+            }
+            finally { try { File.Delete(target); } catch (IOException) { } }
+            return extracted;
         }
         catch
         {
@@ -191,9 +228,11 @@ public static class Updates
         var executable = Path.Combine(versionFolder, "PaperFlow.exe");
         var staging = executable + "." + Guid.NewGuid().ToString("N") + ".tmp";
         File.Copy(verifiedFile, staging, true);
-        if (!Hash(staging).Equals(manifest.Sha256, StringComparison.OrdinalIgnoreCase)) { File.Delete(staging); throw new InvalidDataException(Lang.T("更新包校验失败，已丢弃，没有改动现在的程序。")); }
+        // channel.json 是启动器要读的，里面必须是那个程序文件自己的哈希与长度。
+        if (!Hash(staging).Equals(manifest.ExeSha256, StringComparison.OrdinalIgnoreCase) || new FileInfo(staging).Length != manifest.ExeLength)
+        { File.Delete(staging); throw new InvalidDataException(Lang.T("更新包校验失败，已丢弃，没有改动现在的程序。")); }
         if (File.Exists(executable)) File.Replace(staging, executable, null, true); else File.Move(staging, executable);
-        Field(Path.Combine(packageFolder, "channel.json"), "{\"version\":\"" + manifest.Version + "\",\"exePath\":\"versions/" + manifest.Version + "/PaperFlow.exe\",\"sha256\":\"" + manifest.Sha256 + "\",\"length\":" + manifest.Length.ToString(CultureInfo.InvariantCulture) + "}");
+        Field(Path.Combine(packageFolder, "channel.json"), "{\"version\":\"" + manifest.Version + "\",\"exePath\":\"versions/" + manifest.Version + "/PaperFlow.exe\",\"sha256\":\"" + manifest.ExeSha256 + "\",\"length\":" + manifest.ExeLength.ToString(CultureInfo.InvariantCulture) + "}");
         try { File.Delete(verifiedFile); } catch (IOException) { }
         return executable;
     }

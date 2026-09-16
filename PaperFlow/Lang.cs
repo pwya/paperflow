@@ -442,6 +442,9 @@ public static class Lang
         ["连不上更新服务器（Gitee 和 GitHub 都没连上），大概是网络的问题。"] = "Neither Gitee nor GitHub could be reached — most likely a network problem.",
         ["连接更新服务器超时，可能是网络慢或被拦住了。"] = "Connecting to the update server timed out; the network may be slow or blocked.",
         ["更新清单读不出来。"] = "The update manifest could not be read.",
+        ["更新包里没有找到程序文件。"] = "The downloaded package does not contain the program file.",
+        ["更新包里的程序文件大小不对。"] = "The program file inside the downloaded package has the wrong size.",
+        ["更新包里的程序文件校验失败。"] = "The program file inside the downloaded package failed its checksum.",
         ["两个更新来源对同一个版本给的文件不一样，这次先不更新。"] = "The two update sources disagree about this version's file, so nothing was updated.",
         ["这次没连上更新服务器（Gitee 和 GitHub 都没连上），没能检查更新。{0}可以稍后再试，也可以把更新提示设为“不提示”。"] = "Neither Gitee nor GitHub could be reached, so updates were not checked. {0}Try again later, or set update prompts to “Never”.",
         ["这次没连上更新服务器（{0}）"] = "Neither update server could be reached this time ({0})",
@@ -478,7 +481,7 @@ public static class Lang
         ["请指定宣传图输出目录。"] = "Please give the promotional image output folder.",
         // ---------- 关于与反馈 ----------
         ["版本 {0}"] = "Version {0}",
-        ["MIT 许可 · Copyright (c) 2026 Panwang Yuang\n不需要注册账号，论文数据只存在你自己的电脑上。程序只在检查更新时访问 GitHub，只下载、不上传。"] = "MIT licence · Copyright (c) 2026 Panwang Yuang\nNo account needed, and your papers stay on your own PC. The app only reaches GitHub when checking for updates, and only to download — never to upload.",
+        ["MIT 许可 · Copyright (c) 2026 Panwang Yuang\n不需要注册账号，论文数据只存在你自己的电脑上。程序只在检查更新时联网，而且只下载、不上传。"] = "MIT licence · Copyright (c) 2026 Panwang Yuang\nNo account needed, and your papers stay on your own PC. The app goes online only to check for updates, and only to download — never to upload.",
         ["打开主页"] = "Home page",
         ["开 GitHub issue"] = "Open a GitHub issue",
         ["写邮件反馈"] = "Send feedback by e-mail",

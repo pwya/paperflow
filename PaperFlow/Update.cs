@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -10,6 +11,9 @@ using System.Threading;
 using System.Threading.Tasks;
 
 namespace PaperFlow;
+
+// 一次检查失败的原因：给人看的一句话，加上"是不是根本没连上"。
+public sealed record UpdateFailure(string Message, bool Network);
 
 // 一份更新清单，就是发布时一起上传的 update.json 的内容。
 public sealed record UpdateManifest(string Version, string Url, string Sha256, long Length)
@@ -42,13 +46,44 @@ public static class Updates
     public static bool UsingOverride => ManifestUrl != DefaultManifestUrl;
     // 设置窗口手动检查到的版本，交给挂件去显示提示条和下载按钮。
     public static UpdateManifest? Offered { get; set; }
+    // 最近一次检查为什么失败（成功时清空）。挂件和设置页都靠它说话。
+    public static UpdateFailure? LastFailure { get; set; }
 
-    public static HttpClient Client() => new(new HttpClientHandler { AllowAutoRedirect = true, UseCookies = false })
+    // 把异常翻成一句人话。Network 为真表示"根本没连上"——那种情况要告诉用户
+    // 可以稍后再试、或者干脆关掉更新提示，而不是甩一串技术错误。
+    public static UpdateFailure Describe(Exception ex) => ex switch
     {
-        Timeout = TimeSpan.FromMinutes(10),
-        // 只报自己的名字和版本；不带设备标识、不带论文信息、不带 Cookie。
-        DefaultRequestHeaders = { { "User-Agent", "PaperFlow/" + Product.Version }, { "Accept", "application/json" } }
+        TaskCanceledException or OperationCanceledException => new(Lang.T("连接 GitHub 超时，可能是网络慢或被拦住了。"), true),
+        HttpRequestException => new(Lang.T("连不上 GitHub，可能是网络或代理的问题。"), true),
+        System.Net.Sockets.SocketException => new(Lang.T("连不上 GitHub，可能是网络或代理的问题。"), true),
+        JsonException => new(Lang.T("GitHub 上的更新清单读不出来。"), false),
+        _ => new(ex.Message, false)
     };
+
+    // 代理留空就跟随 Windows 的设置；国内直连 GitHub 常常能连上、但下载慢到不能用，
+    // 所以设置里留了一个可选代理入口（只影响更新这一件事）。
+    public static IWebProxy? ProxyFor(string proxyUrl)
+    {
+        if (string.IsNullOrWhiteSpace(proxyUrl)) return null;
+        return Uri.TryCreate(proxyUrl.Trim(), UriKind.Absolute, out var address) && (address.Scheme == Uri.UriSchemeHttp || address.Scheme == Uri.UriSchemeHttps)
+            ? new WebProxy(address)
+            : null;
+    }
+    private static HttpClient Build(string proxyUrl, TimeSpan timeout)
+    {
+        var handler = new HttpClientHandler { AllowAutoRedirect = true, UseCookies = false };
+        var proxy = ProxyFor(proxyUrl);
+        // 没填代理就照旧用 Windows 的设置，填了才覆盖它。
+        if (proxy != null) handler.Proxy = proxy;
+        var client = new HttpClient(handler) { Timeout = timeout };
+        // 只报自己的名字和版本；不带设备标识、不带论文信息、不带 Cookie。
+        client.DefaultRequestHeaders.Add("User-Agent", "PaperFlow/" + Product.Version);
+        client.DefaultRequestHeaders.Add("Accept", "application/json");
+        return client;
+    }
+    // 清单很小，十分钟足够；下载另算（见 DownloadAsync 的卡住检测）。
+    public static HttpClient Client(string proxyUrl = "") => Build(proxyUrl, TimeSpan.FromMinutes(10));
+    public static HttpClient DownloadClient(string proxyUrl = "") => Build(proxyUrl, Timeout.InfiniteTimeSpan);
 
     // 三档：always 每次启动都看，daily 大约一天一次，never 完全不看。
     public static bool ShouldCheck(string mode, DateTime? lastCheckUtc, DateTime nowUtc) => mode switch
@@ -74,18 +109,25 @@ public static class Updates
     {
         Directory.CreateDirectory(folder);
         var target = Path.Combine(folder, "PaperFlow-" + manifest.Version + "-" + Guid.NewGuid().ToString("N") + ".download");
+        // 慢不等于坏：直连 GitHub 下载常常只有几十 KB/s，所以不设总时长上限，
+        // 只设"多久收不到数据就当作断了"（停顿 90 秒）与一个 60 分钟的兜底。
+        using var overall = CancellationTokenSource.CreateLinkedTokenSource(token);
+        overall.CancelAfter(TimeSpan.FromMinutes(60));
         try
         {
-            using (var response = await client.GetAsync(manifest.Url, HttpCompletionOption.ResponseHeadersRead, token))
+            using (var response = await client.GetAsync(manifest.Url, HttpCompletionOption.ResponseHeadersRead, overall.Token))
             {
                 if (!response.IsSuccessStatusCode) throw new InvalidDataException(Lang.F("检查更新失败：{0}", (int)response.StatusCode));
-                await using var source = await response.Content.ReadAsStreamAsync(token);
+                await using var source = await response.Content.ReadAsStreamAsync(overall.Token);
                 await using var destination = File.Create(target);
                 var buffer = new byte[81920];
                 long written = 0;
-                int read;
-                while ((read = await source.ReadAsync(buffer, token)) > 0)
+                while (true)
                 {
+                    int read;
+                    try { read = await source.ReadAsync(buffer, overall.Token).AsTask().WaitAsync(TimeSpan.FromSeconds(90), overall.Token); }
+                    catch (TimeoutException) { throw new InvalidDataException(Lang.T("下载卡住了：很久没有收到数据。")); }
+                    if (read == 0) break;
                     await destination.WriteAsync(buffer.AsMemory(0, read), token);
                     written += read;
                     progress?.Report(manifest.Length == 0 ? 0 : Math.Min(100, 100.0 * written / manifest.Length));

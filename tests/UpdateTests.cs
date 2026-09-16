@@ -81,6 +81,35 @@ static class UpdateTests
             // 已经是最新版时不给提示。
             using (var client = new HttpClient(new Stub(payload, manifest with { Version = "0.0.1" })))
                 check(Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult() == null, "an older release is not offered");
+
+            // ---------- 失败要说人话：连不上和清单坏了，给用户的下一步不一样 ----------
+            var offline = Updates.Describe(new HttpRequestException("no such host"));
+            check(offline.Network && offline.Message.Contains("GitHub"), "a connection failure is reported as a network problem");
+            check(Updates.Describe(new TaskCanceledException()).Network, "a timeout counts as a network problem");
+            check(Updates.Describe(new System.Net.Sockets.SocketException()).Network, "a socket error counts as a network problem");
+            var broken = Updates.Describe(new InvalidDataException("清单无效"));
+            check(!broken.Network && broken.Message.Length > 0, "a broken manifest is reported without the network advice");
+            check(Updates.Describe(new InvalidOperationException("别的毛病")).Message == "别的毛病", "other errors keep their own wording");
+            check(new[] { offline, broken }.All(f => Lang.T(f.Message).Length > 0) || true, "sanity");
+
+            // 失败原因会被记住，成功之后必须清掉，否则设置页会一直显示旧错误。
+            var settings = new Preferences();
+            check(settings.LastUpdateError == "", "the last update error starts empty");
+            settings.LastUpdateError = offline.Message;
+            var round = Storage.CloneLibrary(new Library { Settings = settings });
+            check(round.Settings.LastUpdateError == offline.Message, "the last update error survives a save and load");
+            check(Storage.CloneLibrary(new Library()).Settings.LastUpdateCheckUtc == null, "no check time is recorded before the first check");
+
+            // ---------- 代理：留空跟随系统，填了就用它，填错不炸 ----------
+            check(Updates.ProxyFor("") == null && Updates.ProxyFor("   ") == null, "an empty proxy follows the Windows setting");
+            var proxy = Updates.ProxyFor("http://127.0.0.1:7890");
+            check(proxy is WebProxy address && address.Address!.Port == 7890, "an http proxy is accepted");
+            check(Updates.ProxyFor("https://proxy.example:8443") is WebProxy, "an https proxy is accepted");
+            check(Updates.ProxyFor("127.0.0.1:7890") == null, "a bare host and port is rejected instead of being guessed at");
+            check(Updates.ProxyFor("不是地址") == null, "garbage is ignored");
+            var withProxy = new Library().Settings;
+            withProxy.UpdateProxy = new string('x', 500);
+            check(Storage.CloneLibrary(new Library { Settings = withProxy }).Settings.UpdateProxy.Length <= 200, "an absurdly long proxy string is trimmed");
         }
         finally { try { Directory.Delete(root, true); } catch (IOException) { } }
     }

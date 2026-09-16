@@ -140,8 +140,6 @@ public static class Appearance
         "#F5F6F2" => Current.Window,
         "#CBD6CD" or "#E0E5DD" => Current.Border,
         "#EBEFE9" or "#F0F2EE" or "#E6F3EC" => Current.Soft,
-        "#FFF0DB" => Current.Name is "夜墨" or "透明" ? "#62513A" : "#FFF0DB",
-        "#9D6925" => Current.Name is "夜墨" or "透明" ? "#F2CD8B" : "#9D6925",
         _ => original
     });
 }

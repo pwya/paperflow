@@ -122,6 +122,9 @@ public sealed class Storage
         // 新字段用 ASCII 码值存储，显示文字随语言走；不认识的值一律回默认。
         s.Language = Lang.Normalize(s.Language);
         if (s.UpdateMode is not ("always" or "daily" or "never")) s.UpdateMode = "daily";
+        s.LastUpdateError ??= "";
+        s.UpdateProxy ??= "";
+        if (s.UpdateProxy.Length > 200) s.UpdateProxy = s.UpdateProxy[..200];
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;
         s.TextSize = double.IsFinite(s.TextSize) ? Math.Clamp(s.TextSize, 9, 36) : 13;
         s.UiScale = double.IsFinite(s.UiScale) ? Math.Clamp(s.UiScale, 0.8, 2) : 1;

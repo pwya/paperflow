@@ -260,25 +260,41 @@ public sealed class SettingsWindow : Window
         var updateMode = new ComboBox { ItemsSource = updateChoices, DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, updateChoices.FindIndex(c => c.Value == Result.UpdateMode)), Margin = new Thickness(0, 5, 0, 6) };
         updateMode.SelectionChanged += (_, _) => Result.UpdateMode = updateChoices[Math.Clamp(updateMode.SelectedIndex, 0, 2)].Value;
         sync.Children.Add(updateMode);
-        var updateStatus = Label(sync, Result.LastUpdateCheckUtc is DateTime last ? Lang.F("上次检查：{0:yyyy-MM-dd HH:mm}", last.ToLocalTime()) : Lang.T("还没检查过"), 11);
+        // 上次是成功还是失败都写清楚：失败时把原因留在这一行，用户不用去猜。
+        var updateStatus = Label(sync, Result.LastUpdateError != "" && Result.LastUpdateCheckUtc is DateTime failed
+            ? Lang.F("上次检查没成功（{0:yyyy-MM-dd HH:mm}）：{1}", failed.ToLocalTime(), Result.LastUpdateError)
+            : Result.LastUpdateCheckUtc is DateTime last ? Lang.F("上次检查：{0:yyyy-MM-dd HH:mm}", last.ToLocalTime()) : Lang.T("还没检查过"), 11);
         var checkNow = B(Lang.T("现在检查一次"), () => { });
         checkNow.Click += async (_, _) =>
         {
             checkNow.IsEnabled = false; updateStatus.Text = Lang.T("正在检查…");
             try
             {
-                using var client = Updates.Client();
+                using var client = Updates.Client(Result.UpdateProxy);
                 var manifest = await Updates.FetchAsync(client, System.Threading.CancellationToken.None);
-                Result.LastUpdateCheckUtc = DateTime.UtcNow;
+                Result.LastUpdateCheckUtc = DateTime.UtcNow; Result.LastUpdateError = "";
                 Updates.Offered = manifest;
+                Updates.LastFailure = null;
                 updateStatus.Text = manifest == null ? Lang.F("已经是最新版（{0}）。", Product.Version) : Lang.F("发现新版本 {0}：切回挂件就能下载。", manifest.Version);
             }
-            catch (Exception ex) { updateStatus.Text = Lang.F("这次检查没成功：{0}", ex.Message); }
+            catch (Exception ex)
+            {
+                var failure = Updates.Describe(ex);
+                Result.LastUpdateCheckUtc = DateTime.UtcNow; Result.LastUpdateError = failure.Message;
+                Updates.Offered = null; Updates.LastFailure = failure;
+                updateStatus.Text = failure.Network
+                    ? Lang.F("这次没连上 GitHub（{0}）", failure.Message)
+                    : Lang.F("这次检查没成功：{0}", failure.Message);
+            }
             finally { checkNow.IsEnabled = true; }
         };
         sync.Children.Add(checkNow);
-        Label(sync, Lang.T("检查更新只会访问 GitHub，只下载、不上传；论文数据永远留在你自己的电脑和同步文件夹里。选“不提示”也随时可以按这个按钮手动检查。"), 11);
-        Label(sync, Lang.T("不想联网的电脑把更新提示设为“不提示”：那样程序一次网络请求都不发；更新仍然可以像以前一样靠同步整个程序文件夹完成。"), 11);
+        Label(sync, Lang.T("网络代理（可留空）"));
+        var proxy = new TextBox { Text = Result.UpdateProxy, ToolTip = Lang.T("例如 http://127.0.0.1:7890；留空就跟随 Windows 的设置。只用于检查更新和下载新版本。"), Margin = new Thickness(0, 4, 0, 2) };
+        proxy.TextChanged += (_, _) => Result.UpdateProxy = proxy.Text.Trim();
+        sync.Children.Add(proxy);
+        Label(sync, Lang.T("如果这台电脑要挂代理才能上 GitHub，把地址填在这里（例如 http://127.0.0.1:7890），直连很慢时也能快起来；留空就跟随 Windows 的设置。它只用于检查更新和下载新版本，不参与同步。"), 11);
+        Label(sync, Lang.T("检查更新只读 GitHub 上的一份清单，只下载、不上传，论文数据不会被发送出去。选“不提示”就一次网络请求都不发，那时也可以随时按这个按钮手动检查。"), 11);
         Label(sync, Lang.T("快捷方式"), 16);
         Label(sync, Shortcuts.HasLauncher(Result.LauncherPath)
             ? Lang.T("挂件本身不进任务栏，用这两个入口打开最省事。它们指向固定启动入口，以后换了版本也不用重建。")
@@ -292,7 +308,7 @@ public sealed class SettingsWindow : Window
         // ---------- 关于与反馈 ----------
         var about = pages[4];
         Label(about, Product.Name, 20);
-        Label(about, Lang.F("版本 {0}", Product.Version) + (Product.BuildCommit == "" ? Lang.T(" · 本地构建") : Lang.F(" · 提交 {0}", Product.BuildCommit)), 12);
+        Label(about, Lang.F("版本 {0}", Product.Version), 12);
         Label(about, Lang.T("MIT 许可 · Copyright (c) 2026 Panwang Yuang\n不需要注册账号，论文数据只存在你自己的电脑上。程序只在检查更新时访问 GitHub，只下载、不上传。"), 11);
         var links = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 0) };
         links.Children.Add(B(Lang.T("打开主页"), () => OpenUrl("https://panwangyuang.com")));

@@ -458,6 +458,15 @@ public sealed class MainWindow : Window
         updateOffered = manifest;
         UpdateBarText(Lang.F("有新版本 {0}", manifest.Version), Lang.T("下载并安装"), StartUpdate);
     }
+    // 检查没成功也要说话：这一条最多一天出现一次（由三档节奏决定），并且有关掉的 ×。
+    private void OfferUpdateProblem(UpdateFailure failure)
+    {
+        if (demonstration || failure == null) return;
+        UpdateBarText(failure.Network
+            ? Lang.F("这次没连上 GitHub，没能检查更新。{0}可以稍后再试，也可以把更新提示设为“不提示”。", failure.Message)
+            : Lang.F("检查更新没成功：{0}", failure.Message),
+            Lang.T("现在再试一次"), () => _ = CheckForUpdatesAsync(true));
+    }
     private void UpdateBarText(string text, string actionLabel, Action action)
     {
         updateText.Text = text;
@@ -480,7 +489,8 @@ public sealed class MainWindow : Window
         try
         {
             var progress = new Progress<double>(value => updateText.Text = Lang.F("正在下载更新 {0}%", Math.Round(value)));
-            using var client = Updates.Client();
+            // 下载用不设总时长的客户端：直连 GitHub 常常很慢，慢不等于坏。
+            using var client = Updates.DownloadClient(library.Settings.UpdateProxy);
             var file = await Updates.DownloadAsync(client, manifest, Updates.CacheFolder(), progress, System.Threading.CancellationToken.None);
             var installed = Updates.Install(manifest, file, Shortcuts.ProgramFolder(library.Settings.LauncherPath));
             UpdateBarText(Lang.F("新版本已就绪 {0}，重启后生效。", manifest.Version), Lang.T("重启并更新"), () =>
@@ -491,7 +501,11 @@ public sealed class MainWindow : Window
         }
         catch (Exception ex)
         {
-            UpdateBarText(Lang.T("下载失败") + " · " + ex.Message, Lang.T("重试"), StartUpdate);
+            var failure = Updates.Describe(ex);
+            UpdateBarText(failure.Network
+                ? Lang.F("下载没完成：{0}可以再试一次；网络慢的时候可能要好几分钟。", failure.Message)
+                : Lang.T("下载失败") + " · " + failure.Message,
+                Lang.T("重试"), StartUpdate);
         }
         finally { updating = false; }
     }
@@ -502,17 +516,21 @@ public sealed class MainWindow : Window
         if (!manual && !Updates.ShouldCheck(library.Settings.UpdateMode, library.Settings.LastUpdateCheckUtc, DateTime.UtcNow)) return;
         try
         {
-            using var client = Updates.Client();
-            var manifest = await Updates.FetchAsync(client, System.Threading.CancellationToken.None);
-            Commit(l => l.Settings.LastUpdateCheckUtc = DateTime.UtcNow);
-            if (manifest != null) OfferUpdate(manifest);
-        }
-        catch (Exception ex)
-        {
-            // 失败也记下时间，免得断网时每次启动都去试一遍。
-            try { Commit(l => l.Settings.LastUpdateCheckUtc = DateTime.UtcNow); } catch (Exception) { }
-            if (manual) ShowNotice(Lang.F("检查更新失败：{0}", ex.Message));
-        }
+                using var client = Updates.Client(library.Settings.UpdateProxy);
+                var manifest = await Updates.FetchAsync(client, System.Threading.CancellationToken.None);
+                Updates.LastFailure = null;
+                Commit(l => { l.Settings.LastUpdateCheckUtc = DateTime.UtcNow; l.Settings.LastUpdateError = ""; });
+                if (manifest != null) OfferUpdate(manifest);
+            }
+            catch (Exception ex)
+            {
+                // 失败也记下时间，免得断网时每次启动都去试一遍；同时把原因留在设置页和提示条上。
+                var failure = Updates.Describe(ex);
+                Updates.LastFailure = failure;
+                try { Commit(l => { l.Settings.LastUpdateCheckUtc = DateTime.UtcNow; l.Settings.LastUpdateError = failure.Message; }); } catch (Exception) { }
+                if (manual) ShowNotice(Lang.F("检查更新失败：{0}", failure.Message));
+                OfferUpdateProblem(failure);
+            }
     }
     // 关掉自己再开一个：新进程先等旧进程退出，避免抢单实例锁把挂件弄丢。
     // executable 为空就重开当前这个程序文件；装完更新时传新版本自己的 exe。
@@ -796,6 +814,7 @@ public sealed class MainWindow : Window
             // 语言换了就重启一次：挂件上的按钮、托盘菜单是开窗口时建好的，重启最干净。
             if (languageChanged) { Restart(); return; }
             if (Updates.Offered is UpdateManifest found) OfferUpdate(found);
+            else if (Updates.LastFailure is UpdateFailure problem) OfferUpdateProblem(problem);
         }
         else Commit(l => l.Settings = original);
     }

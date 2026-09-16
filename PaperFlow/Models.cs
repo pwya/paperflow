@@ -121,6 +121,11 @@ public sealed class Preferences
     // 更新检查：always / daily / never，默认每天一次。只检查、不联网上传任何东西。
     public string UpdateMode { get; set; } = "daily";
     public DateTime? LastUpdateCheckUtc { get; set; }
+    // 上一次检查为什么没成功（空字符串表示上次是成功的）。只存本机，给设置页看。
+    public string LastUpdateError { get; set; } = "";
+    // 可选：给"检查更新/下载更新"用的网络代理（例如 http://127.0.0.1:7890）。
+    // 留空就跟随 Windows 的设置；这是本机偏好，不参与同步。
+    public string UpdateProxy { get; set; } = "";
     public bool Topmost { get; set; } = true;
     public bool Compact { get; set; }
     public int BarHeight { get; set; } = 20;

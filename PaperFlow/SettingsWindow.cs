@@ -47,6 +47,8 @@ public sealed class SettingsWindow : Window
         var host = new Grid();
         for (int i = 0; i < pages.Length; i++) { pages[i] = new StackPanel { Visibility = i == 0 ? Visibility.Visible : Visibility.Collapsed }; host.Children.Add(pages[i]); }
         var scroll = new ScrollViewer { Content = host, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
+        // 让每页宽度跟着视口走，否则横向滚动会让文字永远不换行、长句子被切在窗口外。
+        foreach (var page in pages) page.SetBinding(FrameworkElement.WidthProperty, new System.Windows.Data.Binding("ViewportWidth") { Source = scroll });
         Grid.SetColumn(nav, 0); Grid.SetColumn(scroll, 1); layout.Children.Add(nav); layout.Children.Add(scroll);
         nav.SelectionChanged += (_, _) => { int picked = Math.Max(0, nav.SelectedIndex); for (int i = 0; i < pages.Length; i++) pages[i].Visibility = i == picked ? Visibility.Visible : Visibility.Collapsed; };
 
@@ -216,6 +218,21 @@ public sealed class SettingsWindow : Window
         var notices = new CheckBox { Content = "操作后在底部显示提示条", IsChecked = Result.ShowNotices, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; view.Children.Add(notices);
         notices.Click += (_, _) => { Result.ShowNotices = notices.IsChecked == true; Preview(); };
         Label(view, "提示条只在这些时候出现：勾选阶段后论文被隐藏或被挪到别的页、归档、复制。正常的勾选不会弹。", 11);
+        Label(view, "音效", 15);
+        var soundMode = new ComboBox { ItemsSource = ViewRules.SoundModes, SelectedItem = Result.SoundMode }; view.Children.Add(soundMode);
+        soundMode.SelectionChanged += (_, _) => { Result.SoundMode = soundMode.SelectedItem as string ?? ViewRules.SoundModes[0]; Preview(); };
+        Label(view, "音色");
+        var soundStyle = new ComboBox { ItemsSource = ViewRules.SoundStyles, SelectedItem = Result.SoundStyle }; view.Children.Add(soundStyle);
+        soundStyle.SelectionChanged += (_, _) => { Result.SoundStyle = soundStyle.SelectedItem as string ?? ViewRules.SoundStyles[0]; Preview(); };
+        var soundLabel = Label(view, "音量");
+        var soundVolume = new Slider { Minimum = 0, Maximum = 100, TickFrequency = 5, IsSnapToTickEnabled = true, Value = Result.SoundVolume * 100, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; view.Children.Add(soundVolume);
+        void VolumeChanged() { Result.SoundVolume = soundVolume.Value / 100; soundLabel.Text = $"音量 · {soundVolume.Value:0}%"; Preview(); }
+        soundVolume.ValueChanged += (_, _) => VolumeChanged(); VolumeChanged();
+        var soundRow = new StackPanel { Orientation = Orientation.Horizontal }; view.Children.Add(soundRow);
+        soundRow.Children.Add(B("试听完成音", () => Chime.Play(Result, "complete")));
+        soundRow.Children.Add(B("试听取消音", () => Chime.Play(Result, "undo")));
+        soundRow.Children.Add(B("试听收录音", () => Chime.Play(Result, "reward")));
+        Label(view, "音效默认关闭，只在本机生效、不随同步跑到别的电脑；勾满七个阶段时换成一小段奖励音。", 11);
         Label(view, "搜索、筛选、排序、紧凑视图、隐藏哪些阶段、翻页方式和显示范围都在挂件右上角的“论文选项”里，那里改的是此刻看到什么。这里只放长期偏好。", 11);
         Label(view, "字号、界面缩放和三档字体在“字体与文字”里。", 11);
         Label(view, "铺满屏幕时界面会不会挤，取决于字号和界面缩放的组合。字号很大时阶段标签会换行、卡片自然变高，一屏能看到的论文会变少，这是正常的。", 11);

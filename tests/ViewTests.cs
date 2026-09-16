@@ -35,6 +35,13 @@ static class ViewTests
         check(tiers.Settings.BodyColor == "#123456" && tiers.Settings.CaptionScale == 2 && tiers.Settings.BodyScale == 0.6, "tier colours survive and scales are clamped to 60-200%");
         check(new Preferences().TitleScale == 1 && new Preferences().CaptionFont == "" && new Preferences().BodyColor == "", "tier defaults follow the base font and the theme");
         check(new Preferences().ShowNotices, "operation notices are on by default");
+        check(new Preferences().SoundMode == ViewRules.SoundModes[0] && new Preferences().SoundStyle == "木质", "sound stays off until the user turns it on");
+        check(ViewRules.SoundFor("关", true, false) == null, "silent mode never plays");
+        check(ViewRules.SoundFor("只完成时", false, false) == null && ViewRules.SoundFor("只完成时", true, false) == "complete", "completion-only mode stays quiet on undo");
+        check(ViewRules.SoundFor("完成和取消都响", false, false) == "undo", "the louder mode also marks undo");
+        check(ViewRules.SoundFor("完成和取消都响", true, true) == "reward", "finishing every stage plays the reward chime");
+        var quiet = Storage.Parse("{\"Version\":1,\"Settings\":{\"SoundMode\":\"乱填\",\"SoundStyle\":\"乱填\",\"SoundVolume\":9},\"Papers\":[]}");
+        check(quiet.Settings.SoundMode == "关" && quiet.Settings.SoundStyle == "木质" && quiet.Settings.SoundVolume == 1, "unknown sound settings fall back and volume is clamped");
         // 勾选阶段之后的交代：留在原地不提示，被隐藏或被分页才提示。
         var plain = new Preferences { HideSelectedStages = true, HiddenStages = new() { 4 } };
         var moving = new Paper { Title = "Synthetic move", Priority = "中" }; moving.Stages[2].Done = true;

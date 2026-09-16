@@ -112,6 +112,9 @@ public sealed class Storage
         s.BodyColor = Themes.IsHex(s.BodyColor) ? s.BodyColor : "";
         s.CaptionColor = Themes.IsHex(s.CaptionColor) ? s.CaptionColor : "";
         s.TitleScale = double.IsFinite(s.TitleScale) ? Math.Clamp(s.TitleScale, 0.6, 2) : 1;
+        if (!ViewRules.SoundModes.Contains(s.SoundMode)) s.SoundMode = ViewRules.SoundModes[0];
+        if (!ViewRules.SoundStyles.Contains(s.SoundStyle)) s.SoundStyle = ViewRules.SoundStyles[0];
+        s.SoundVolume = double.IsFinite(s.SoundVolume) ? Math.Clamp(s.SoundVolume, 0, 1) : 0.6;
         s.BodyScale = double.IsFinite(s.BodyScale) ? Math.Clamp(s.BodyScale, 0.6, 2) : 1;
         s.CaptionScale = double.IsFinite(s.CaptionScale) ? Math.Clamp(s.CaptionScale, 0.6, 2) : 1;
         s.SyncFolder ??= ""; s.LauncherPath ??= "";

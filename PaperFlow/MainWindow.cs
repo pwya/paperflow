@@ -479,6 +479,7 @@ public sealed class MainWindow : Window
                 if (!Commit(l => l.Papers.Single(x => x.Id == p.Id).ToggleStage(index, done))) return;
                 var updated = library.Papers.FirstOrDefault(x => x.Id == p.Id);
                 if (updated == null) return;
+                Chime.PlayForToggle(library.Settings, done, updated.Stages[6].Done);
                 var notice = ViewRules.AfterStageToggle(updated, library.Settings, Candidates());
                 if (notice == null) return;
                 if (notice.Kind == "paged") ShowNotice(notice.Text, notice.Action, () => { Commit(l => l.Settings.PageIndex = notice.Page); scroller.ScrollToTop(); });

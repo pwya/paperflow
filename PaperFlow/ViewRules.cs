@@ -10,6 +10,16 @@ public static class ViewRules
     public sealed record StageNotice(string Kind, int Page, string Text, string Action);
 
     public static readonly string[] PageModes = { "不翻页", "按优先级翻页", "按阶段分组翻页" };
+    public static readonly string[] SoundModes = { "关", "只完成时", "完成和取消都响" };
+    public static readonly string[] SoundStyles = { "木质", "清脆", "水滴" };
+    // 该不该响、响哪一种。null 表示不响。
+    public static string? SoundFor(string mode, bool done, bool allDone)
+    {
+        if (mode == SoundModes[0]) return null;
+        if (!done && mode != SoundModes[2]) return null;
+        if (done) return allDone ? "reward" : "complete";
+        return "undo";
+    }
     // The card shows priority as three dots: high fills all three, low fills one.
     public static int PriorityLevel(string priority) => priority switch { "高" => 3, "中" => 2, "低" => 1, _ => 2 };
     // Used by the settings sliders to warn how many whole cards still fit on screen.

@@ -80,6 +80,9 @@ public sealed class Preferences
     public bool HideSelectedStages { get; set; } = true;
     public List<int> HiddenStages { get; set; } = new() { 4 };
     public bool ShowNotices { get; set; } = true;
+    public string SoundMode { get; set; } = "关";
+    public string SoundStyle { get; set; } = "木质";
+    public double SoundVolume { get; set; } = 0.6;
     public List<string> VisiblePriorities { get; set; } = new() { "高", "中", "低" };
     public string PageMode { get; set; } = "不翻页";
     public int PageIndex { get; set; }

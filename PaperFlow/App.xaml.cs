@@ -14,6 +14,18 @@ public partial class App : Application
         base.OnStartup(e);
         int promoIndex = Array.IndexOf(e.Args, "--promotional-assets");
         int galleryIndex = Array.IndexOf(e.Args, "--theme-gallery");
+        int chimeIndex = Array.IndexOf(e.Args, "--sound-check");
+        if (chimeIndex >= 0)
+        {
+            try
+            {
+                if (chimeIndex + 1 >= e.Args.Length) throw new ArgumentException("请指定音效输出目录。");
+                Chime.ExportSamples(Path.GetFullPath(e.Args[chimeIndex + 1]));
+                Shutdown(0);
+            }
+            catch (Exception ex) { Console.Error.WriteLine(ex); Shutdown(1); }
+            return; // 只导出音效，不加载任何资料。
+        }
         if (galleryIndex >= 0)
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;

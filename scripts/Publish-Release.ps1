@@ -52,16 +52,22 @@ try {
     # 程序内自动更新的两样东西：单独的 exe，和一份固定名字的 update.json。
     # 清单里的地址必须是真的 Release 附件地址；程序只会在 `/releases/latest/download/update.json`
     # 读这份清单，所以每个正式版本都要把它一起传上去。
-    $assetName = "PaperFlow-$version-win-x64.exe"
+    # 用 -f 拼，不用字符串插值：插值里 $version 后面的变量名容易被读断，1.13.0 就这么错过一次。
+    $assetName = 'PaperFlow-{0}-win-x64.exe' -f $version
+    $updateUrl = 'https://github.com/pwya/paperflow/releases/download/v{0}/{1}' -f $version, $assetName
     Copy-Item -LiteralPath $exe -Destination (Join-Path $destination $assetName) -Force
     $update = @{
         version = $version
-        url = "https://github.com/pwya/paperflow/releases/download/v$version/$assetName"
+        url = $updateUrl
         sha256 = $hash
         length = (Get-Item -LiteralPath $exe).Length
     }
     [IO.File]::WriteAllText((Join-Path $destination 'update.json'), ($update | ConvertTo-Json), $encoding)
-    if ((Get-Content -LiteralPath (Join-Path $destination 'update.json') -Raw -Encoding UTF8 | ConvertFrom-Json).sha256 -ne $hash) { throw 'The update manifest does not match the built executable.' }
+    # 清单是程序内更新唯一的入口，这里逐项对一遍：名字、地址、哈希、大小都要和附件真身一致。
+    $written = Get-Content -LiteralPath (Join-Path $destination 'update.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not (Test-Path -LiteralPath (Join-Path $destination $assetName))) { throw 'The standalone executable for in-app updates is missing.' }
+    if ($written.version -ne $version -or $written.url -ne $updateUrl -or $written.sha256 -ne $hash) { throw 'The update manifest does not describe the published asset.' }
+    if ((Get-Item -LiteralPath (Join-Path $destination $assetName)).Length -ne [long]$written.length) { throw 'The update manifest length does not match the published asset.' }
     if ($PrivateTarget) {
         $target = [IO.Path]::GetFullPath($PrivateTarget)
         if ($target.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or $target -eq $root) { throw 'The personal installation must be outside the source repository.' }

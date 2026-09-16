@@ -37,7 +37,8 @@ public static class ViewRules
         if (p.PageMode == PageModes[2]) papers = papers.Where(x => SelectedStage(x, p) == (index == 1));
         else
         {
-            if (p.HideSelectedStages) papers = papers.Where(x => !SelectedStage(x, p));
+            // 临时展开（ShowHiddenNow）只影响这一次显示，不改动长期设置。
+            if (p.HideSelectedStages && !p.ShowHiddenNow) papers = papers.Where(x => !SelectedStage(x, p));
             if (p.PageMode == PageModes[1]) papers = papers.Where(x => x.Priority == Paper.Priorities[index]);
         }
         return papers.ToList();

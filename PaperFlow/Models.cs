@@ -79,6 +79,8 @@ public sealed class Preferences
     public bool TitleBold { get; set; } = true;
     public bool HideSelectedStages { get; set; } = true;
     public List<int> HiddenStages { get; set; } = new() { 4 };
+    // 临时展开：不改变“隐藏在审”这个长期设置，只是现在看一眼。
+    public bool ShowHiddenNow { get; set; }
     public bool ShowNotices { get; set; } = true;
     public string SoundMode { get; set; } = "关";
     public string SoundStyle { get; set; } = "木质";

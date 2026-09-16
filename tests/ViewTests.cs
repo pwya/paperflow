@@ -58,6 +58,9 @@ static class ViewTests
         var later = ViewRules.AfterStageToggle(moving, acceptedHidden, list);
         check(later != null && later.Kind == "hidden" && later.Text.Contains("收录"), "later stages are still explained when hidden");
         check(ViewRules.Apply(all, p).Select(x => x.Id).SequenceEqual(new[] { writing.Id, revision.Id, accepted.Id }), "review hidden by default, revision and accepted remain");
+        var peek = new Preferences { HideSelectedStages = true, HiddenStages = new() { 4 }, ShowHiddenNow = true };
+        check(ViewRules.Apply(all, peek).Count == 4 && ViewRules.Apply(all, p).Count == 3, "the temporary peek shows hidden papers without changing the setting");
+        check(peek.HiddenStages.SequenceEqual(new[] { 4 }) && peek.HideSelectedStages, "the peek leaves the long-term setting alone");
         p.HiddenStages.Add(6); check(ViewRules.Apply(all, p).Count == 2, "multiple hidden stages");
         p.HideSelectedStages = false; check(ViewRules.Apply(all, p).Count == 4, "hiding can be disabled");
         p.VisiblePriorities = new() { "高", "低" }; check(ViewRules.Apply(all, p).Count == 3, "multi priority filter");

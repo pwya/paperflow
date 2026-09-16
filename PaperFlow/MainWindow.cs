@@ -42,6 +42,7 @@ public sealed class MainWindow : Window
     private readonly ComboBox sort = new();
     private readonly Button pin = new();
     private readonly Button compact = new();
+    private readonly Button hiddenToggle = new();
     private readonly Image brandIcon = new() { Width = 26, Height = 26, Margin = new Thickness(0, 0, 9, 0) };
     private bool draggingPaper;
     private string? draggedPaperId;
@@ -125,6 +126,9 @@ public sealed class MainWindow : Window
         options.Content = "论文选项"; options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options); quietChrome.Add(options);
         pin.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin); quietChrome.Add(pin);
         var settingsButton = ActionButton("设置", OpenSettings); chrome.Children.Add(settingsButton); quietChrome.Add(settingsButton);
+        hiddenToggle.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale);
+        hiddenToggle.Click += (_, _) => Commit(l => l.Settings.ShowHiddenNow = !l.Settings.ShowHiddenNow);
+        chrome.Children.Add(hiddenToggle); quietChrome.Add(hiddenToggle);
         // No taskbar button means minimising would hide the widget with nowhere to return
         // from, so the only place-away control is the collapse-to-tray button.
         var close = ActionButton("×", Close); close.ToolTip = "收起到系统托盘，双击托盘图标恢复"; chrome.Children.Add(close); quietChrome.Add(close);
@@ -312,6 +316,14 @@ public sealed class MainWindow : Window
         var active = library.Papers.Where(p => !p.Archived).ToList();
         summary.Text = $"{active.Count} 篇论文   ·   {active.Count(p => !p.Stages[6].Done)} 篇推进中   ·   {active.Count(p => p.Stages[6].Done)} 篇已收录" + (filter.SelectedIndex != 0 || search.Text != "" ? "   ·   已筛选" : "");
         var candidates = Candidates();
+        // 右上角的临时开关：有被隐藏的论文（或正展开着）时才出现，按阶段分组翻页时不需要它。
+        int hiddenCount = candidates.Count(p => ViewRules.SelectedStage(p, library.Settings));
+        hiddenToggle.Visibility = library.Settings.PageMode != ViewRules.PageModes[2] && library.Settings.HideSelectedStages && (hiddenCount > 0 || library.Settings.ShowHiddenNow) ? Visibility.Visible : Visibility.Collapsed;
+        hiddenToggle.Content = library.Settings.ShowHiddenNow ? $"收起隐藏 {hiddenCount} 篇" : $"显示隐藏 {hiddenCount} 篇";
+        hiddenToggle.ToolTip = library.Settings.ShowHiddenNow
+            ? "把这些按设置隐藏的论文收回去"
+            : "临时看一眼按当前设置被隐藏的论文，它们会显示成灰底，方便区分";
+        AutomationProperties.SetName(hiddenToggle, "显示或隐藏按阶段隐藏的论文");
         var pagePapers = ViewRules.Apply(candidates, library.Settings);
         summary.Text = $"{active.Count} 篇论文 · 当前显示 {pagePapers.Count} 篇" + (library.Settings.PageMode == ViewRules.PageModes[2] ? " · 阶段分组" : library.Settings.HideSelectedStages ? $" · 按阶段隐藏 {candidates.Count(p => ViewRules.SelectedStage(p, library.Settings))} 篇" : "");
         summary.ToolTip = "隐藏和翻页仅改变显示，不删除论文。点击论文选项调整。";
@@ -416,11 +428,13 @@ public sealed class MainWindow : Window
     {
         bool list = Appearance.Layout == Themes.ListLayout;
         bool small = library.Settings.Compact || list;
+        // 临时展开出来的“按设置隐藏”的论文：整体压暗、底色换成主题的柔和色，并挂一个标记。
+        bool dimmed = library.Settings.ShowHiddenNow && ViewRules.SelectedStage(p, library.Settings);
         var card = new Border { Tag = p.Id };
         if (list)
         {
             // 列表布局：没有卡片，只有一条分隔线，一屏能看更多篇。
-            card.Background = Brushes.Transparent;
+            card.Background = dimmed ? Appearance.Paint(Appearance.Current.Soft, Appearance.Opacity * .45) : Brushes.Transparent;
             card.CornerRadius = new CornerRadius(0);
             card.BorderThickness = new Thickness(0, 0, 0, 1);
             card.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .7);
@@ -429,7 +443,7 @@ public sealed class MainWindow : Window
         }
         else
         {
-            card.Background = Appearance.Paint(Appearance.Current.Card, Appearance.Opacity);
+            card.Background = dimmed ? Appearance.Paint(Appearance.Current.Soft, Appearance.Opacity * .95) : Appearance.Paint(Appearance.Current.Card, Appearance.Opacity);
             card.CornerRadius = new CornerRadius(Appearance.CardRadius);
             card.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .8);
             card.BorderThickness = new Thickness(Appearance.Shadow ? 0 : 1);
@@ -441,6 +455,7 @@ public sealed class MainWindow : Window
                 card.Effect = shadow;
             }
         }
+        if (dimmed) card.Opacity = 0.8;
         var stack = new StackPanel(); card.Child = stack;
         var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Margin = new Thickness(0, 0, 0, 1) };
         var dots = PriorityDots(p);
@@ -449,12 +464,18 @@ public sealed class MainWindow : Window
         titleArea.Children.Add(name);
         // 百分比放在标题行右侧，不跟进度条挤在一起，也不再抢戏。
         var titleRow = new Grid();
-        titleRow.ColumnDefinitions.Add(new ColumnDefinition()); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        titleRow.ColumnDefinitions.Add(new ColumnDefinition()); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         titleRow.Children.Add(titleArea);
+        if (dimmed)
+        {
+            var tag = Text("已隐藏 · " + Paper.StageLabels[Math.Clamp(p.CurrentStageIndex, 0, Paper.StageLabels.Length - 1)], 10.5, "#78867F", -1, "caption");
+            var chip = new Border { Child = tag, Background = Appearance.Paint(Appearance.Current.Card, .85), CornerRadius = new CornerRadius(Math.Min(Appearance.ChipRadius, 8 * Appearance.Scale)), Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), ToolTip = "按其当前阶段，这类论文在你的设置里是隐藏的；点右上角可以收回去" };
+            Grid.SetColumn(chip, 1); titleRow.Children.Add(chip);
+        }
         var pct = Text($"{p.Progress}%", Appearance.PercentSize); pct.FontWeight = FontWeights.SemiBold; pct.VerticalAlignment = VerticalAlignment.Center; pct.Margin = new Thickness(10, 0, 0, 0);
         if (Appearance.RoleColor("body") == "") pct.Foreground = Appearance.PercentAccent ? Appearance.Paint(Appearance.Current.Accent) : Brush("#78867F");
         AutomationProperties.SetName(pct, $"{p.Title} 进度 {p.Progress}%");
-        Grid.SetColumn(pct, 1); titleRow.Children.Add(pct); stack.Children.Add(titleRow);
+        Grid.SetColumn(pct, 2); titleRow.Children.Add(pct); stack.Children.Add(titleRow);
         var metadata = string.Join(" / ", new[] { p.Subject, p.Language, p.Journal }.Where(v => !string.IsNullOrWhiteSpace(v)));
         var progressRow = new Grid { Margin = new Thickness(0, 4 * Appearance.Scale, 0, 5 * Appearance.Scale), ToolTip = "下一步：" + (p.NextAction != "" ? p.NextAction : p.NextStage) };
         var track = new Grid { Height = Appearance.BarHeight * Appearance.Scale, VerticalAlignment = VerticalAlignment.Center };
@@ -680,6 +701,8 @@ public sealed class MainWindow : Window
             check.Click += (_, _) => ChangeView(p => { p.HiddenStages.Remove(index); if (check.IsChecked == true) p.HiddenStages.Add(index); }); stages.Children.Add(check);
         }
         var explanation = Text("按最后一个已勾选阶段归类；未勾选时归入开题。\n例如：在审后进入返修，会重新显示。", 11, "#78867F"); explanation.TextWrapping = TextWrapping.Wrap; body.Children.Add(explanation);
+        var peek = Text("挂件右上角有个“显示隐藏 N 篇”的临时开关：点一下就能看一眼这些论文，展开时它们显示成灰底并带“已隐藏”标记，这里的设置不受影响。", 11, "#78867F");
+        peek.TextWrapping = TextWrapping.Wrap; peek.Margin = new Thickness(0, 6, 0, 0); body.Children.Add(peek);
         Label("翻页方式");
         var paging = new ComboBox { ItemsSource = ViewRules.PageModes, SelectedItem = library.Settings.PageMode }; body.Children.Add(paging);
         paging.SelectionChanged += (_, _) => ChangeView(p => p.PageMode = paging.SelectedItem as string ?? ViewRules.PageModes[0]);

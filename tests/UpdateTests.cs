@@ -84,58 +84,45 @@ static class UpdateTests
 
             // ---------- 两个候选地址（Gitee 镜像 + GitHub）----------
             check(Updates.ManifestUrls.Count == 2 && Updates.ManifestUrls[0].Contains("gitee.com") && Updates.ManifestUrls[1].Contains("github.com"), "the mirror is tried first, GitHub stays as the second source");
-            var saved = Updates.ManifestUrls.ToList();
-            string old = "{\"version\":\"9.9.1\",\"url\":\"https://example.test/PaperFlow-9.9.1-win-x64.exe\",\"sha256\":\"" + new string('c', 64) + "\",\"length\":1000}";
-            string fresh = "{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + new string('a', 64) + "\",\"length\":12345}";
-            try
+            string mirrorUrl = Updates.GiteeManifestUrl, upstreamUrl = Updates.DefaultManifestUrl;
+            string Behind = "{\"version\":\"9.9.1\",\"url\":\"https://example.test/PaperFlow-9.9.1-win-x64.exe\",\"sha256\":\"" + new string('c', 64) + "\",\"length\":1000}";
+            string Fresh = "{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + new string('a', 64) + "\",\"length\":12345}";
+            string Stale = "{\"version\":\"0.9.9\",\"url\":\"https://example.test/PaperFlow-0.9.9-win-x64.exe\",\"sha256\":\"" + new string('d', 64) + "\",\"length\":1000}";
+            string Fetch(Router router) { using var client = new HttpClient(router); return Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult()?.Version ?? ""; }
+
+            // 镜像落后、上游更新：拿上游
+            var behind = new Router(payload); behind.Serves(mirrorUrl, Behind); behind.Serves(upstreamUrl, Fresh);
+            check(Fetch(behind) == "9.9.9", "an update from upstream is used even when the mirror lags");
+            // 镜像"抢先"报更高的版本：不许它领头，仍然用上游
+            var ahead = new Router(payload); ahead.Serves(mirrorUrl, Fresh); ahead.Serves(upstreamUrl, Behind);
+            check(Fetch(ahead) == "9.9.1", "the mirror may not claim a newer version than upstream");
+            // 同版本同哈希：用镜像那份（下载走 Gitee）
+            var agree = new Router(payload); agree.Serves(mirrorUrl, Fresh); agree.Serves(upstreamUrl, Fresh);
+            using (var client = new HttpClient(agree))
             {
-                // 镜像落后、GitHub 更新：要拿更新的那一份，不能"谁先通用谁"
-                var router = new Router(payload);
-                router.Serves("https://mirror.test/update.json", old);
-                router.Serves("https://upstream.test/update.json", fresh);
-                using (var client = new HttpClient(router))
-                {
-                    Updates.ManifestUrls.Clear(); Updates.ManifestUrls.Add("https://mirror.test/update.json"); Updates.ManifestUrls.Add("https://upstream.test/update.json");
-                    var picked = Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult();
-                    check(picked != null && picked.Version == "9.9.9", "the newest manifest wins even when the mirror is behind");
-                }
-                // 镜像挂了、上游正常：仍要能更新
-                var half = new Router(payload);
-                half.Fails("https://mirror.test/update.json");
-                half.Serves("https://upstream.test/update.json", fresh);
-                using (var client = new HttpClient(half))
-                {
-                    Updates.ManifestUrls.Clear(); Updates.ManifestUrls.Add("https://mirror.test/update.json"); Updates.ManifestUrls.Add("https://upstream.test/update.json");
-                    var picked = Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult();
-                    check(picked != null && picked.Version == "9.9.9", "a broken mirror still falls back to upstream");
-                }
-                // 两个都挂：报错，而且要说成"网络问题"
-                var dead = new Router(payload);
-                dead.Fails("https://mirror.test/update.json");
-                dead.Fails("https://upstream.test/update.json");
-                using (var client = new HttpClient(dead))
-                {
-                    Updates.ManifestUrls.Clear(); Updates.ManifestUrls.Add("https://mirror.test/update.json"); Updates.ManifestUrls.Add("https://upstream.test/update.json");
-                    bool threw = false;
-                    try { Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult(); }
-                    catch (Exception ex) { threw = Updates.Describe(ex).Network; }
-                    check(threw, "both sources down is reported as a network problem");
-                }
-                // 两边都说是最新：不提示
-                string stale = "{\"version\":\"0.9.9\",\"url\":\"https://example.test/PaperFlow-0.9.9-win-x64.exe\",\"sha256\":\"" + new string('d', 64) + "\",\"length\":1000}";
-                var same = new Router(payload);
-                same.Serves("https://mirror.test/update.json", stale);
-                same.Serves("https://upstream.test/update.json", stale);
-                using (var client = new HttpClient(same))
-                {
-                    Updates.ManifestUrls.Clear(); Updates.ManifestUrls.Add("https://mirror.test/update.json"); Updates.ManifestUrls.Add("https://upstream.test/update.json");
-                    check(Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult() == null, "two sources at the same old version still means no update");
-                }
+                var picked = Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult();
+                check(picked != null && picked.Version == "9.9.9" && picked.Url.Contains("example.test"), "identical versions and checksums pass");
             }
-            finally
-            {
-                Updates.ManifestUrls.Clear(); Updates.ManifestUrls.AddRange(saved); Updates.SingleManifestUrl = null;
-            }
+            // 同版本不同哈希：拒收
+            var tampered = "{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + new string('b', 64) + "\",\"length\":12345}";
+            var disagree = new Router(payload); disagree.Serves(mirrorUrl, tampered); disagree.Serves(upstreamUrl, Fresh);
+            bool refused = false;
+            try { Fetch(disagree); } catch (InvalidDataException) { refused = true; }
+            check(refused, "the same version with a different checksum is refused instead of installed");
+            // 镜像挂了、上游正常：仍要能更新
+            var half = new Router(payload); half.Fails(mirrorUrl); half.Serves(upstreamUrl, Fresh);
+            check(Fetch(half) == "9.9.9", "a broken mirror still falls back to upstream");
+            // 只有镜像能读到（国内直连不上 GitHub）：用镜像
+            var mirrorOnly = new Router(payload); mirrorOnly.Serves(mirrorUrl, Fresh); mirrorOnly.Fails(upstreamUrl);
+            check(Fetch(mirrorOnly) == "9.9.9", "with GitHub unreachable the mirror is used on its own");
+            // 两个都挂：报错，而且要说成"网络问题"
+            var dead = new Router(payload); dead.Fails(mirrorUrl); dead.Fails(upstreamUrl);
+            bool network = false;
+            try { Fetch(dead); } catch (Exception ex) { network = Updates.Describe(ex).Network; }
+            check(network, "both sources down is reported as a network problem");
+            // 两边都不是新版：不提示
+            var same = new Router(payload); same.Serves(mirrorUrl, Stale); same.Serves(upstreamUrl, Stale);
+            check(Fetch(same) == "", "two sources at the same old version still means no update");
 
             // ---------- 失败要说人话：连不上和清单坏了，给用户的下一步不一样 ----------
             var offline = Updates.Describe(new HttpRequestException("no such host"));

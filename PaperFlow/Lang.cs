@@ -442,6 +442,7 @@ public static class Lang
         ["连不上更新服务器（Gitee 和 GitHub 都没连上），大概是网络的问题。"] = "Neither Gitee nor GitHub could be reached — most likely a network problem.",
         ["连接更新服务器超时，可能是网络慢或被拦住了。"] = "Connecting to the update server timed out; the network may be slow or blocked.",
         ["更新清单读不出来。"] = "The update manifest could not be read.",
+        ["两个更新来源对同一个版本给的文件不一样，这次先不更新。"] = "The two update sources disagree about this version's file, so nothing was updated.",
         ["这次没连上更新服务器（Gitee 和 GitHub 都没连上），没能检查更新。{0}可以稍后再试，也可以把更新提示设为“不提示”。"] = "Neither Gitee nor GitHub could be reached, so updates were not checked. {0}Try again later, or set update prompts to “Never”.",
         ["这次没连上更新服务器（{0}）"] = "Neither update server could be reached this time ({0})",
         ["上次检查没成功（{0:yyyy-MM-dd HH:mm}）：{1}"] = "Last check did not go through ({0:yyyy-MM-dd HH:mm}): {1}",

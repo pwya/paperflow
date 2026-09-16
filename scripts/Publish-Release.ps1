@@ -1,4 +1,12 @@
-﻿param([string]$PrivateTarget)
+﻿param(
+  [string]$PrivateTarget,
+  # Optional: mirror the finished release to Gitee as well (repo, branches, tags, the
+  # version release and the fixed "latest" release the app reads first).
+  [switch]$MirrorToGitee,
+  [string]$GiteeOwner = '',
+  [string]$GiteeRepo = 'paperflow',
+  [string]$NotesFile = ''
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
@@ -20,6 +28,10 @@ try {
     [xml]$project = Get-Content (Join-Path $source 'PaperFlow/PaperFlow.csproj') -Encoding UTF8
     $version = [string]$project.Project.PropertyGroup.Version
     if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Use a three-part release version.' }
+    # Tag the commit locally so GitHub and Gitee end up with the same tag object
+    # (gh release create then reuses it instead of inventing its own).
+    if (-not (git tag --list "v$version")) { git tag "v$version" $commit }
+    elseif ((git rev-list -n 1 "v$version").Trim() -ne $commit) { throw "Tag v$version already points at another commit." }
     dotnet run --project (Join-Path $source 'tests/PaperFlow.Tests.csproj') -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Tests failed.' }
     $package = Join-Path $build 'package'
@@ -84,4 +96,13 @@ try {
     }
     Write-Output "Version $version; commit $commit; SHA256 $hash"
     Write-Output "Curated public artifacts: $destination"
+    if ($MirrorToGitee) {
+        $owner = if ($GiteeOwner) { $GiteeOwner } else { $env:GITEE_OWNER }
+        if (-not $owner) { throw 'Pass -GiteeOwner (or set GITEE_OWNER) to mirror to Gitee.' }
+        $mirror = Join-Path $source 'scripts/Mirror-Gitee.ps1'
+        $mirrorArguments = @{ Source = $root; GiteeOwner = $owner; GiteeRepo = $GiteeRepo; Version = $version; ArtifactsDir = $destination }
+        if ($NotesFile) { $mirrorArguments['NotesFile'] = $NotesFile }
+        & $mirror @mirrorArguments
+        if ($LASTEXITCODE -ne 0) { throw 'Mirroring to Gitee failed.' }
+    }
 } finally { Pop-Location }

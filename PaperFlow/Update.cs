@@ -93,7 +93,7 @@ public static class Updates
 
     public static async Task<UpdateManifest?> FetchAsync(HttpClient client, CancellationToken token)
     {
-        var found = new List<UpdateManifest>();
+        var found = new List<(string Url, UpdateManifest Manifest)>();
         Exception? last = null;
         foreach (var url in Candidates())
         {
@@ -101,13 +101,35 @@ public static class Updates
             {
                 using var response = await client.GetAsync(url, token);
                 if (!response.IsSuccessStatusCode) throw new InvalidDataException(Lang.F("检查更新失败：{0}", (int)response.StatusCode));
-                found.Add(UpdateManifest.Parse(await response.Content.ReadAsStringAsync(token), UsingOverride));
+                found.Add((url, UpdateManifest.Parse(await response.Content.ReadAsStringAsync(token), UsingOverride)));
             }
             catch (Exception ex) { last = ex; }
         }
         if (found.Count == 0) throw last ?? new InvalidDataException(Lang.T("更新清单读不出来。"));
-        var newest = found.OrderByDescending(m => Version.Parse(m.Version)).First();
-        return IsNewer(newest.Version, Product.Version) ? newest : null;
+        var pick = Choose(found, GiteeManifestUrl, DefaultManifestUrl);
+        return IsNewer(pick.Version, Product.Version) ? pick : null;
+    }
+
+    // 两个来源都在时怎么定：
+    // - 镜像**不许抢先**：它报的版本比上游高就忽略它（镜像只能落后，不能领头），
+    //   这样即使 Gitee 那边被人动了手脚，也骗不到比上游更高的版本；
+    // - 两边同版本：必须**哈希和长度完全一致**才用镜像那份（用它是为了走国内下载），
+    //   对不上说明有人改过其中一份，宁可这次不更新；
+    // - 只有镜像能读到（国内连不上 GitHub）：用镜像，这一条是刻意的取舍，写在文档里。
+    public static UpdateManifest Choose(IReadOnlyList<(string Url, UpdateManifest Manifest)> found, string mirrorUrl, string upstreamUrl)
+    {
+        var mirror = found.FirstOrDefault(f => f.Url == mirrorUrl).Manifest;
+        var upstream = found.FirstOrDefault(f => f.Url == upstreamUrl).Manifest;
+        if (mirror != null && upstream != null)
+        {
+            int order = Version.Parse(mirror.Version).CompareTo(Version.Parse(upstream.Version));
+            if (order > 0) return upstream;   // 镜像不许抢先
+            if (order < 0) return upstream;   // 上游更新
+            if (!string.Equals(mirror.Sha256, upstream.Sha256, StringComparison.OrdinalIgnoreCase) || mirror.Length != upstream.Length)
+                throw new InvalidDataException(Lang.T("两个更新来源对同一个版本给的文件不一样，这次先不更新。"));
+            return mirror;                    // 同版本同哈希：用镜像（走国内下载）
+        }
+        return upstream ?? mirror ?? found.OrderByDescending(f => Version.Parse(f.Manifest.Version)).First().Manifest;
     }
 
     // 下载到临时文件并校验长度与 SHA-256；对不上就删掉临时文件并响亮报错。

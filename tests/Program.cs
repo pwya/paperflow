@@ -52,6 +52,7 @@ Check(storage.Load().Papers.Count == 1, "recovery repairs active file");
 SyncTests.Run(Check);
 PaperOrderTests.Run(Check);
 ViewTests.Run(Check);
+ShortcutTests.Run(Check);
 
 // Renaming the product moved the local runtime root; the old root must migrate once,
 // keep the sync device identity, and never overwrite a root that already has data.

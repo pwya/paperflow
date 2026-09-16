@@ -182,6 +182,7 @@ public sealed class MainWindow : Window
         var trayMenu = new Forms.ContextMenuStrip();
         trayMenu.Items.Add("显示 PaperFlow", null, (_, _) => Dispatcher.Invoke(Reveal));
         trayMenu.Items.Add("始终置顶 / 取消置顶", null, (_, _) => Dispatcher.Invoke(TogglePin));
+        trayMenu.Items.Add("放好桌面和开始菜单快捷方式", null, (_, _) => Dispatcher.Invoke(CreateShortcuts));
         trayMenu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(ExitApplication));
         tray.ContextMenuStrip = trayMenu;
         tray.DoubleClick += (_, _) => Dispatcher.Invoke(Reveal);
@@ -670,6 +671,16 @@ public sealed class MainWindow : Window
         var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, PreviewAppearance, EstimateVisiblePapers) { Owner = this };
         if (dialog.ShowDialog() == true) Commit(l => l.Settings = dialog.Result);
         else Commit(l => l.Settings = original);
+    }
+    // 挂件自己不占任务栏，最容易的“弄丢”方式就是找不到入口。托盘菜单里一键把两个入口放好。
+    private void CreateShortcuts()
+    {
+        try
+        {
+            Shortcuts.Apply(true, true, library.Settings.LauncherPath);
+            tray.ShowBalloonTip(6000, Product.Name, "桌面和开始菜单各放好一个入口。要固定在任务栏，右键那个快捷方式选“固定到任务栏”。", Forms.ToolTipIcon.Info);
+        }
+        catch (Exception ex) { MessageBox.Show(this, "快捷方式未能创建。\n" + ex.Message, Product.Name, MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void OpenOptions()
     {

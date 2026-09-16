@@ -247,7 +247,17 @@ public sealed class SettingsWindow : Window
         Label(sync, "启动", 16);
         var startup = new CheckBox { Content = "登录 Windows 时自动打开", IsChecked = StartupEntry.IsEnabled(), Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; sync.Children.Add(startup);
         Label(sync, "× 收起到托盘，双击托盘图标恢复。更新时请先从托盘菜单退出，再打开固定启动入口。", 11);
-        Label(sync, "更新通道和更新提示还没做（排在 1.6.0），现在更新靠网盘同步整个程序文件夹。", 11);
+        Label(sync, "更新", 16);
+        Label(sync, "现在更新靠把整个程序文件夹同步过来：先从托盘菜单退出，再打开固定启动入口。程序内自动更新还在做，做好之前这里不会有任何联网动作。", 11);
+        Label(sync, "快捷方式", 16);
+        Label(sync, Shortcuts.HasLauncher(Result.LauncherPath)
+            ? "挂件本身不进任务栏，用这两个入口打开最省事。它们指向固定启动入口，以后换了版本也不用重建。"
+            : "这台电脑上还没找到固定启动入口（说明现在是从程序文件直接打开的），快捷方式会先指向当前这个程序文件。以后用固定启动入口打开一次、再回来重新勾选一次，会更稳妥。", 11);
+        var shortcutDesktop = new CheckBox { Content = "桌面上放一个入口", IsChecked = Shortcuts.Exists(Shortcuts.DesktopPath()), Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) };
+        var shortcutStart = new CheckBox { Content = "开始菜单里放一个入口", IsChecked = Shortcuts.Exists(Shortcuts.StartMenuPath()), Margin = new Thickness(0, 0, 0, 6 * Appearance.Scale) };
+        sync.Children.Add(shortcutDesktop); sync.Children.Add(shortcutStart);
+        Label(sync, "勾上表示放好，取消勾选表示移除，保存设置时生效；不勾也不影响程序运行。任务栏图标不能由程序自己钉：右键上面那个快捷方式，选“固定到任务栏”就留在任务栏上了。", 11);
+        sync.Children.Add(B("打开程序文件夹", () => OpenFolder(Shortcuts.ProgramFolder(Result.LauncherPath))));
 
         // ---------- 关于与反馈 ----------
         var about = pages[4];
@@ -256,16 +266,24 @@ public sealed class SettingsWindow : Window
         Label(about, "MIT 许可 · Copyright (c) 2026 Panwang Yuang\n本程序不联网、不上传任何资料，论文数据只存在你自己的电脑和你选的同步文件夹里。", 11);
         var links = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 0) };
         links.Children.Add(B("打开主页", () => OpenUrl("https://panwangyuang.com")));
+        links.Children.Add(B("开 GitHub issue", () => OpenUrl("https://github.com/pwya/paperflow/issues/new")));
         links.Children.Add(B("写邮件反馈", () => OpenUrl("mailto:pwya1998@126.com?subject=PaperFlow%20%E5%8F%8D%E9%A6%88")));
         links.Children.Add(B("复制邮箱", () => { try { Clipboard.SetText("pwya1998@126.com"); } catch (Exception) { } }));
         about.Children.Add(links);
-        Label(about, "遇到问题发邮件到 pwya1998@126.com，或在 GitHub 上开 issue（仓库还没公开，链接以后再补）。", 11);
+        Label(about, "遇到问题发邮件到 pwya1998@126.com，或在 GitHub 上开 issue（截图和文字都可以），两条路我都会看。", 11);
 
         var cancel = B("取消", () => DialogResult = false); cancel.IsCancel = true; buttons.Children.Add(cancel);
         buttons.Children.Add(B("保存设置", () =>
         {
-            try { if ((startup.IsChecked == true) != StartupEntry.IsEnabled()) StartupEntry.Write(startup.IsChecked == true, Result.LauncherPath); DialogResult = true; }
-            catch (Exception ex) { MessageBox.Show(this, "开机启动设置未能保存。\n" + ex.Message); }
+            try
+            {
+                if ((startup.IsChecked == true) != StartupEntry.IsEnabled()) StartupEntry.Write(startup.IsChecked == true, Result.LauncherPath);
+                bool desktop = shortcutDesktop.IsChecked == true, menu = shortcutStart.IsChecked == true;
+                // 只在和现状不一样时动手，免得每次保存都重写一遍快捷方式。
+                if (desktop != Shortcuts.Exists(Shortcuts.DesktopPath()) || menu != Shortcuts.Exists(Shortcuts.StartMenuPath())) Shortcuts.Apply(desktop, menu, Result.LauncherPath);
+                DialogResult = true;
+            }
+            catch (Exception ex) { MessageBox.Show(this, "设置未能保存。\n" + ex.Message); }
         }, true)); ready = true; RefreshFit();
     }
     private static void OpenFolder(string folder) { Directory.CreateDirectory(folder); OpenUrl(folder); }

@@ -213,6 +213,9 @@ public sealed class SettingsWindow : Window
         Label(view, "列表怎么显示", 20);
         var bold = new CheckBox { Content = "论文标题加粗", IsChecked = Result.TitleBold, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; view.Children.Add(bold);
         bold.Click += (_, _) => { Result.TitleBold = bold.IsChecked == true; Preview(); };
+        var notices = new CheckBox { Content = "操作后在底部显示提示条", IsChecked = Result.ShowNotices, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; view.Children.Add(notices);
+        notices.Click += (_, _) => { Result.ShowNotices = notices.IsChecked == true; Preview(); };
+        Label(view, "提示条只在这些时候出现：勾选阶段后论文被隐藏或被挪到别的页、归档、复制。正常的勾选不会弹。", 11);
         Label(view, "搜索、筛选、排序、紧凑视图、隐藏哪些阶段、翻页方式和显示范围都在挂件右上角的“论文选项”里，那里改的是此刻看到什么。这里只放长期偏好。", 11);
         Label(view, "字号、界面缩放和三档字体在“字体与文字”里。", 11);
         Label(view, "铺满屏幕时界面会不会挤，取决于字号和界面缩放的组合。字号很大时阶段标签会换行、卡片自然变高，一屏能看到的论文会变少，这是正常的。", 11);

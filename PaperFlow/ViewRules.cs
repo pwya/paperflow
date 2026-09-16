@@ -6,6 +6,9 @@ namespace PaperFlow;
 
 public static class ViewRules
 {
+    // 勾选阶段之后给用户的交代：论文还在眼前、被隐藏、还是被挪到了别的页。
+    public sealed record StageNotice(string Kind, int Page, string Text, string Action);
+
     public static readonly string[] PageModes = { "不翻页", "按优先级翻页", "按阶段分组翻页" };
     // The card shows priority as three dots: high fills all three, low fills one.
     public static int PriorityLevel(string priority) => priority switch { "高" => 3, "中" => 2, "低" => 1, _ => 2 };
@@ -35,5 +38,21 @@ public static class ViewRules
         if (p.PageMode == PageModes[1]) return Paper.Priorities[index] + "优先级";
         if (p.PageMode == PageModes[2]) return index == 0 ? "当前推进" : "所选阶段";
         return "论文列表";
+    }
+    public static StageNotice? AfterStageToggle(Paper paper, Preferences p, IEnumerable<Paper> candidates)
+    {
+        var source = candidates.ToList();
+        int current = Math.Clamp(p.PageIndex, 0, PageCount(p) - 1);
+        if (Apply(source, p, current).Any(x => x.Id == paper.Id)) return null;
+        string label = Paper.StageLabels[Math.Clamp(paper.CurrentStageIndex, 0, Paper.StageLabels.Length - 1)];
+        for (int i = 0; i < PageCount(p); i++)
+        {
+            if (i == current) continue;
+            if (Apply(source, p, i).Any(x => x.Id == paper.Id))
+                return new StageNotice("paged", i, $"已进入{label} · 它被放到了第 {i + 1} 页", $"翻到第 {i + 1} 页");
+        }
+        if (p.HideSelectedStages && SelectedStage(paper, p))
+            return new StageNotice("hidden", -1, $"已进入{label} · 按当前设置，这类论文被隐藏了", "立即显示");
+        return null;
     }
 }

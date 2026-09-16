@@ -31,6 +31,12 @@ public sealed class MainWindow : Window
     private readonly TextBlock footer = new();
     private readonly StackPanel pager = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 7) };
     private readonly TextBlock pageLabel = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 12, 0), FontSize = 12 };
+    private readonly Border toast = new();
+    private readonly TextBlock toastText = new();
+    private readonly Button toastAction = new();
+    private readonly Button toastClose = new();
+    private readonly DispatcherTimer toastTimer = new() { Interval = TimeSpan.FromSeconds(8) };
+    private Action? toastActionHandler;
     private readonly TextBox search = new();
     private readonly ComboBox filter = new();
     private readonly ComboBox sort = new();
@@ -154,6 +160,7 @@ public sealed class MainWindow : Window
         pager.Children.Add(pageLabel);
         pager.Children.Add(ActionButton("下一页 ›", () => TurnPage(1)));
         DockPanel.SetDock(pager, Dock.Bottom); root.Children.Add(pager);
+        BuildToast(); DockPanel.SetDock(toast, Dock.Bottom); root.Children.Add(toast);
         scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new Thickness(13, 0, 9, 0), Content = cards };
         scroller.AllowDrop = true;
         scroller.PreviewDragOver += (_, e) =>
@@ -294,18 +301,17 @@ public sealed class MainWindow : Window
             scrim.Background = Appearance.Paint(Appearance.Current.Window, Appearance.Scrim * Appearance.Opacity);
         }
         frame.BorderBrush = Appearance.Paint(Appearance.Current.Border, Appearance.Opacity * .75);
+        toast.Background = Appearance.Paint(Appearance.Current.Card, Math.Max(0.94, Appearance.Opacity));
+        toast.BorderBrush = Appearance.Paint(Appearance.Current.Border, .9);
+        toastText.Foreground = Appearance.Paint(Appearance.Current.Ink);
+        toastAction.Foreground = Appearance.Paint(Appearance.Current.Accent);
+        toastClose.Foreground = Appearance.Paint(Appearance.Current.Muted);
         pin.Content = library.Settings.Topmost ? "已置顶" : "置顶"; pin.ToolTip = "F12 切换置顶";
         pin.Foreground = library.Settings.Topmost ? Brush("#21846B") : Brush("#78867F");
         compact.Content = library.Settings.Compact ? "展开" : "紧凑";
         var active = library.Papers.Where(p => !p.Archived).ToList();
         summary.Text = $"{active.Count} 篇论文   ·   {active.Count(p => !p.Stages[6].Done)} 篇推进中   ·   {active.Count(p => p.Stages[6].Done)} 篇已收录" + (filter.SelectedIndex != 0 || search.Text != "" ? "   ·   已筛选" : "");
-        IEnumerable<Paper> visible = library.Papers.Where(p => filter.SelectedIndex == 3 ? p.Archived : !p.Archived);
-        if (filter.SelectedIndex == 1) visible = visible.Where(p => !p.Stages[6].Done);
-        if (filter.SelectedIndex == 2) visible = visible.Where(p => p.Stages[6].Done);
-        var term = search.Text.Trim();
-        if (term != "") visible = visible.Where(p => string.Join(" ", p.Title, p.Subject, p.Language, p.Collaborators, p.Journal, p.Notes, p.Status, p.NextAction).Contains(term, StringComparison.OrdinalIgnoreCase));
-        visible = sort.SelectedIndex switch { 1 => visible.OrderByDescending(p => p.UpdatedAt), 2 => visible.OrderBy(p => p.DueDate ?? DateTime.MaxValue), 3 => visible.OrderByDescending(p => p.Progress), _ => visible };
-        var candidates = visible.ToList();
+        var candidates = Candidates();
         var pagePapers = ViewRules.Apply(candidates, library.Settings);
         summary.Text = $"{active.Count} 篇论文 · 当前显示 {pagePapers.Count} 篇" + (library.Settings.PageMode == ViewRules.PageModes[2] ? " · 阶段分组" : library.Settings.HideSelectedStages ? $" · 按阶段隐藏 {candidates.Count(p => ViewRules.SelectedStage(p, library.Settings))} 篇" : "");
         summary.ToolTip = "隐藏和翻页仅改变显示，不删除论文。点击论文选项调整。";
@@ -356,6 +362,54 @@ public sealed class MainWindow : Window
             }
         }
         Render();
+    }
+
+    // 底部提示条：勾选阶段后论文被隐藏或被挪到别的页时交代一句，八秒自己走。
+    private void BuildToast()
+    {
+        toast.Visibility = Visibility.Collapsed;
+        toast.CornerRadius = new CornerRadius(10); toast.BorderThickness = new Thickness(1);
+        toast.Margin = new Thickness(15, 0, 15, 9); toast.Padding = new Thickness(14, 9, 10, 9);
+        toast.Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 14, ShadowDepth = 2, Direction = 270, Opacity = 0.16, Color = Colors.Black };
+        toastText.TextWrapping = TextWrapping.Wrap; toastText.VerticalAlignment = VerticalAlignment.Center;
+        toastAction.Background = Brushes.Transparent; toastAction.Padding = new Thickness(8, 2, 8, 2); toastAction.Visibility = Visibility.Collapsed;
+        toastAction.Click += (_, _) => { var action = toastActionHandler; HideToast(); action?.Invoke(); };
+        toastClose.Content = "×"; toastClose.Background = Brushes.Transparent; toastClose.Padding = new Thickness(8, 2, 8, 2);
+        toastClose.ToolTip = "收起这条提示"; toastClose.Click += (_, _) => HideToast();
+        var body = new Grid();
+        body.ColumnDefinitions.Add(new ColumnDefinition()); body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        body.Children.Add(toastText);
+        Grid.SetColumn(toastAction, 1); body.Children.Add(toastAction);
+        Grid.SetColumn(toastClose, 2); body.Children.Add(toastClose);
+        toast.Child = body;
+        toastTimer.Tick += (_, _) => HideToast();
+    }
+    private void ShowNotice(string text, string actionLabel = "", Action? action = null)
+    {
+        if (!library.Settings.ShowNotices) return;
+        toastText.Text = text;
+        toastText.FontFamily = new FontFamily(Appearance.FamilyFor("body"));
+        toastText.FontSize = 12.5 * Appearance.RoleScale("body") * Appearance.TextScale;
+        toastAction.Content = actionLabel;
+        toastAction.Visibility = actionLabel == "" ? Visibility.Collapsed : Visibility.Visible;
+        toastAction.FontFamily = new FontFamily(Appearance.FamilyFor("body"));
+        toastAction.FontSize = 12 * Appearance.RoleScale("body") * Appearance.TextScale;
+        toastClose.FontSize = 13 * Appearance.RoleScale("body") * Appearance.TextScale;
+        toastActionHandler = action;
+        toast.Visibility = Visibility.Visible;
+        toastTimer.Stop(); toastTimer.Start();
+    }
+    private void HideToast() { toastTimer.Stop(); toast.Visibility = Visibility.Collapsed; toastActionHandler = null; }
+
+    // 当前筛选、搜索、排序之后还剩哪些论文；提示条判断"这篇还在不在眼前"要用同一份名单。
+    private List<Paper> Candidates()
+    {
+        IEnumerable<Paper> visible = library.Papers.Where(p => filter.SelectedIndex == 3 ? p.Archived : !p.Archived);
+        if (filter.SelectedIndex == 1) visible = visible.Where(p => !p.Stages[6].Done);
+        if (filter.SelectedIndex == 2) visible = visible.Where(p => p.Stages[6].Done);
+        var term = search.Text.Trim();
+        if (term != "") visible = visible.Where(p => string.Join(" ", p.Title, p.Subject, p.Language, p.Collaborators, p.Journal, p.Notes, p.Status, p.NextAction).Contains(term, StringComparison.OrdinalIgnoreCase));
+        return (sort.SelectedIndex switch { 1 => visible.OrderByDescending(p => p.UpdatedAt), 2 => visible.OrderBy(p => p.DueDate ?? DateTime.MaxValue), 3 => visible.OrderByDescending(p => p.Progress), _ => visible }).ToList();
     }
 
     private Border BuildCard(Paper p)
@@ -419,7 +473,20 @@ public sealed class MainWindow : Window
             if (Appearance.ChipStyle == "tag") cb.Background = Appearance.Paint(Appearance.Tags.Length == 0 ? Appearance.Current.Accent : Appearance.Tags[i % Appearance.Tags.Length]);
             cb.Padding = new Thickness(small ? 4 : 5, 3, small ? 4 : 5, 3); cb.Margin = new Thickness(0, 0, Appearance.ChipStyle == "text" ? 12 * Appearance.Scale : 4, 3);
             cb.ToolTip = stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : i == 4 ? "勾选表示进入在审；继续勾选返修或收录后，移出在审分组。" : "点击切换；进度按适用阶段等权计算";
-            cb.Click += (_, _) => Commit(l => l.Papers.Single(x => x.Id == p.Id).ToggleStage(index, cb.IsChecked == true)); checks.Children.Add(cb);
+            // 监听状态变化而不是 Click：键盘、鼠标和自动化切换都走同一条路径。
+            void Toggle(bool done)
+            {
+                if (!Commit(l => l.Papers.Single(x => x.Id == p.Id).ToggleStage(index, done))) return;
+                var updated = library.Papers.FirstOrDefault(x => x.Id == p.Id);
+                if (updated == null) return;
+                var notice = ViewRules.AfterStageToggle(updated, library.Settings, Candidates());
+                if (notice == null) return;
+                if (notice.Kind == "paged") ShowNotice(notice.Text, notice.Action, () => { Commit(l => l.Settings.PageIndex = notice.Page); scroller.ScrollToTop(); });
+                else ShowNotice(notice.Text, notice.Action, () => Commit(l => l.Settings.HiddenStages.Remove(updated.CurrentStageIndex)));
+            }
+            cb.Checked += (_, _) => Toggle(true);
+            cb.Unchecked += (_, _) => Toggle(false);
+            checks.Children.Add(cb);
         }
         var due = Text(p.DueDate != null && !p.Stages[6].Done ? p.DeadlineText : $"已开始 {p.ElapsedDays} 天", 11, p.DueDate?.Date < DateTime.Today && !p.Stages[6].Done ? "#BE624C" : "#8A948C");
         due.Margin = new Thickness(4, 0, 5, 3); due.ToolTip = $"开始日期：{p.StartDate:yyyy-MM-dd}\n已开始 {p.ElapsedDays} 天"; checks.Children.Add(due);
@@ -534,8 +601,16 @@ public sealed class MainWindow : Window
         Item("查看修改记录", () => ShowHistory(p));
         menu.Items.Add(new Separator());
         Item("上移一位", () => MovePaper(p.Id, -1)); Item("下移一位", () => MovePaper(p.Id, 1));
-        Item("复制为新论文（阶段清零）", () => Commit(l => { var copy = Storage.Clone(p); copy.Id = Guid.NewGuid().ToString("N"); copy.Title = p.Title.Length > 490 ? p.Title[..490] + "（副本）" : p.Title + "（副本）"; copy.Stages = Paper.StageNames.Select(n => new Stage { Name = n }).ToList(); copy.History.Clear(); copy.Archived = false; copy.StartDate = DateTime.Today; copy.DueDate = null; copy.Status = "准备中"; copy.NextAction = ""; copy.Outcome = ""; copy.Notes = ""; copy.Record("复制论文资料 · 七阶段清零"); l.Papers.Insert(0, copy); }));
-        Item(p.Archived ? "恢复到论文列表" : "归档（保留资料）", () => Commit(l => { var paper = l.Papers.Single(x => x.Id == p.Id); paper.Archived = !paper.Archived; paper.Record(paper.Archived ? "归档论文" : "恢复论文"); }));
+        Item("复制为新论文（阶段清零）", () =>
+        {
+            if (Commit(l => { var copy = Storage.Clone(p); copy.Id = Guid.NewGuid().ToString("N"); copy.Title = p.Title.Length > 490 ? p.Title[..490] + "（副本）" : p.Title + "（副本）"; copy.Stages = Paper.StageNames.Select(n => new Stage { Name = n }).ToList(); copy.History.Clear(); copy.Archived = false; copy.StartDate = DateTime.Today; copy.DueDate = null; copy.Status = "准备中"; copy.NextAction = ""; copy.Outcome = ""; copy.Notes = ""; copy.Record("复制论文资料 · 七阶段清零"); l.Papers.Insert(0, copy); }))
+                ShowNotice("已复制为新论文 · 它已经放在列表最上面");
+        });
+        Item(p.Archived ? "恢复到论文列表" : "归档（保留资料）", () =>
+        {
+            if (!Commit(l => { var paper = l.Papers.Single(x => x.Id == p.Id); paper.Archived = !paper.Archived; paper.Record(paper.Archived ? "归档论文" : "恢复论文"); })) return;
+            ShowNotice(p.Archived ? "已恢复到论文列表" : "已归档 · 在论文选项的显示范围里选“已归档”可以再找到它");
+        });
         menu.IsOpen = true;
     }
     private void PriorityMenu(Paper p, FrameworkElement anchor)

@@ -79,6 +79,7 @@ public sealed class Preferences
     public bool TitleBold { get; set; } = true;
     public bool HideSelectedStages { get; set; } = true;
     public List<int> HiddenStages { get; set; } = new() { 4 };
+    public bool ShowNotices { get; set; } = true;
     public List<string> VisiblePriorities { get; set; } = new() { "高", "中", "低" };
     public string PageMode { get; set; } = "不翻页";
     public int PageIndex { get; set; }

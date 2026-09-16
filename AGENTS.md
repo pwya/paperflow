@@ -1,6 +1,7 @@
 # Repository rules
 
 - This repository contains public source only. Never copy user papers, snapshots, runtime journals, settings, logs, screenshots of real data, credentials, machine identifiers or private absolute paths into it.
+- The author's planning notes, roadmaps, hand-off documents, personal release runbooks and UI-verification helper scripts live in a synced private folder outside this repository. They are deliberately not public: never copy, upload or summarise them into the repository, an issue, a pull request or a release. The public whitelist in `scripts/Test-PublicTree.ps1` rejects every path that is not part of the product.
 - Runtime data belongs outside the repository. Use temporary data roots and synthetic paper titles in all tests. UI tests must pass `--data-dir` and `--sync-dir` explicitly.
 - Do not create a second implementation for personal use. Fix this source, test, commit, bump the version and produce both personal and public builds from the same commit.
 - Never push, create a remote repository or publish a GitHub release without user authorization.

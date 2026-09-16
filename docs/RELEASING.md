@@ -38,6 +38,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 
 - **同版本必须完全一致**：SHA-256 与长度都对得上才安装，对不上就这次不更新（防的是有人只改了一边）。
 - **只有 GitHub 连不上时**（国内常见），才单凭镜像更新；这一条是刻意的取舍，写在 `SECURITY.md` 与交接文档里。
 
+## 公众号配图（开发用）
+
+```powershell
+# 用指定图片当背景，渲染一张 2880×1920 的海报（界面部分仍是代码生成的虚构论文）
+PaperFlow.exe --article-poster <输出目录> --background <图片路径> --name <文件名> [--backdrop]
+             [--title <文案>] [--description <文案>] [--detail <文案>]
+```
+
+不加 `--backdrop` 时，那张图作为**小组件自己的背景图**；加了 `--backdrop`，那张图铺满**整张海报**（会自动盖一层浅色遮罩保证文字可读）。同时还会输出一张 2 倍像素的 `-界面原图.png`。三次导出都不会读取任何真实资料。
+
 ## 镜像到 Gitee
 
 发布脚本可以直接把这一版镜像过去：

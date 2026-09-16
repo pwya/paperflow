@@ -64,24 +64,7 @@ public static class PromotionExporter
             {
                 bool dark = scene.Theme == "夜墨";
                 var background = new LinearGradientBrush((Color)ColorConverter.ConvertFromString(dark ? "#101822" : "#F5F8FB"), (Color)ColorConverter.ConvertFromString(dark ? "#26354A" : "#E5EDF5"), 35);
-                canvas.DrawRectangle(background, null, new Rect(0, 0, 1920, 1280));
-                var ink = Appearance.Paint(dark ? "#F4F7FC" : "#20374C"); var muted = Appearance.Paint(dark ? "#BCCADB" : "#5F7488");
-                void Text(string text, double x, double y, double size, Brush brush, bool bold = false)
-                {
-                    var formatted = new FormattedText(text, CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight, new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, bold ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal), size, brush, 1.5) { MaxTextWidth = 650 };
-                    canvas.DrawText(formatted, new Point(x, y));
-                }
-                Text("PAPERFLOW  /  论文投稿进度小部件", 92, 88, 22, muted);
-                Text(scene.Title, 92, 256, 58, ink, true);
-                Text(scene.Description, 96, 480, 27, muted);
-                canvas.DrawRoundedRectangle(Appearance.Paint(dark ? "#354D65" : "#DDE8EF"), null, new Rect(94, 716, 558, 74), 14, 14);
-                Text(scene.Detail, 112, 741, 19, ink);
-                double w = 1080, h = w * visual.ActualHeight / visual.ActualWidth;
-                var target = new Rect(758, (1280 - h) / 2, w, h);
-                canvas.DrawRoundedRectangle(Appearance.Paint(dark ? "#080F18" : "#D3DFE9"), null, new Rect(target.X + 12, target.Y + 17, target.Width, target.Height), 20, 20);
-                canvas.DrawRectangle(new VisualBrush(visual) { Stretch = Stretch.Fill }, null, target);
-                Text("Windows 桌面小部件 · 无需注册应用账号", 94, 1080, 22, muted);
-                Text("真实界面导出 · 所有论文均为虚构演示数据", 94, 1142, 18, muted);
+                DrawPoster(canvas, visual, dark, background, null, scene.Title, scene.Description, scene.Detail);
             }
             var poster = new RenderTargetBitmap(2880, 1920, 144, 144, PixelFormats.Pbgra32); poster.Render(board); Save(poster, Path.Combine(directory, scene.File + "-宣传大图.png"));
             descriptions.Add($"\n- {scene.File}：{scene.Title.Replace('\n', ' ')}。界面原图 {raw.PixelWidth}×{raw.PixelHeight}，宣传图 2880×1920。");
@@ -93,5 +76,75 @@ public static class PromotionExporter
     private static void Save(BitmapSource bitmap, string path)
     {
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var file = File.Create(path); encoder.Save(file);
+    }
+
+    // 一张海报的画法：底（渐变或指定图片）、可选遮罩、左侧文案、右侧界面图、底部两行小字。
+    // 六套宣传图与公众号配图都走这里，保证风格一致。
+    private static void DrawPoster(DrawingContext canvas, FrameworkElement visual, bool dark, Brush backdrop, Brush? overlay, string title, string description, string detail)
+    {
+        canvas.DrawRectangle(backdrop, null, new Rect(0, 0, 1920, 1280));
+        if (overlay != null) canvas.DrawRectangle(overlay, null, new Rect(0, 0, 1920, 1280));
+        var ink = Appearance.Paint(dark ? "#F4F7FC" : "#20374C"); var muted = Appearance.Paint(dark ? "#BCCADB" : "#5F7488");
+        void Text(string text, double x, double y, double size, Brush brush, bool bold = false)
+        {
+            var formatted = new FormattedText(text, CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight, new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, bold ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal), size, brush, 1.5) { MaxTextWidth = 650 };
+            canvas.DrawText(formatted, new Point(x, y));
+        }
+        Text("PAPERFLOW  /  论文投稿进度小部件", 92, 88, 22, muted);
+        Text(title, 92, 256, 58, ink, true);
+        Text(description, 96, 480, 27, muted);
+        canvas.DrawRoundedRectangle(Appearance.Paint(dark ? "#354D65" : "#DDE8EF"), null, new Rect(94, 716, 558, 74), 14, 14);
+        Text(detail, 112, 741, 19, ink);
+        double w = 1080, h = w * visual.ActualHeight / visual.ActualWidth;
+        var target = new Rect(758, (1280 - h) / 2, w, h);
+        canvas.DrawRoundedRectangle(Appearance.Paint(dark ? "#080F18" : "#D3DFE9"), null, new Rect(target.X + 12, target.Y + 17, target.Width, target.Height), 20, 20);
+        canvas.DrawRectangle(new VisualBrush(visual) { Stretch = Stretch.Fill }, null, target);
+        Text("Windows 桌面小部件 · 无需注册应用账号", 94, 1080, 22, muted);
+        Text("真实界面导出 · 所有论文均为虚构演示数据", 94, 1142, 18, muted);
+    }
+
+    // 公众号配图：用你自己的图当背景，界面部分仍然是代码生成的虚构论文。
+    // backdrop = true  那张图铺满整张海报（上面盖一层浅色遮罩，文案才看得清）；
+    // backdrop = false 那张图当作小组件自己的背景图，海报底仍是常规渐变。
+    public static async Task GenerateArticle(string directory, string background, bool backdrop, string name, string title, string description, string detail)
+    {
+        if (!File.Exists(background)) throw new FileNotFoundException("找不到背景图：" + background);
+        Directory.CreateDirectory(directory);
+        var work = Path.Combine(Path.GetTempPath(), "PaperFlow-article-" + Guid.NewGuid().ToString("N"));
+        var library = CreateSample();
+        library.Settings = new Preferences
+        {
+            Width = 1060, Height = 760, Theme = "极简 · 白", ListLayout = Themes.CardLayout, TextSize = 15,
+            HiddenStages = new List<int> { 4 }, PageMode = ViewRules.PageModes[0], PageIndex = 0, Topmost = false,
+            BackgroundImage = backdrop ? "" : background, BackgroundOpacity = 0.9, ImageScrim = 0.35
+        };
+        var local = Path.Combine(work, "data"); var storage = new Storage(local); var sync = new SyncEngine(local, "", library);
+        var window = new MainWindow(storage, library, sync, true) { ShowInTaskbar = false, ShowActivated = false, Left = -20000, Top = -20000, Width = 1060, Height = 760 };
+        window.Show(); await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+        var visual = (FrameworkElement)window.Content;
+        var raw = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth * 2), (int)Math.Ceiling(visual.ActualHeight * 2), 192, 192, PixelFormats.Pbgra32);
+        raw.Render(visual); Save(raw, Path.Combine(directory, name + "-界面原图.png"));
+        var board = new DrawingVisual();
+        using (var canvas = board.RenderOpen())
+        {
+            Brush back = new LinearGradientBrush((Color)ColorConverter.ConvertFromString("#F5F8FB"), (Color)ColorConverter.ConvertFromString("#E5EDF5"), 35);
+            Brush? overlay = null;
+            if (backdrop)
+            {
+                back = new ImageBrush(LoadPicture(background)) { Stretch = Stretch.UniformToFill };
+                // 浅色遮罩：既压住图片保证文字可读，又保留表情包的颜色和轮廓。
+                overlay = new SolidColorBrush(Color.FromArgb(200, 252, 253, 254));
+            }
+            DrawPoster(canvas, visual, false, back, overlay, title, description, detail);
+        }
+        var poster = new RenderTargetBitmap(2880, 1920, 144, 144, PixelFormats.Pbgra32); poster.Render(board);
+        Save(poster, Path.Combine(directory, name + "-宣传大图.png"));
+        window.CloseDemonstration();
+    }
+    private static ImageSource LoadPicture(string path)
+    {
+        var bitmap = new BitmapImage();
+        bitmap.BeginInit(); bitmap.UriSource = new Uri(path); bitmap.CacheOption = BitmapCacheOption.OnLoad; bitmap.EndInit(); bitmap.Freeze();
+        return bitmap;
     }
 }

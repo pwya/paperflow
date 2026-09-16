@@ -8,12 +8,14 @@ try {
     # Whitelist, not blacklist. docs/ is pinned to the one public document on purpose:
     # the author's planning notes, hand-off documents, roadmaps and personal runbooks live
     # in a synced private folder outside the repository and must never be copied in.
-    $allowed = '^(README\.md|LICENSE|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|\.gitignore|\.gitattributes|PaperFlow/[^/]+\.(cs|xaml|csproj)|PaperFlow/Assets/app\.ico|Launcher/[^/]+\.cs|tests/[^/]+\.(cs|csproj)|scripts/[^/]+\.ps1|docs/RELEASING\.md|\.github/workflows/[^/]+\.ya?ml|\.githooks/pre-commit)$'
+    $allowed = '^(README\.md|LICENSE|CHANGELOG\.md|CONTRIBUTING\.md|SECURITY\.md|AGENTS\.md|\.gitignore|\.gitattributes|PaperFlow/[^/]+\.(cs|xaml|csproj)|PaperFlow/Assets/app\.ico|Launcher/[^/]+\.cs|tests/[^/]+\.(cs|csproj)|scripts/[^/]+\.ps1|docs/RELEASING\.md|docs/images/[0-9a-z\-]+\.png|\.github/workflows/[^/]+\.ya?ml|\.githooks/pre-commit)$'
     $problems = [Collections.Generic.List[string]]::new()
     foreach ($file in $files) {
         if ($file -notmatch $allowed) { $problems.Add("Unapproved public path: $file"); continue }
         if ($file -match '(?i)(papers.*\.json|\.local\.|\.env|credential|secret|\.lnk$|\.log$|\.pdb$)') { $problems.Add("Private/runtime filename: $file"); continue }
-        if ($file -like '*.ico') { continue }
+        # Binary assets are checked by the whitelist above only: reading a PNG as text
+        # would produce meaningless matches and slow every commit down.
+        if ($file -like '*.ico' -or $file -like '*.png') { continue }
         $content = if ($Staged) { (git show ":$file") -join "`n" } else { Get-Content -LiteralPath $file -Raw -Encoding UTF8 }
         # Scan the exact staged content, not merely the working-tree version.
         # Cloud folder names stay in this deny pattern on purpose: it exists to catch a leaked

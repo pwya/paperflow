@@ -247,9 +247,9 @@ public sealed class SettingsWindow : Window
         // ---------- 同步与启动 ----------
         var sync = pages[3];
         Label(sync, Lang.T("论文同步与备份"), 20);
-        Label(sync, Result.SyncFolder == "" ? Lang.T("当前只在本机保存。把安装文件夹放进任意会自动同步的网盘文件夹，再从那里的固定启动入口打开，就会自动连接旁边的 data 目录。") : Lang.T("正在使用同步文件夹\n") + Result.SyncFolder, 11);
+        Label(sync, Result.SyncFolder == "" ? Lang.T("论文只保存在这台电脑上。想换电脑或几台电脑一起用，把安装文件夹放进一个会自动同步的网盘文件夹（例如 OneDrive），在每台电脑打开那里的固定启动入口即可。") : Lang.T("正在使用同步文件夹\n") + Result.SyncFolder, 11);
         if (Result.SyncFolder != "") sync.Children.Add(B(Lang.T("打开同步资料文件夹"), () => OpenFolder(Result.SyncFolder)));
-        Label(sync, Lang.T("其他电脑收到文件后，小部件自动刷新；到达时间由你用的网盘客户端决定。字体、主题、字号、界面缩放和窗口位置只保存在本机。"), 11);
+        Label(sync, Lang.T("其他电脑收到文件后会自动刷新。字体、主题、字号、界面缩放、界面语言和窗口位置只保存在本机。"), 11);
         var backup = new StackPanel { Orientation = Orientation.Horizontal }; backup.Children.Add(B(Lang.T("导出备份"), export)); backup.Children.Add(B(Lang.T("导入备份"), import)); backup.Children.Add(B(Lang.T("本地资料"), () => OpenFolder(directory))); sync.Children.Add(backup);
         Label(sync, Lang.T("启动"), 16);
         var startup = new CheckBox { Content = Lang.T("登录 Windows 时自动打开"), IsChecked = StartupEntry.IsEnabled(), Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; sync.Children.Add(startup);
@@ -293,7 +293,7 @@ public sealed class SettingsWindow : Window
         var about = pages[4];
         Label(about, Product.Name, 20);
         Label(about, Lang.F("版本 {0}", Product.Version) + (Product.BuildCommit == "" ? Lang.T(" · 本地构建") : Lang.F(" · 提交 {0}", Product.BuildCommit)), 12);
-        Label(about, Lang.T("MIT 许可 · Copyright (c) 2026 Panwang Yuang\n程序只在检查更新时访问 GitHub，只下载、不上传；论文数据只存在你自己的电脑和你选的同步文件夹里。"), 11);
+        Label(about, Lang.T("MIT 许可 · Copyright (c) 2026 Panwang Yuang\n不需要注册账号，论文数据只存在你自己的电脑上。程序只在检查更新时访问 GitHub，只下载、不上传。"), 11);
         var links = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 0) };
         links.Children.Add(B(Lang.T("打开主页"), () => OpenUrl("https://panwangyuang.com")));
         links.Children.Add(B(Lang.T("开 GitHub issue"), () => OpenUrl("https://github.com/pwya/paperflow/issues/new")));

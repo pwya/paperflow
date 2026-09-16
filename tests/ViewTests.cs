@@ -28,6 +28,12 @@ static class ViewTests
         var stored = Storage.Parse("{\"Version\":1,\"Settings\":{\"Theme\":\"暖杏\",\"ListLayout\":\"乱七八糟\",\"BarHeight\":33},\"Papers\":[]}");
         check(stored.Settings.Theme == "经典 · 暖杏" && stored.Settings.ListLayout == Themes.CardLayout && stored.Settings.BarHeight == 0, "stored settings migrate the theme and clamp layout and bar height");
         check(new Preferences().Theme == Themes.Default && new Preferences().ListLayout == Themes.CardLayout, "new installs start on the redesigned default");
+        check(Themes.IsHex("#0F766E") && !Themes.IsHex("red") && !Themes.IsHex("") && !Themes.IsHex("#12345"), "hex validation rejects anything that is not six digits");
+        check(Themes.ContrastRatio("#000000", "#FFFFFF") > 20 && Math.Abs(Themes.ContrastRatio("#777777", "#777777") - 1) < 0.001, "contrast ratio maths matches the usual definition");
+        var tiers = Storage.Parse("{\"Version\":1,\"Settings\":{\"TitleFont\":\"   \",\"TitleColor\":\"red\",\"BodyColor\":\"#123456\",\"CaptionScale\":9,\"BodyScale\":0.1},\"Papers\":[]}");
+        check(tiers.Settings.TitleFont == "" && tiers.Settings.TitleColor == "", "blank tier fonts fall back and invalid colours are dropped");
+        check(tiers.Settings.BodyColor == "#123456" && tiers.Settings.CaptionScale == 2 && tiers.Settings.BodyScale == 0.6, "tier colours survive and scales are clamped to 60-200%");
+        check(new Preferences().TitleScale == 1 && new Preferences().CaptionFont == "" && new Preferences().BodyColor == "", "tier defaults follow the base font and the theme");
         check(ViewRules.Apply(all, p).Select(x => x.Id).SequenceEqual(new[] { writing.Id, revision.Id, accepted.Id }), "review hidden by default, revision and accepted remain");
         p.HiddenStages.Add(6); check(ViewRules.Apply(all, p).Count == 2, "multiple hidden stages");
         p.HideSelectedStages = false; check(ViewRules.Apply(all, p).Count == 4, "hiding can be disabled");

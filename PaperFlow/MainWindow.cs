@@ -51,10 +51,22 @@ public sealed class MainWindow : Window
     private readonly List<Button> quietChrome = new();
 
     public static SolidColorBrush Brush(string color) => Appearance.Map(color);
-    public static TextBlock Text(string text, double size = 13, string color = "#24352F", double scale = -1) => new() { Text = text, FontSize = size * (scale < 0 ? Appearance.TextScale : scale), Foreground = Brush(color), VerticalAlignment = VerticalAlignment.Center };
+    // role 决定用哪一档文字设置：title / body / caption。
+    public static TextBlock Text(string text, double size = 13, string color = "#24352F", double scale = -1, string role = "body")
+    {
+        string custom = Appearance.RoleColor(role);
+        return new TextBlock
+        {
+            Text = text,
+            FontFamily = new FontFamily(Appearance.FamilyFor(role)),
+            FontSize = size * Appearance.RoleScale(role) * (scale < 0 ? Appearance.TextScale : scale),
+            Foreground = custom == "" ? Brush(color) : Appearance.Paint(custom),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+    }
     public static Button ActionButton(string text, Action action, bool primary = false, double scale = -1)
     {
-        var button = new Button { Content = text, FontSize = 12 * (scale < 0 ? Appearance.TextScale : scale), Margin = new Thickness(3, 0, 0, 0) };
+        var button = new Button { Content = text, FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = 12 * Appearance.RoleScale("body") * (scale < 0 ? Appearance.TextScale : scale), Margin = new Thickness(3, 0, 0, 0) };
         if (primary) button.SetResourceReference(StyleProperty, "PrimaryButton");
         button.Click += (_, _) => action();
         return button;
@@ -100,7 +112,7 @@ public sealed class MainWindow : Window
         heading.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); heading.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var brand = new StackPanel { Orientation = Orientation.Horizontal };
         brand.Children.Add(brandIcon);
-        var brandTitle = Text("PaperFlow", 18); brandTitle.FontWeight = FontWeights.SemiBold; brandTitle.SetResourceReference(TextBlock.ForegroundProperty, "Ink"); brand.Children.Add(brandTitle);
+        var brandTitle = Text("PaperFlow", 18, "#24352F", -1, "title"); brandTitle.FontWeight = FontWeights.SemiBold; brand.Children.Add(brandTitle);
         heading.Children.Add(brand);
         var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var add = ActionButton("＋", AddPaper, true); add.ToolTip = "新增论文 · Ctrl+N"; add.Padding = new Thickness(10 * Appearance.Scale, 4 * Appearance.Scale, 10 * Appearance.Scale, 4 * Appearance.Scale); add.FontSize = 17 * Appearance.TextScale; AutomationProperties.SetName(add, "新增论文"); chrome.Children.Add(add);
@@ -260,8 +272,10 @@ public sealed class MainWindow : Window
         if (draggingPaper) return;
         Appearance.Apply(library.Settings);
         brandIcon.Source = Appearance.CreateHeaderIcon();
-        FontFamily = new FontFamily(Appearance.FontName); FontSize = Appearance.EffectiveTextSize;
-        summary.FontSize = 11 * Appearance.TextScale; footer.FontSize = 10 * Appearance.TextScale; pageLabel.FontSize = 12 * Appearance.TextScale;
+        FontFamily = new FontFamily(Appearance.FamilyFor("body")); FontSize = 13 * Appearance.RoleScale("body") * Appearance.TextScale;
+        summary.FontFamily = new FontFamily(Appearance.FamilyFor("caption")); summary.FontSize = 11 * Appearance.RoleScale("caption") * Appearance.TextScale;
+        footer.FontFamily = new FontFamily(Appearance.FamilyFor("caption")); footer.FontSize = 10 * Appearance.RoleScale("caption") * Appearance.TextScale;
+        pageLabel.FontFamily = new FontFamily(Appearance.FamilyFor("caption")); pageLabel.FontSize = 12 * Appearance.RoleScale("caption") * Appearance.TextScale;
         // 顶部按钮跟着风格走：纸感/极简/标签只用文字，柔光用描边，夜航和经典用浅色块。
         string chromeStyle = Appearance.HeaderStyle switch { "plain" => "QuietButton", "outline" => "OutlineButton", _ => "SoftButton" };
         foreach (var button in quietChrome) button.SetResourceReference(StyleProperty, chromeStyle);
@@ -304,8 +318,8 @@ public sealed class MainWindow : Window
         if (cards.Children.Count == 0)
         {
             var empty = new StackPanel { Margin = new Thickness(20, 45, 20, 40) };
-            var title = Text(library.Papers.Count == 0 ? "从第一篇论文开始" : "这里暂时没有论文", 22); title.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(title);
-            var hint = Text(library.Papers.Count == 0 ? "点击右上角 ＋，输入论文标题。\n七个阶段和进度条会自动准备好。" : "论文可能在其他页，或被当前筛选隐藏。\n点击论文选项调整显示范围。", 13, "#78867F");
+            var title = Text(library.Papers.Count == 0 ? "从第一篇论文开始" : "这里暂时没有论文", 22, "#24352F", -1, "title"); title.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(title);
+            var hint = Text(library.Papers.Count == 0 ? "点击右上角 ＋，输入论文标题。\n七个阶段和进度条会自动准备好。" : "论文可能在其他页，或被当前筛选隐藏。\n点击论文选项调整显示范围。", 13, "#78867F", -1, "caption");
             hint.TextAlignment = TextAlignment.Center; hint.Margin = new Thickness(0, 15, 0, 20); empty.Children.Add(hint);
             if (library.Papers.Count == 0) { var demo = ActionButton("查看三篇示例", AddExamples); demo.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(demo); }
             else { var adjust = ActionButton("调整论文选项", OpenOptions); adjust.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(adjust); }
@@ -377,14 +391,14 @@ public sealed class MainWindow : Window
         var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Margin = new Thickness(0, 0, 0, 1) };
         var dots = PriorityDots(p);
         titleArea.Children.Add(dots);
-        var name = Text(p.Title, small ? 14 : 15); name.FontWeight = library.Settings.TitleBold ? FontWeights.SemiBold : FontWeights.Normal; name.TextTrimming = TextTrimming.CharacterEllipsis; name.VerticalAlignment = VerticalAlignment.Center; name.ToolTip = p.Title + "\n拖动调整优先顺序";
+        var name = Text(p.Title, small ? 14 : 15, "#24352F", -1, "title"); name.FontWeight = library.Settings.TitleBold ? FontWeights.SemiBold : FontWeights.Normal; name.TextTrimming = TextTrimming.CharacterEllipsis; name.VerticalAlignment = VerticalAlignment.Center; name.ToolTip = p.Title + "\n拖动调整优先顺序";
         titleArea.Children.Add(name);
         // 百分比放在标题行右侧，不跟进度条挤在一起，也不再抢戏。
         var titleRow = new Grid();
         titleRow.ColumnDefinitions.Add(new ColumnDefinition()); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         titleRow.Children.Add(titleArea);
         var pct = Text($"{p.Progress}%", Appearance.PercentSize); pct.FontWeight = FontWeights.SemiBold; pct.VerticalAlignment = VerticalAlignment.Center; pct.Margin = new Thickness(10, 0, 0, 0);
-        pct.Foreground = Appearance.PercentAccent ? Appearance.Paint(Appearance.Current.Accent) : Brush("#78867F");
+        if (Appearance.RoleColor("body") == "") pct.Foreground = Appearance.PercentAccent ? Appearance.Paint(Appearance.Current.Accent) : Brush("#78867F");
         AutomationProperties.SetName(pct, $"{p.Title} 进度 {p.Progress}%");
         Grid.SetColumn(pct, 1); titleRow.Children.Add(pct); stack.Children.Add(titleRow);
         var metadata = string.Join(" / ", new[] { p.Subject, p.Language, p.Journal }.Where(v => !string.IsNullOrWhiteSpace(v)));
@@ -399,7 +413,7 @@ public sealed class MainWindow : Window
         for (int i = 0; i < p.Stages.Count; i++)
         {
             int index = i; var stage = p.Stages[i];
-            var cb = new CheckBox { Content = Paper.StageLabels[i] + (stage.Skipped ? "（免）" : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontSize = (small ? 11 : 12) * Appearance.TextScale };
+            var cb = new CheckBox { Content = Paper.StageLabels[i] + (stage.Skipped ? "（免）" : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = (small ? 11 : 12) * Appearance.RoleScale("body") * Appearance.TextScale };
             cb.SetResourceReference(StyleProperty, Appearance.ChipStyle switch { "pill" => "StagePill", "tag" => "StageTag", "chip" => "StageCheck", _ => "StageText" });
             AutomationProperties.SetName(cb, p.Title + " · " + Paper.StageLabels[i]);
             if (Appearance.ChipStyle == "tag") cb.Background = Appearance.Paint(Appearance.Tags.Length == 0 ? Appearance.Current.Accent : Appearance.Tags[i % Appearance.Tags.Length]);
@@ -417,7 +431,7 @@ public sealed class MainWindow : Window
         var bottom = new Grid();
         bottom.ColumnDefinitions.Add(new ColumnDefinition()); bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         bottom.Children.Add(checks);
-        var settings = new Button { Content = "⚙", FontSize = 13 * Appearance.TextScale, Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), Margin = new Thickness(7, 0, 0, 3), VerticalAlignment = VerticalAlignment.Bottom, Foreground = Brush("#62766A") };
+        var settings = new Button { Content = "⚙", FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = 13 * Appearance.RoleScale("body") * Appearance.TextScale, Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), Margin = new Thickness(7, 0, 0, 3), VerticalAlignment = VerticalAlignment.Bottom, Foreground = Brush("#62766A") };
         settings.ToolTip = (metadata == "" ? "尚未填写学科、期刊等资料" : metadata + " · " + p.EffectiveStatus) + "\n编辑资料、修改记录、排序、复制、归档";
         settings.Click += (_, _) => PaperMenu(p, settings);
         AutomationProperties.SetName(settings, p.Title + " 的论文设置");

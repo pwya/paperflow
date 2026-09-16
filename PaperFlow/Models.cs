@@ -90,6 +90,16 @@ public sealed class Preferences
     public double BackgroundOpacity { get; set; } = 1;
     public string FontName { get; set; } = "Microsoft YaHei UI";
     public double TextSize { get; set; } = 13;
+    // 三档文字层级：标题 / 正文 / 次要。字体与颜色留空表示跟随基础设置或主题。
+    public string TitleFont { get; set; } = "";
+    public double TitleScale { get; set; } = 1;
+    public string TitleColor { get; set; } = "";
+    public string BodyFont { get; set; } = "";
+    public double BodyScale { get; set; } = 1;
+    public string BodyColor { get; set; } = "";
+    public string CaptionFont { get; set; } = "";
+    public double CaptionScale { get; set; } = 1;
+    public string CaptionColor { get; set; } = "";
     // Overall zoom of the widget (layout and text together); TextSize only moves the text.
     public double UiScale { get; set; } = 1;
     public bool AutoGrowWindow { get; set; }

@@ -90,6 +90,21 @@ public static class Themes
     };
 
     public static bool IsKnown(string name) => All.Any(t => t.Name == name) || Legacy.ContainsKey(name);
+    public static bool IsHex(string? color) => !string.IsNullOrWhiteSpace(color) && System.Text.RegularExpressions.Regex.IsMatch(color, "^#[0-9a-fA-F]{6}$");
+    // 相对亮度与对比度，用来提醒“这个颜色配这个背景看不清”。
+    public static double Luminance(string hex)
+    {
+        if (!IsHex(hex)) return 0;
+        int red = Convert.ToInt32(hex.Substring(1, 2), 16), green = Convert.ToInt32(hex.Substring(3, 2), 16), blue = Convert.ToInt32(hex.Substring(5, 2), 16);
+        double Channel(int v) { double s = v / 255.0; return s <= 0.03928 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4); }
+        return 0.2126 * Channel(red) + 0.7152 * Channel(green) + 0.0722 * Channel(blue);
+    }
+    public static double ContrastRatio(string first, string second)
+    {
+        if (!IsHex(first) || !IsHex(second)) return 21;
+        double a = Luminance(first), b = Luminance(second);
+        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
+    }
     public static string Migrate(string stored) => Legacy.TryGetValue(stored, out var mapped) ? mapped : stored;
     public static Theme Find(string name)
     {

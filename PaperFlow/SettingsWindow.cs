@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -13,7 +14,7 @@ public sealed class SettingsWindow : Window
 {
     public Preferences Result { get; }
     private bool ready;
-    private static readonly string[] Categories = { "外观", "视图与分页", "同步与启动", "关于与反馈" };
+    private static readonly string[] Categories = { "外观", "字体与文字", "视图与分页", "同步与启动", "关于与反馈" };
 
     public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview, Func<int> estimate)
     {
@@ -32,7 +33,7 @@ public sealed class SettingsWindow : Window
         // 窗口自己也要跟着主题实时变，否则换了主题之后控件变成浅色文字、窗口还是深色底，就成了看不清。
         SetResourceReference(BackgroundProperty, "WindowBackground");
         SetResourceReference(ForegroundProperty, "Ink");
-        FontSize = 13 * scale;
+        FontSize = 13 * scale * Appearance.RoleScale("body");
         var root = new DockPanel { Margin = new Thickness(18 * scale) }; Content = root;
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14 * scale, 0, 0) }; DockPanel.SetDock(buttons, Dock.Bottom); root.Children.Add(buttons);
 
@@ -41,7 +42,7 @@ public sealed class SettingsWindow : Window
         layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(138 * scale) });
         layout.ColumnDefinitions.Add(new ColumnDefinition());
         root.Children.Add(layout);
-        var nav = new ListBox { ItemsSource = Categories, SelectedIndex = 0, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Margin = new Thickness(0, 0, 14 * scale, 0), FontSize = 13 * scale };
+        var nav = new ListBox { ItemsSource = Categories, SelectedIndex = 0, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Margin = new Thickness(0, 0, 14 * scale, 0), FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = 13 * scale * Appearance.RoleScale("body") };
         var pages = new Panel[Categories.Length];
         var host = new Grid();
         for (int i = 0; i < pages.Length; i++) { pages[i] = new StackPanel { Visibility = i == 0 ? Visibility.Visible : Visibility.Collapsed }; host.Children.Add(pages[i]); }
@@ -51,7 +52,8 @@ public sealed class SettingsWindow : Window
 
         TextBlock Label(Panel page, string text, double size = 13)
         {
-            var label = new TextBlock { Text = text, FontSize = size * scale, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9 * Appearance.Scale, 0, 6 * Appearance.Scale) };
+            string role = size <= 12 ? "caption" : "body";
+            var label = new TextBlock { Text = text, FontFamily = new FontFamily(Appearance.FamilyFor(role)), FontSize = size * scale * Appearance.RoleScale(role), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 9 * Appearance.Scale, 0, 6 * Appearance.Scale) };
             page.Children.Add(label); return label;
         }
         void Preview() { if (ready) preview(JsonSerializer.Deserialize<Preferences>(JsonSerializer.Serialize(Result))!); }
@@ -68,7 +70,7 @@ public sealed class SettingsWindow : Window
         ListBoxItem? selected = null;
         foreach (var group in Themes.Grouped())
         {
-            var heading = new ListBoxItem { Content = group.Key, IsEnabled = false, Focusable = false, FontSize = 11.5 * scale, Padding = new Thickness(2, 10 * Appearance.Scale, 0, 4 * Appearance.Scale), Background = Brushes.Transparent };
+            var heading = new ListBoxItem { Content = group.Key, IsEnabled = false, Focusable = false, FontFamily = new FontFamily(Appearance.FamilyFor("caption")), FontSize = 11.5 * scale * Appearance.RoleScale("caption"), Padding = new Thickness(2, 10 * Appearance.Scale, 0, 4 * Appearance.Scale), Background = Brushes.Transparent };
             heading.SetResourceReference(ForegroundProperty, "Muted");
             themeList.Items.Add(heading);
             foreach (var theme in group)
@@ -136,18 +138,64 @@ public sealed class SettingsWindow : Window
         void ScrimChanged() { Result.ImageScrim = scrim.Value / 100; scrimLabel.Text = $"图片遮罩 · {scrim.Value:0}%（越大文字越清楚，越小越看得见图片）"; Preview(); }
         scrim.ValueChanged += (_, _) => ScrimChanged(); ScrimChanged();
         RefreshImageName();
-        Label(look, "字体");
-        var fonts = new ComboBox { ItemsSource = Fonts.SystemFontFamilies.Select(f => f.Source).Append(Result.FontName).Distinct().OrderBy(n => n).ToList(), SelectedItem = Result.FontName, MaxDropDownHeight = 260 }; look.Children.Add(fonts);
+        // ---------- 字体与文字 ----------
+        var text = pages[1];
+        Label(text, "文字分三档", 20);
+        Label(text, "标题、正文、次要各管一层。字体和颜色留空就跟随基础设置或主题。", 11);
+        Label(text, "基础字体");
+        var systemFonts = Fonts.SystemFontFamilies.Select(f => f.Source).Distinct().OrderBy(n => n).ToList();
+        var fonts = new ComboBox { ItemsSource = systemFonts, SelectedItem = Result.FontName, MaxDropDownHeight = 260 }; text.Children.Add(fonts);
         fonts.SelectionChanged += (_, _) => { Result.FontName = fonts.SelectedItem as string ?? "Microsoft YaHei UI"; Preview(); };
-
-        var sizeLabel = Label(look, "字号（只改文字大小）");
-        var size = new Slider { Minimum = 9, Maximum = 36, TickFrequency = 1, IsSnapToTickEnabled = true, Value = Result.TextSize, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; look.Children.Add(size);
-        var zoomLabel = Label(look, "界面缩放（文字和间距一起缩放）");
-        var zoom = new Slider { Minimum = 80, Maximum = 200, TickFrequency = 5, IsSnapToTickEnabled = true, Value = Result.UiScale * 100, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; look.Children.Add(zoom);
+        var sizeLabel = Label(text, "基础字号");
+        var size = new Slider { Minimum = 9, Maximum = 36, TickFrequency = 1, IsSnapToTickEnabled = true, Value = Result.TextSize, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; text.Children.Add(size);
+        var zoomLabel = Label(text, "界面缩放（文字和间距一起缩放）");
+        var zoom = new Slider { Minimum = 80, Maximum = 200, TickFrequency = 5, IsSnapToTickEnabled = true, Value = Result.UiScale * 100, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; text.Children.Add(zoom);
         var fit = new TextBlock { FontSize = 11 * scale, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 8 * Appearance.Scale) };
-        fit.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); look.Children.Add(fit);
-        var grow = new CheckBox { Content = "调整字号或界面缩放时，自动放大窗口（最多占屏幕工作区的一半）", IsChecked = Result.AutoGrowWindow, Margin = new Thickness(0, 4 * Appearance.Scale, 0, 8 * Appearance.Scale) }; look.Children.Add(grow);
+        fit.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); text.Children.Add(fit);
+        var grow = new CheckBox { Content = "调整字号或界面缩放时，自动放大窗口（最多占屏幕工作区的一半）", IsChecked = Result.AutoGrowWindow, Margin = new Thickness(0, 4 * Appearance.Scale, 0, 8 * Appearance.Scale) }; text.Children.Add(grow);
         grow.Click += (_, _) => { Result.AutoGrowWindow = grow.IsChecked == true; Preview(); };
+
+        // 每一档：字体、字号比例、颜色。颜色用对比度提醒兜底。
+        void TierBlock(string name, string hint, Func<string> getFont, Action<string> setFont, Func<double> getScale, Action<double> setScale, Func<string> getColor, Action<string> setColor)
+        {
+            Label(text, name + " · " + hint, 15);
+            var picker = new ComboBox { ItemsSource = new List<string> { "跟随基础字体" }.Concat(systemFonts).ToList(), SelectedIndex = 0, MaxDropDownHeight = 260 };
+            var current = getFont();
+            if (current != "") picker.SelectedItem = current;
+            text.Children.Add(picker);
+            picker.SelectionChanged += (_, _) => { setFont(picker.SelectedIndex <= 0 ? "" : picker.SelectedItem as string ?? ""); Preview(); };
+            var scaleLabel = Label(text, "字号比例");
+            var ratio = new Slider { Minimum = 60, Maximum = 200, TickFrequency = 5, IsSnapToTickEnabled = true, Value = getScale() * 100, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) };
+            text.Children.Add(ratio);
+            void RatioChanged() { setScale(ratio.Value / 100); scaleLabel.Text = $"字号比例 · {ratio.Value:0}%"; Preview(); }
+            ratio.ValueChanged += (_, _) => RatioChanged(); RatioChanged();
+            var colorRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4 * Appearance.Scale, 0, 0) };
+            var warn = new TextBlock { FontSize = 11 * scale, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4 * Appearance.Scale, 0, 6 * Appearance.Scale) };
+            warn.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+            void RefreshColor()
+            {
+                string chosen = getColor();
+                if (chosen == "") { warn.Text = "颜色跟随主题。"; return; }
+                string surface = Appearance.Current.Family == "经典" && Appearance.Current.Glass ? Appearance.Current.Card : Appearance.Current.Card;
+                double ratioValue = Themes.ContrastRatio(chosen, surface);
+                warn.Text = ratioValue < 2.5
+                    ? $"对比度只有 {ratioValue:0.0}:1，压在这个主题的卡片底色上会看不清，建议换深一点或浅一点的颜色。"
+                    : $"对比度 {ratioValue:0.0}:1，和卡片底色区分得开。";
+            }
+            colorRow.Children.Add(B("文字颜色…", () =>
+            {
+                var start = getColor() == "" ? Appearance.Current.Ink : getColor();
+                using var dialog = new System.Windows.Forms.ColorDialog { FullOpen = true, Color = System.Drawing.ColorTranslator.FromHtml(start) };
+                if (dialog.ShowDialog(new DialogOwner(new System.Windows.Interop.WindowInteropHelper(this).Handle)) != System.Windows.Forms.DialogResult.OK) return;
+                setColor($"#{dialog.Color.R:X2}{dialog.Color.G:X2}{dialog.Color.B:X2}"); Preview(); RefreshColor();
+            }));
+            colorRow.Children.Add(B("恢复主题默认", () => { setColor(""); Preview(); RefreshColor(); }));
+            text.Children.Add(colorRow); text.Children.Add(warn);
+            RefreshColor();
+        }
+        TierBlock("标题", "论文标题、产品名", () => Result.TitleFont, v => Result.TitleFont = v, () => Result.TitleScale, v => Result.TitleScale = v, () => Result.TitleColor, v => Result.TitleColor = v);
+        TierBlock("正文", "阶段标签、天数、下一步、按钮、表单", () => Result.BodyFont, v => Result.BodyFont = v, () => Result.BodyScale, v => Result.BodyScale = v, () => Result.BodyColor, v => Result.BodyColor = v);
+        TierBlock("次要", "汇总行、页脚、提示文字", () => Result.CaptionFont, v => Result.CaptionFont = v, () => Result.CaptionScale, v => Result.CaptionScale = v, () => Result.CaptionColor, v => Result.CaptionColor = v);
         void RefreshFit()
         {
             Dispatcher.BeginInvoke(new Action(() =>
@@ -161,16 +209,16 @@ public sealed class SettingsWindow : Window
         void ZoomChanged() { Result.UiScale = zoom.Value / 100; zoomLabel.Text = $"界面缩放 · {zoom.Value:0}%（文字和间距一起缩放）"; Preview(); RefreshFit(); }
         zoom.ValueChanged += (_, _) => ZoomChanged(); ZoomChanged();
         // ---------- 视图与分页 ----------
-        var view = pages[1];
+        var view = pages[2];
         Label(view, "列表怎么显示", 20);
         var bold = new CheckBox { Content = "论文标题加粗", IsChecked = Result.TitleBold, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; view.Children.Add(bold);
         bold.Click += (_, _) => { Result.TitleBold = bold.IsChecked == true; Preview(); };
         Label(view, "搜索、筛选、排序、紧凑视图、隐藏哪些阶段、翻页方式和显示范围都在挂件右上角的“论文选项”里，那里改的是此刻看到什么。这里只放长期偏好。", 11);
-        Label(view, "字号和界面缩放在“外观”里：字号只改文字大小，界面缩放把文字和间距一起放大。", 11);
+        Label(view, "字号、界面缩放和三档字体在“字体与文字”里。", 11);
         Label(view, "铺满屏幕时界面会不会挤，取决于字号和界面缩放的组合。字号很大时阶段标签会换行、卡片自然变高，一屏能看到的论文会变少，这是正常的。", 11);
 
         // ---------- 同步与启动 ----------
-        var sync = pages[2];
+        var sync = pages[3];
         Label(sync, "论文同步与备份", 20);
         Label(sync, Result.SyncFolder == "" ? "当前只在本机保存。把安装文件夹放进任意会自动同步的网盘文件夹，再从那里的固定启动入口打开，就会自动连接旁边的 data 目录。" : "正在使用同步文件夹\n" + Result.SyncFolder, 11);
         if (Result.SyncFolder != "") sync.Children.Add(B("打开同步资料文件夹", () => OpenFolder(Result.SyncFolder)));
@@ -182,7 +230,7 @@ public sealed class SettingsWindow : Window
         Label(sync, "更新通道和更新提示还没做（排在 1.6.0），现在更新靠网盘同步整个程序文件夹。", 11);
 
         // ---------- 关于与反馈 ----------
-        var about = pages[3];
+        var about = pages[4];
         Label(about, Product.Name, 20);
         Label(about, "版本 " + Product.Version + (Product.BuildCommit == "" ? " · 本地构建" : " · 提交 " + Product.BuildCommit), 12);
         Label(about, "MIT 许可 · Copyright (c) 2026 Panwang Yuang\n本程序不联网、不上传任何资料，论文数据只存在你自己的电脑和你选的同步文件夹里。", 11);
@@ -210,10 +258,10 @@ public sealed class SettingsWindow : Window
             swatch.Children.Add(new System.Windows.Shapes.Ellipse { Width = 12, Height = 12, Margin = new Thickness(0, 0, 3, 0), Fill = Appearance.Paint(color) });
         var line = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         line.Children.Add(swatch);
-        line.Children.Add(new TextBlock { Text = theme.Name, VerticalAlignment = VerticalAlignment.Center, FontSize = 12.5 * Appearance.DialogScale });
+        line.Children.Add(new TextBlock { Text = theme.Name, VerticalAlignment = VerticalAlignment.Center, FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = 12.5 * Appearance.DialogScale * Appearance.RoleScale("body") });
         if (theme.Dark)
         {
-            var dark = new TextBlock { Text = "深色", FontSize = 10 * Appearance.DialogScale, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+            var dark = new TextBlock { Text = "深色", FontFamily = new FontFamily(Appearance.FamilyFor("caption")), FontSize = 10 * Appearance.DialogScale * Appearance.RoleScale("caption"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
             dark.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
             line.Children.Add(dark);
         }

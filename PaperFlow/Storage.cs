@@ -105,6 +105,15 @@ public sealed class Storage
         s.Theme = Themes.IsKnown(s.Theme ?? "") ? Themes.Migrate(s.Theme!) : Themes.Default;
         if (!Themes.Layouts.Contains(s.ListLayout)) s.ListLayout = Themes.CardLayout;
         s.AccentColor ??= ""; s.BackgroundColor ??= ""; s.FontName ??= "Microsoft YaHei UI";
+        s.TitleFont = string.IsNullOrWhiteSpace(s.TitleFont) ? "" : s.TitleFont.Trim();
+        s.BodyFont = string.IsNullOrWhiteSpace(s.BodyFont) ? "" : s.BodyFont.Trim();
+        s.CaptionFont = string.IsNullOrWhiteSpace(s.CaptionFont) ? "" : s.CaptionFont.Trim();
+        s.TitleColor = Themes.IsHex(s.TitleColor) ? s.TitleColor : "";
+        s.BodyColor = Themes.IsHex(s.BodyColor) ? s.BodyColor : "";
+        s.CaptionColor = Themes.IsHex(s.CaptionColor) ? s.CaptionColor : "";
+        s.TitleScale = double.IsFinite(s.TitleScale) ? Math.Clamp(s.TitleScale, 0.6, 2) : 1;
+        s.BodyScale = double.IsFinite(s.BodyScale) ? Math.Clamp(s.BodyScale, 0.6, 2) : 1;
+        s.CaptionScale = double.IsFinite(s.CaptionScale) ? Math.Clamp(s.CaptionScale, 0.6, 2) : 1;
         s.SyncFolder ??= ""; s.LauncherPath ??= "";
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;
         s.TextSize = double.IsFinite(s.TextSize) ? Math.Clamp(s.TextSize, 9, 36) : 13;

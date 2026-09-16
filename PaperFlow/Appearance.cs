@@ -32,6 +32,12 @@ public static class Appearance
     public static string ImagePath { get; private set; } = "";
     public static double Scrim { get; private set; } = 0.35;
     public static string FontName { get; private set; } = "Microsoft YaHei UI";
+    private static string titleFont = "", bodyFont = "", captionFont = "";
+    private static double titleScale = 1, bodyScale = 1, captionScale = 1;
+    private static string titleColor = "", bodyColor = "", captionColor = "";
+    public static string FamilyFor(string role) => role switch { "title" => titleFont, "caption" => captionFont, _ => bodyFont };
+    public static double RoleScale(string role) => role switch { "title" => titleScale, "caption" => captionScale, _ => bodyScale };
+    public static string RoleColor(string role) => role switch { "title" => titleColor, "caption" => captionColor, _ => bodyColor };
     private static readonly Dictionary<string, BitmapImage> ImageCache = new();
     // 背景图片：按最长边 1600 解码，避免超大图吃内存；同一路径只读一次。
     public static ImageSource? BackgroundImage()
@@ -111,6 +117,14 @@ public static class Appearance
         // The list layout drops the chip blocks regardless of the theme, otherwise rows get too tall.
         ChipStyle = Layout == Themes.ListLayout ? "text" : Current.ChipStyle;
         Opacity = p.BackgroundOpacity; FontName = p.FontName;
+        string baseFont = string.IsNullOrWhiteSpace(p.FontName) ? "Microsoft YaHei UI" : p.FontName;
+        titleFont = string.IsNullOrWhiteSpace(p.TitleFont) ? baseFont : p.TitleFont;
+        bodyFont = string.IsNullOrWhiteSpace(p.BodyFont) ? baseFont : p.BodyFont;
+        captionFont = string.IsNullOrWhiteSpace(p.CaptionFont) ? baseFont : p.CaptionFont;
+        titleScale = p.TitleScale; bodyScale = p.BodyScale; captionScale = p.CaptionScale;
+        titleColor = Themes.IsHex(p.TitleColor) ? p.TitleColor : "";
+        bodyColor = Themes.IsHex(p.BodyColor) ? p.BodyColor : "";
+        captionColor = Themes.IsHex(p.CaptionColor) ? p.CaptionColor : "";
         var resources = Application.Current.Resources;
         foreach (var pair in new Dictionary<string, string> { ["Ink"] = Current.Ink, ["Muted"] = Current.Muted, ["Accent"] = Current.Accent, ["AccentText"] = AccentText, ["Soft"] = Current.Soft, ["Card"] = Current.Card, ["Line"] = Current.Border, ["WindowBackground"] = Current.Window }) resources[pair.Key] = Paint(pair.Value);
         resources["ButtonCorner"] = new CornerRadius(ButtonRadius);

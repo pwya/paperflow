@@ -28,6 +28,11 @@ static class ViewTests
         var stored = Storage.Parse("{\"Version\":1,\"Settings\":{\"Theme\":\"暖杏\",\"ListLayout\":\"乱七八糟\",\"BarHeight\":33},\"Papers\":[]}");
         check(stored.Settings.Theme == "经典 · 暖杏" && stored.Settings.ListLayout == Themes.CardLayout && stored.Settings.BarHeight == 0, "stored settings migrate the theme and clamp layout and bar height");
         check(new Preferences().Theme == Themes.Default && new Preferences().ListLayout == Themes.CardLayout, "new installs start on the redesigned default");
+        check(new Preferences().SortMode == "手动排序", "sorting starts on the manual order");
+        var sorted = Storage.Parse("{\"Version\":1,\"Settings\":{\"SortMode\":\"按心情\"},\"Papers\":[]}");
+        check(sorted.Settings.SortMode == "手动排序", "an unknown sort mode falls back to manual order");
+        var kept = Storage.Parse("{\"Version\":1,\"Settings\":{\"SortMode\":\"最近修改\"},\"Papers\":[]}");
+        check(kept.Settings.SortMode == "最近修改", "a saved sort mode survives a reload");
         check(Themes.IsHex("#0F766E") && !Themes.IsHex("red") && !Themes.IsHex("") && !Themes.IsHex("#12345"), "hex validation rejects anything that is not six digits");
         check(Themes.ContrastRatio("#000000", "#FFFFFF") > 20 && Math.Abs(Themes.ContrastRatio("#777777", "#777777") - 1) < 0.001, "contrast ratio maths matches the usual definition");
         var tiers = Storage.Parse("{\"Version\":1,\"Settings\":{\"TitleFont\":\"   \",\"TitleColor\":\"red\",\"BodyColor\":\"#123456\",\"CaptionScale\":9,\"BodyScale\":0.1},\"Papers\":[]}");

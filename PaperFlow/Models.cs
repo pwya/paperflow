@@ -87,6 +87,8 @@ public sealed class Preferences
     public double SoundVolume { get; set; } = 0.6;
     public List<string> VisiblePriorities { get; set; } = new() { "高", "中", "低" };
     public string PageMode { get; set; } = "不翻页";
+    // 排序方式是本机偏好，但必须保存下来，否则重启就悄悄回到手动排序。
+    public string SortMode { get; set; } = "手动排序";
     public int PageIndex { get; set; }
     public string Theme { get; set; } = Themes.Default;
     public string ListLayout { get; set; } = Themes.CardLayout;

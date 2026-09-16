@@ -152,8 +152,9 @@ public sealed class MainWindow : Window
         search.TextChanged += (_, _) => { if (ready) Render(); };
         filter.ItemsSource = new[] { "全部论文", "进行中", "已收录", "已归档" }; filter.SelectedIndex = 0; filter.Margin = new Thickness(7, 0, 0, 0);
         filter.SelectionChanged += (_, _) => { if (ready) Render(); };
-        sort.ItemsSource = new[] { "手动排序", "最近修改", "截止日期", "进度优先" }; sort.SelectedIndex = 0; sort.Margin = new Thickness(7, 0, 0, 0);
-        sort.SelectionChanged += (_, _) => { if (ready) Render(); };
+        sort.ItemsSource = ViewRules.SortModes; sort.SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SortModes, library.Settings.SortMode)); sort.Margin = new Thickness(7, 0, 0, 0);
+        // 排序方式会保存下来，否则重启就悄悄回到手动排序，用户会以为顺序没同步。
+        sort.SelectionChanged += (_, _) => { if (ready && ViewRules.SortModes[Math.Max(0, sort.SelectedIndex)] != library.Settings.SortMode) Commit(l => l.Settings.SortMode = ViewRules.SortModes[Math.Max(0, sort.SelectedIndex)]); };
         DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
 
         var foot = new Border { Padding = new Thickness(20, 8, 20, 10), BorderThickness = new Thickness(0, 1, 0, 0) };
@@ -325,7 +326,9 @@ public sealed class MainWindow : Window
             : "临时看一眼按当前设置被隐藏的论文，它们会显示成灰底，方便区分";
         AutomationProperties.SetName(hiddenToggle, "显示或隐藏按阶段隐藏的论文");
         var pagePapers = ViewRules.Apply(candidates, library.Settings);
-        summary.Text = $"{active.Count} 篇论文 · 当前显示 {pagePapers.Count} 篇" + (library.Settings.PageMode == ViewRules.PageModes[2] ? " · 阶段分组" : library.Settings.HideSelectedStages ? $" · 按阶段隐藏 {candidates.Count(p => ViewRules.SelectedStage(p, library.Settings))} 篇" : "");
+        summary.Text = $"{active.Count} 篇论文 · 当前显示 {pagePapers.Count} 篇"
+            + (library.Settings.PageMode == ViewRules.PageModes[2] ? " · 阶段分组" : library.Settings.HideSelectedStages ? $" · 按阶段隐藏 {candidates.Count(p => ViewRules.SelectedStage(p, library.Settings))} 篇" : "")
+            + (library.Settings.SortMode == ViewRules.SortModes[0] ? "" : " · 排序：" + library.Settings.SortMode);
         summary.ToolTip = "隐藏和翻页仅改变显示，不删除论文。点击论文选项调整。";
         pager.Visibility = ViewRules.PageCount(library.Settings) > 1 ? Visibility.Visible : Visibility.Collapsed;
         pageLabel.Text = $"{ViewRules.PageTitle(library.Settings)} · {library.Settings.PageIndex + 1}/{ViewRules.PageCount(library.Settings)}";
@@ -707,7 +710,7 @@ public sealed class MainWindow : Window
         var paging = new ComboBox { ItemsSource = ViewRules.PageModes, SelectedItem = library.Settings.PageMode }; body.Children.Add(paging);
         paging.SelectionChanged += (_, _) => ChangeView(p => p.PageMode = paging.SelectedItem as string ?? ViewRules.PageModes[0]);
         var pageHint = Text("优先级：高 → 中 → 低。\n阶段分组：第一页排除所选阶段，第二页只看所选阶段。\n阶段分页会将隐藏项放到第二页；优先级筛选仍生效。", 11, "#78867F"); pageHint.TextWrapping = TextWrapping.Wrap; pageHint.Margin = new Thickness(0, 8, 0, 0); body.Children.Add(pageHint);
-        controls.Children.Add(ActionButton("显示全部", () => { search.Clear(); filter.SelectedIndex = 0; ChangeView(p => { p.HideSelectedStages = false; p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
+        controls.Children.Add(ActionButton("显示全部", () => { search.Clear(); filter.SelectedIndex = 0; sort.SelectedIndex = 0; ChangeView(p => { p.HideSelectedStages = false; p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
         controls.Children.Add(ActionButton("完成", window.Close, true));
         window.Closed += (_, _) => { body.Children.Remove(search); body.Children.Remove(filter); body.Children.Remove(sort); };
         window.Loaded += (_, _) => search.Focus(); window.ShowDialog();

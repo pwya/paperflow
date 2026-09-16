@@ -10,6 +10,7 @@ public static class ViewRules
     public sealed record StageNotice(string Kind, int Page, string Text, string Action);
 
     public static readonly string[] PageModes = { "不翻页", "按优先级翻页", "按阶段分组翻页" };
+    public static readonly string[] SortModes = { "手动排序", "最近修改", "截止日期", "进度优先" };
     public static readonly string[] SoundModes = { "关", "只完成时", "完成和取消都响" };
     public static readonly string[] SoundStyles = { "木质", "清脆", "水滴" };
     // 该不该响、响哪一种。null 表示不响。

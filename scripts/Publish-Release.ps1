@@ -88,7 +88,8 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [IO.Compression.ZipFile]::OpenRead($appArchive)
     try {
-        $entry = $archive.Entries | Where-Object { $_.FullName -eq "versions/$version/PaperFlow.exe" }
+        # Compress-Archive stores the path with backslashes, so compare after normalising.
+        $entry = $archive.Entries | Where-Object { ($_.FullName -replace '\\', '/') -eq "versions/$version/PaperFlow.exe" }
         if (-not $entry) { throw 'The archive does not contain the versioned program file.' }
         $probe = Join-Path ([IO.Path]::GetTempPath()) ('pf-archive-check-' + [guid]::NewGuid().ToString('N'))
         [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $probe, $true)

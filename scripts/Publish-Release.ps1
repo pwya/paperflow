@@ -1,4 +1,4 @@
-param([string]$PrivateTarget)
+﻿param([string]$PrivateTarget)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root

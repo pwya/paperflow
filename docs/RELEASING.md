@@ -26,7 +26,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 
 
 脚本会测试、构建、记录提交编号与程序哈希，再生成 `artifacts/release-<版本>/` 下的源码 ZIP、Windows ZIP、单独的程序 exe 与 `update.json`。它们都不读取个人 `data`。部署只加入新版本和更新启动入口/清单。相同版本若已有不同内容则拒绝覆盖，必须升版本。
 
-若只需公开包，省略 `-PrivateTarget`。公开发行应上传生成的文件，不能从正在使用的同步文件夹重新打包。每个正式 Release 必须同时挂上 `PaperFlow-<版本>-win-x64.exe` 和 `update.json`：程序只在 `https://github.com/pwya/paperflow/releases/latest/download/update.json` 读更新清单，清单再指向同一次发布的 exe。少传 `update.json` 时程序内的更新提示会安静地什么都不做（离线机器本来也不该联网），只是这一版不会被自动发现。
+脚本还会在本地打上 `v<版本>` 标签（已存在且指向别的提交就报错），这样 GitHub 与 Gitee 用的是同一个标签对象。
+
+若只需公开包，省略 `-PrivateTarget`。公开发行应上传生成的文件，不能从正在使用的同步文件夹重新打包。每个正式 Release 必须同时挂上 `PaperFlow-<版本>-win-x64.exe` 和 `update.json`：程序读两份清单——先 Gitee 镜像（`https://gitee.com/pan-wang-yuang/paperflow/releases/download/latest/update.json`），再 GitHub（`https://github.com/pwya/paperflow/releases/latest/download/update.json`）——两份都读、按下面的规矩取一份。少传 `update.json` 时这一边不会被发现。
+
+## 两份清单怎么取舍
+
+- **镜像不许抢先**：Gitee 报的版本比 GitHub 高时忽略它（镜像只允许落后）。
+- **同版本必须完全一致**：SHA-256 与长度都对得上才安装，对不上就这次不更新（防的是有人只改了一边）。
+- **只有 GitHub 连不上时**（国内常见），才单凭镜像更新；这一条是刻意的取舍，写在 `SECURITY.md` 与交接文档里。
+
+## 镜像到 Gitee
+
+发布脚本可以直接把这一版镜像过去：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 `
+  -PrivateTarget <你的自用安装目录> `
+  -MirrorToGitee -GiteeOwner pan-wang-yuang -NotesFile <发布说明.md>
+```
+
+它调用 `scripts/Mirror-Gitee.ps1`：缺仓库就建、改成公开、推分支与标签、建版本发行版（五个附件）、删除并重建固定的 `latest` 发行版（只放 `update.json`，指向 Gitee 自己的下载地址），最后自检镜像出的清单与本地一致、下载地址可访问。令牌从 `GITEE_TOKEN` 环境变量或 `%USERPROFILE%\.gitee-token.txt` 读，不写进 `.git/config`。跑之前先设好 `HTTPS_PROXY`（脚本内部要 `git fetch --tags` 去 GitHub 取标签）。
 
 ## 程序内自动更新
 

@@ -28,7 +28,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 
 
 脚本还会在本地打上 `v<版本>` 标签（已存在且指向别的提交就报错），这样 GitHub 与 Gitee 用的是同一个标签对象。
 
-若只需公开包，省略 `-PrivateTarget`。公开发行应上传生成的文件，不能从正在使用的同步文件夹重新打包。每个正式 Release 必须同时挂上 `PaperFlow-<版本>-win-x64.exe` 和 `update.json`：程序读两份清单——先 Gitee 镜像（`https://gitee.com/pan-wang-yuang/paperflow/releases/download/latest/update.json`），再 GitHub（`https://github.com/pwya/paperflow/releases/latest/download/update.json`）——两份都读、按下面的规矩取一份。少传 `update.json` 时这一边不会被发现。
+若只需公开包，省略 `-PrivateTarget`。公开发行应上传生成的文件，不能从正在使用的同步文件夹重新打包。每个正式 Release 挂四样：`PaperFlow-<版本>-win-x64.zip`、`PaperFlow-<版本>-source.zip`、`update.json`、`build-info.json`。**不再单独发布可执行文件**：程序内的更新就是下载这个压缩包。程序读两份清单——先 Gitee 镜像（`https://gitee.com/pan-wang-yuang/paperflow/releases/download/latest/update.json`），再 GitHub（`https://github.com/pwya/paperflow/releases/latest/download/update.json`）——两份都读、按下面的规矩取一份。少传 `update.json` 时这一边不会被发现。
+
+清单里的 `sha256`/`length` 描述压缩包本身，`exeSha256`/`exeLength` 描述压缩包里那个 `versions/<版本>/PaperFlow.exe`；发布脚本会真的把那个文件从压缩包里抠出来算一遍哈希，对不上就拒绝出包。压缩包内部的路径必须正好是 `versions/<版本>/PaperFlow.exe`（`Compress-Archive` 写的是反斜杠，比较时要归一化——应用侧就是这么做的）。
 
 ## 两份清单怎么取舍
 

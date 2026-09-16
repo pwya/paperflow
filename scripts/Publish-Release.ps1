@@ -112,6 +112,15 @@ try {
     }
     Write-Output "Version $version; commit $commit; SHA256 $hash"
     Write-Output "Curated public artifacts: $destination"
+    # Every run leaves a build-<guid> folder (source snapshot + build output, a few hundred
+    # MB). Keep the two newest and drop the rest, otherwise artifacts grows without bound
+    # (it reached 9 GB before anyone noticed).
+    $stale = Get-ChildItem (Join-Path $root 'artifacts') -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -like 'build-*' } | Sort-Object LastWriteTime -Descending | Select-Object -Skip 2
+    foreach ($folder in $stale) {
+        try { Remove-Item -LiteralPath $folder.FullName -Recurse -Force } catch { Write-Output ("could not remove " + $folder.FullName + ": " + $_.Exception.Message) }
+    }
+    if ($stale) { Write-Output ("Pruned {0} old build folder(s) from artifacts." -f @($stale).Count) }
     if ($MirrorToGitee) {
         $owner = if ($GiteeOwner) { $GiteeOwner } else { $env:GITEE_OWNER }
         if (-not $owner) { throw 'Pass -GiteeOwner (or set GITEE_OWNER) to mirror to Gitee.' }

@@ -10,6 +10,8 @@
 
 在 [Releases](https://github.com/pwya/paperflow/releases) 页面下载最新的 `PaperFlow-<版本>-win-x64.zip`，解压到任意文件夹，双击里面的 `PaperFlow.Launcher.exe` 就行。自带运行环境，不需要另外安装什么；面向 Windows 10 / 11（x64）。
 
+GitHub 下载慢的话，用国内镜像：[gitee.com/pan-wang-yuang/paperflow](https://gitee.com/pan-wang-yuang/paperflow/releases)（同一份程序，哈希一致；镜像可能比 GitHub 慢一步更新）。
+
 程序没有购买代码签名证书，所以**第一次打开时 Windows 可能弹一个蓝色的 SmartScreen 提示**：点“更多信息”，再点“仍要运行”，之后不会再问。介意这一点的话可以自己从源码构建。
 
 ## 怎么用

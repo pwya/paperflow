@@ -82,6 +82,61 @@ static class UpdateTests
             using (var client = new HttpClient(new Stub(payload, manifest with { Version = "0.0.1" })))
                 check(Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult() == null, "an older release is not offered");
 
+            // ---------- 两个候选地址（Gitee 镜像 + GitHub）----------
+            check(Updates.ManifestUrls.Count == 2 && Updates.ManifestUrls[0].Contains("gitee.com") && Updates.ManifestUrls[1].Contains("github.com"), "the mirror is tried first, GitHub stays as the second source");
+            var saved = Updates.ManifestUrls.ToList();
+            string old = "{\"version\":\"9.9.1\",\"url\":\"https://example.test/PaperFlow-9.9.1-win-x64.exe\",\"sha256\":\"" + new string('c', 64) + "\",\"length\":1000}";
+            string fresh = "{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + new string('a', 64) + "\",\"length\":12345}";
+            try
+            {
+                // 镜像落后、GitHub 更新：要拿更新的那一份，不能"谁先通用谁"
+                var router = new Router(payload);
+                router.Serves("https://mirror.test/update.json", old);
+                router.Serves("https://upstream.test/update.json", fresh);
+                using (var client = new HttpClient(router))
+                {
+                    Updates.ManifestUrls.Clear(); Updates.ManifestUrls.Add("https://mirror.test/update.json"); Updates.ManifestUrls.Add("https://upstream.test/update.json");
+                    var picked = Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult();
+                    check(picked != null && picked.Version == "9.9.9", "the newest manifest wins even when the mirror is behind");
+                }
+                // 镜像挂了、上游正常：仍要能更新
+                var half = new Router(payload);
+                half.Fails("https://mirror.test/update.json");
+                half.Serves("https://upstream.test/update.json", fresh);
+                using (var client = new HttpClient(half))
+                {
+                    Updates.ManifestUrls.Clear(); Updates.ManifestUrls.Add("https://mirror.test/update.json"); Updates.ManifestUrls.Add("https://upstream.test/update.json");
+                    var picked = Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult();
+                    check(picked != null && picked.Version == "9.9.9", "a broken mirror still falls back to upstream");
+                }
+                // 两个都挂：报错，而且要说成"网络问题"
+                var dead = new Router(payload);
+                dead.Fails("https://mirror.test/update.json");
+                dead.Fails("https://upstream.test/update.json");
+                using (var client = new HttpClient(dead))
+                {
+                    Updates.ManifestUrls.Clear(); Updates.ManifestUrls.Add("https://mirror.test/update.json"); Updates.ManifestUrls.Add("https://upstream.test/update.json");
+                    bool threw = false;
+                    try { Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult(); }
+                    catch (Exception ex) { threw = Updates.Describe(ex).Network; }
+                    check(threw, "both sources down is reported as a network problem");
+                }
+                // 两边都说是最新：不提示
+                string stale = "{\"version\":\"0.9.9\",\"url\":\"https://example.test/PaperFlow-0.9.9-win-x64.exe\",\"sha256\":\"" + new string('d', 64) + "\",\"length\":1000}";
+                var same = new Router(payload);
+                same.Serves("https://mirror.test/update.json", stale);
+                same.Serves("https://upstream.test/update.json", stale);
+                using (var client = new HttpClient(same))
+                {
+                    Updates.ManifestUrls.Clear(); Updates.ManifestUrls.Add("https://mirror.test/update.json"); Updates.ManifestUrls.Add("https://upstream.test/update.json");
+                    check(Updates.FetchAsync(client, CancellationToken.None).GetAwaiter().GetResult() == null, "two sources at the same old version still means no update");
+                }
+            }
+            finally
+            {
+                Updates.ManifestUrls.Clear(); Updates.ManifestUrls.AddRange(saved); Updates.SingleManifestUrl = null;
+            }
+
             // ---------- 失败要说人话：连不上和清单坏了，给用户的下一步不一样 ----------
             var offline = Updates.Describe(new HttpRequestException("no such host"));
             check(offline.Network && offline.Message.Contains("GitHub"), "a connection failure is reported as a network problem");
@@ -130,6 +185,23 @@ static class UpdateTests
             if (program) response.Content = new ByteArrayContent(payload);
             else response.Content = new StringContent("{\"version\":\"" + manifest.Version + "\",\"url\":\"" + manifest.Url + "\",\"sha256\":\"" + manifest.Sha256 + "\",\"length\":" + manifest.Length + "}");
             return Task.FromResult(response);
+        }
+    }
+
+    // 按地址分别作答（也可以让某个地址直接失败），用来测两个候选清单地址的组合。
+    private sealed class Router : HttpMessageHandler
+    {
+        private readonly Dictionary<string, string?> answers = new(StringComparer.Ordinal);
+        private readonly byte[] payload;
+        public Router(byte[] payload) { this.payload = payload; }
+        public void Serves(string url, string manifestJson) { answers[url] = manifestJson; }
+        public void Fails(string url) { answers[url] = null; }
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            string url = request.RequestUri!.ToString();
+            if (url.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) });
+            if (!answers.TryGetValue(url, out var json) || json == null) throw new HttpRequestException("simulated: " + url + " is unreachable");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json) });
         }
     }
 }

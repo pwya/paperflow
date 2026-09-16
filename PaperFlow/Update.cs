@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -39,11 +40,16 @@ public sealed record UpdateManifest(string Version, string Url, string Sha256, l
 
 public static class Updates
 {
-    // 永远指向“最新那个 Release 的附件”，不需要调 GitHub API，也就没有速率和账号问题。
+    // 两个候选清单地址，都指向各自发布页里一份同名清单，描述的是同一个程序文件
+    // （同哈希、同长度）。Gitee 放前面是因为国内直连它快得多；GitHub 那份仍然要读，
+    // 否则镜像一旦落后就会漏掉新版本——所以是"两边都取，谁新用谁"，不是"谁先通用谁"。
+    public const string GiteeManifestUrl = "https://gitee.com/pan-wang-yuang/paperflow/releases/download/latest/update.json";
     public const string DefaultManifestUrl = "https://github.com/pwya/paperflow/releases/latest/download/update.json";
-    // 只给开发和自动化测试用：把清单地址指到本地，方便端到端验证整条更新链。
-    public static string ManifestUrl { get; set; } = DefaultManifestUrl;
-    public static bool UsingOverride => ManifestUrl != DefaultManifestUrl;
+    public static List<string> ManifestUrls { get; } = new() { GiteeManifestUrl, DefaultManifestUrl };
+    // 只给开发和自动化测试用：把清单地址指到一个固定地址（本地假服务器），此时只用它。
+    public static string? SingleManifestUrl { get; set; }
+    public static bool UsingOverride => SingleManifestUrl != null;
+    public static IReadOnlyList<string> Candidates() => SingleManifestUrl is string only ? new[] { only } : ManifestUrls.ToArray();
     // 设置窗口手动检查到的版本，交给挂件去显示提示条和下载按钮。
     public static UpdateManifest? Offered { get; set; }
     // 最近一次检查为什么失败（成功时清空）。挂件和设置页都靠它说话。
@@ -53,10 +59,10 @@ public static class Updates
     // 可以稍后再试、或者干脆关掉更新提示，而不是甩一串技术错误。
     public static UpdateFailure Describe(Exception ex) => ex switch
     {
-        TaskCanceledException or OperationCanceledException => new(Lang.T("连接 GitHub 超时，可能是网络慢或被拦住了。"), true),
-        HttpRequestException => new(Lang.T("连不上 GitHub，可能是网络或代理的问题。"), true),
-        System.Net.Sockets.SocketException => new(Lang.T("连不上 GitHub，可能是网络或代理的问题。"), true),
-        JsonException => new(Lang.T("GitHub 上的更新清单读不出来。"), false),
+        TaskCanceledException or OperationCanceledException => new(Lang.T("连接更新服务器超时，可能是网络慢或被拦住了。"), true),
+        HttpRequestException => new(Lang.T("连不上更新服务器（Gitee 和 GitHub 都没连上），大概是网络的问题。"), true),
+        System.Net.Sockets.SocketException => new(Lang.T("连不上更新服务器（Gitee 和 GitHub 都没连上），大概是网络的问题。"), true),
+        JsonException => new(Lang.T("更新清单读不出来。"), false),
         _ => new(ex.Message, false)
     };
 
@@ -87,10 +93,21 @@ public static class Updates
 
     public static async Task<UpdateManifest?> FetchAsync(HttpClient client, CancellationToken token)
     {
-        using var response = await client.GetAsync(ManifestUrl, token);
-        if (!response.IsSuccessStatusCode) throw new InvalidDataException(Lang.F("检查更新失败：{0}", (int)response.StatusCode));
-        var manifest = UpdateManifest.Parse(await response.Content.ReadAsStringAsync(token), UsingOverride);
-        return IsNewer(manifest.Version, Product.Version) ? manifest : null;
+        var found = new List<UpdateManifest>();
+        Exception? last = null;
+        foreach (var url in Candidates())
+        {
+            try
+            {
+                using var response = await client.GetAsync(url, token);
+                if (!response.IsSuccessStatusCode) throw new InvalidDataException(Lang.F("检查更新失败：{0}", (int)response.StatusCode));
+                found.Add(UpdateManifest.Parse(await response.Content.ReadAsStringAsync(token), UsingOverride));
+            }
+            catch (Exception ex) { last = ex; }
+        }
+        if (found.Count == 0) throw last ?? new InvalidDataException(Lang.T("更新清单读不出来。"));
+        var newest = found.OrderByDescending(m => Version.Parse(m.Version)).First();
+        return IsNewer(newest.Version, Product.Version) ? newest : null;
     }
 
     // 下载到临时文件并校验长度与 SHA-256；对不上就删掉临时文件并响亮报错。

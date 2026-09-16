@@ -25,7 +25,7 @@ public partial class App : Application
         if (updateUrlIndex >= 0 && e.Args.Length > updateUrlIndex + 1)
         {
             // 只给开发和自动化测试用：把更新清单指到本地地址，验证整条下载安装链。
-            if (Uri.TryCreate(e.Args[updateUrlIndex + 1], UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps)) Updates.ManifestUrl = url.ToString();
+            if (Uri.TryCreate(e.Args[updateUrlIndex + 1], UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps)) Updates.SingleManifestUrl = url.ToString();
         }
         int promoIndex = Array.IndexOf(e.Args, "--promotional-assets");
         int galleryIndex = Array.IndexOf(e.Args, "--theme-gallery");

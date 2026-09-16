@@ -285,13 +285,13 @@ public sealed class SettingsWindow : Window
                 Result.LastUpdateCheckUtc = DateTime.UtcNow; Result.LastUpdateError = failure.Message;
                 Updates.Offered = null; Updates.LastFailure = failure;
                 updateStatus.Text = failure.Network
-                    ? Lang.F("这次没连上 GitHub（{0}）", failure.Message)
+                    ? Lang.F("这次没连上更新服务器（{0}）", failure.Message)
                     : Lang.F("这次检查没成功：{0}", failure.Message);
             }
             finally { checkNow.IsEnabled = true; }
         };
         sync.Children.Add(checkNow);
-        Label(sync, Lang.T("检查更新只读 GitHub 上的一份清单，只下载、不上传，论文数据不会被发送出去。选“不提示”就一次网络请求都不发，那时也可以随时按这个按钮手动检查。"), 11);
+        Label(sync, Lang.T("检查更新只读一份静态清单（国内镜像 Gitee 优先，其次是 GitHub），只下载、不上传，论文数据不会被发送出去。选“不提示”就一次网络请求都不发，那时也可以随时按这个按钮手动检查。"), 11);
         Label(sync, Lang.T("快捷方式"), 16);
         Label(sync, Shortcuts.HasLauncher(Result.LauncherPath)
             ? Lang.T("挂件本身不进任务栏，用这两个入口打开最省事。它们指向固定启动入口，以后换了版本也不用重建。")

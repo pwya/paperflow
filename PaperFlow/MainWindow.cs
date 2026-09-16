@@ -463,7 +463,7 @@ public sealed class MainWindow : Window
     {
         if (demonstration || failure == null) return;
         UpdateBarText(failure.Network
-            ? Lang.F("这次没连上 GitHub，没能检查更新。{0}可以稍后再试，也可以把更新提示设为“不提示”。", failure.Message)
+            ? Lang.F("这次没连上更新服务器（Gitee 和 GitHub 都没连上），没能检查更新。{0}可以稍后再试，也可以把更新提示设为“不提示”。", failure.Message)
             : Lang.F("检查更新没成功：{0}", failure.Message),
             Lang.T("现在再试一次"), () => _ = CheckForUpdatesAsync(true));
     }

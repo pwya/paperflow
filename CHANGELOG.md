@@ -2,6 +2,8 @@
 
 ## 1.13.7
 
+> **状态：当前最新的公开测试版（beta）。** 功能已经可用，仍在根据反馈调整。遇到问题请发邮件到 pwya1998@126.com，或在 https://github.com/pwya/paperflow/issues 开一条。
+
 ### 变更
 
 - **不再单独提供 exe 安装文件**：每个版本只发布压缩包 `PaperFlow-x.y.z-win-x64.zip`（另外附源码包、`update.json` 与构建信息）。程序内的自动更新改为下载这个压缩包，从里面取出 `versions/<版本>/PaperFlow.exe`，校验两层哈希（压缩包一层、里面的程序一层）之后再安装。

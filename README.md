@@ -63,4 +63,10 @@
 
 遇到问题或者想提建议：发邮件到 **pwya1998@126.com**，或者在 [Issues](https://github.com/pwya/paperflow/issues) 里开一条（截图和文字都可以）。
 
+## 关注公众号
+
+公众号会写论文与投稿、AI 工具，以及这类自己做的小程序。
+
+![公众号二维码](docs/images/wechat-qr.png)
+
 MIT 许可。源码就在本仓库。

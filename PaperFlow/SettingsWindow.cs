@@ -247,10 +247,12 @@ public sealed class SettingsWindow : Window
         // ---------- 同步与启动 ----------
         var sync = pages[3];
         Label(sync, Lang.T("论文同步与备份"), 20);
-        Label(sync, Result.SyncFolder == "" ? Lang.T("论文只保存在这台电脑上。想换电脑或几台电脑一起用，把安装文件夹放进一个会自动同步的网盘文件夹（例如 OneDrive），在每台电脑打开那里的固定启动入口即可。") : Lang.T("正在使用同步文件夹\n") + Result.SyncFolder, 11);
-        if (Result.SyncFolder != "") sync.Children.Add(B(Lang.T("打开同步资料文件夹"), () => OpenFolder(Result.SyncFolder)));
-        Label(sync, Lang.T("其他电脑收到文件后会自动刷新。字体、主题、字号、界面缩放、界面语言和窗口位置只保存在本机。"), 11);
-        var backup = new StackPanel { Orientation = Orientation.Horizontal }; backup.Children.Add(B(Lang.T("导出备份"), export)); backup.Children.Add(B(Lang.T("导入备份"), import)); backup.Children.Add(B(Lang.T("本地资料"), () => OpenFolder(directory))); sync.Children.Add(backup);
+        // 不假定任何人一定在用同步文件夹：用着就显示地址，然后一句 tip 说清它能做什么。
+        if (Result.SyncFolder != "") Label(sync, Lang.T("正在使用同步文件夹\n") + Result.SyncFolder, 11);
+        Label(sync, Lang.T("如果你使用 OneDrive / 百度网盘 / Dropbox / 坚果云 等同步文件夹，在同一个文件夹下，其他电脑收到后会同步你的设置哦。"), 11);
+        var backup = new StackPanel { Orientation = Orientation.Horizontal };
+        if (Result.SyncFolder != "") backup.Children.Add(B(Lang.T("打开同步资料文件夹"), () => OpenFolder(Result.SyncFolder)));
+        backup.Children.Add(B(Lang.T("导出备份"), export)); backup.Children.Add(B(Lang.T("导入备份"), import)); backup.Children.Add(B(Lang.T("本地资料"), () => OpenFolder(directory))); sync.Children.Add(backup);
         Label(sync, Lang.T("启动"), 16);
         var startup = new CheckBox { Content = Lang.T("登录 Windows 时自动打开"), IsChecked = StartupEntry.IsEnabled(), Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; sync.Children.Add(startup);
         Label(sync, Lang.T("× 收起到托盘，双击托盘图标恢复。更新时请先从托盘菜单退出，再打开固定启动入口。"), 11);
@@ -270,7 +272,7 @@ public sealed class SettingsWindow : Window
             checkNow.IsEnabled = false; updateStatus.Text = Lang.T("正在检查…");
             try
             {
-                using var client = Updates.Client(Result.UpdateProxy);
+                using var client = Updates.Client();
                 var manifest = await Updates.FetchAsync(client, System.Threading.CancellationToken.None);
                 Result.LastUpdateCheckUtc = DateTime.UtcNow; Result.LastUpdateError = "";
                 Updates.Offered = manifest;
@@ -289,11 +291,6 @@ public sealed class SettingsWindow : Window
             finally { checkNow.IsEnabled = true; }
         };
         sync.Children.Add(checkNow);
-        Label(sync, Lang.T("网络代理（可留空）"));
-        var proxy = new TextBox { Text = Result.UpdateProxy, ToolTip = Lang.T("例如 http://127.0.0.1:7890；留空就跟随 Windows 的设置。只用于检查更新和下载新版本。"), Margin = new Thickness(0, 4, 0, 2) };
-        proxy.TextChanged += (_, _) => Result.UpdateProxy = proxy.Text.Trim();
-        sync.Children.Add(proxy);
-        Label(sync, Lang.T("如果这台电脑要挂代理才能上 GitHub，把地址填在这里（例如 http://127.0.0.1:7890），直连很慢时也能快起来；留空就跟随 Windows 的设置。它只用于检查更新和下载新版本，不参与同步。"), 11);
         Label(sync, Lang.T("检查更新只读 GitHub 上的一份清单，只下载、不上传，论文数据不会被发送出去。选“不提示”就一次网络请求都不发，那时也可以随时按这个按钮手动检查。"), 11);
         Label(sync, Lang.T("快捷方式"), 16);
         Label(sync, Shortcuts.HasLauncher(Result.LauncherPath)

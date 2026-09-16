@@ -490,7 +490,7 @@ public sealed class MainWindow : Window
         {
             var progress = new Progress<double>(value => updateText.Text = Lang.F("正在下载更新 {0}%", Math.Round(value)));
             // 下载用不设总时长的客户端：直连 GitHub 常常很慢，慢不等于坏。
-            using var client = Updates.DownloadClient(library.Settings.UpdateProxy);
+            using var client = Updates.DownloadClient();
             var file = await Updates.DownloadAsync(client, manifest, Updates.CacheFolder(), progress, System.Threading.CancellationToken.None);
             var installed = Updates.Install(manifest, file, Shortcuts.ProgramFolder(library.Settings.LauncherPath));
             UpdateBarText(Lang.F("新版本已就绪 {0}，重启后生效。", manifest.Version), Lang.T("重启并更新"), () =>
@@ -516,7 +516,7 @@ public sealed class MainWindow : Window
         if (!manual && !Updates.ShouldCheck(library.Settings.UpdateMode, library.Settings.LastUpdateCheckUtc, DateTime.UtcNow)) return;
         try
         {
-                using var client = Updates.Client(library.Settings.UpdateProxy);
+                using var client = Updates.Client();
                 var manifest = await Updates.FetchAsync(client, System.Threading.CancellationToken.None);
                 Updates.LastFailure = null;
                 Commit(l => { l.Settings.LastUpdateCheckUtc = DateTime.UtcNow; l.Settings.LastUpdateError = ""; });

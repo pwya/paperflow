@@ -60,30 +60,19 @@ public static class Updates
         _ => new(ex.Message, false)
     };
 
-    // 代理留空就跟随 Windows 的设置；国内直连 GitHub 常常能连上、但下载慢到不能用，
-    // 所以设置里留了一个可选代理入口（只影响更新这一件事）。
-    public static IWebProxy? ProxyFor(string proxyUrl)
+    // 不做应用内代理设置：跟随 Windows 自己的网络配置，国内访问慢的问题是靠
+    // 以后加 Gitee 镜像解决，而不是让用户在设置里填一个地址。
+    private static HttpClient Build(TimeSpan timeout)
     {
-        if (string.IsNullOrWhiteSpace(proxyUrl)) return null;
-        return Uri.TryCreate(proxyUrl.Trim(), UriKind.Absolute, out var address) && (address.Scheme == Uri.UriSchemeHttp || address.Scheme == Uri.UriSchemeHttps)
-            ? new WebProxy(address)
-            : null;
-    }
-    private static HttpClient Build(string proxyUrl, TimeSpan timeout)
-    {
-        var handler = new HttpClientHandler { AllowAutoRedirect = true, UseCookies = false };
-        var proxy = ProxyFor(proxyUrl);
-        // 没填代理就照旧用 Windows 的设置，填了才覆盖它。
-        if (proxy != null) handler.Proxy = proxy;
-        var client = new HttpClient(handler) { Timeout = timeout };
+        var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = true, UseCookies = false }) { Timeout = timeout };
         // 只报自己的名字和版本；不带设备标识、不带论文信息、不带 Cookie。
         client.DefaultRequestHeaders.Add("User-Agent", "PaperFlow/" + Product.Version);
         client.DefaultRequestHeaders.Add("Accept", "application/json");
         return client;
     }
     // 清单很小，十分钟足够；下载另算（见 DownloadAsync 的卡住检测）。
-    public static HttpClient Client(string proxyUrl = "") => Build(proxyUrl, TimeSpan.FromMinutes(10));
-    public static HttpClient DownloadClient(string proxyUrl = "") => Build(proxyUrl, Timeout.InfiniteTimeSpan);
+    public static HttpClient Client() => Build(TimeSpan.FromMinutes(10));
+    public static HttpClient DownloadClient() => Build(Timeout.InfiniteTimeSpan);
 
     // 三档：always 每次启动都看，daily 大约一天一次，never 完全不看。
     public static bool ShouldCheck(string mode, DateTime? lastCheckUtc, DateTime nowUtc) => mode switch

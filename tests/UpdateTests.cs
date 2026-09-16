@@ -100,16 +100,6 @@ static class UpdateTests
             check(round.Settings.LastUpdateError == offline.Message, "the last update error survives a save and load");
             check(Storage.CloneLibrary(new Library()).Settings.LastUpdateCheckUtc == null, "no check time is recorded before the first check");
 
-            // ---------- 代理：留空跟随系统，填了就用它，填错不炸 ----------
-            check(Updates.ProxyFor("") == null && Updates.ProxyFor("   ") == null, "an empty proxy follows the Windows setting");
-            var proxy = Updates.ProxyFor("http://127.0.0.1:7890");
-            check(proxy is WebProxy address && address.Address!.Port == 7890, "an http proxy is accepted");
-            check(Updates.ProxyFor("https://proxy.example:8443") is WebProxy, "an https proxy is accepted");
-            check(Updates.ProxyFor("127.0.0.1:7890") == null, "a bare host and port is rejected instead of being guessed at");
-            check(Updates.ProxyFor("不是地址") == null, "garbage is ignored");
-            var withProxy = new Library().Settings;
-            withProxy.UpdateProxy = new string('x', 500);
-            check(Storage.CloneLibrary(new Library { Settings = withProxy }).Settings.UpdateProxy.Length <= 200, "an absurdly long proxy string is trimmed");
         }
         finally { try { Directory.Delete(root, true); } catch (IOException) { } }
     }

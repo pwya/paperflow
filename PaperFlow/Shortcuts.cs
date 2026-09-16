@@ -13,7 +13,7 @@ namespace PaperFlow;
 public static class Shortcuts
 {
     public const string FileName = "PaperFlow.lnk";
-    private const string Description = "PaperFlow · 论文投稿进度";
+    private static string Description => Lang.T("PaperFlow · 论文投稿进度");
 
     private static object? Shell() => Type.GetTypeFromProgID("WScript.Shell") is Type type ? Activator.CreateInstance(type) : null;
 
@@ -36,11 +36,11 @@ public static class Shortcuts
 
     public static void Create(string shortcutPath, string target, string workingDirectory)
     {
-        if (string.IsNullOrWhiteSpace(target)) throw new InvalidOperationException("找不到可以指向的程序文件。");
+        if (string.IsNullOrWhiteSpace(target)) throw new InvalidOperationException(Lang.T("找不到可以指向的程序文件。"));
         var folder = Path.GetDirectoryName(shortcutPath);
-        if (string.IsNullOrEmpty(folder)) throw new InvalidOperationException("快捷方式保存位置无效。");
+        if (string.IsNullOrEmpty(folder)) throw new InvalidOperationException(Lang.T("快捷方式保存位置无效。"));
         Directory.CreateDirectory(folder);
-        dynamic shell = Shell() ?? throw new InvalidOperationException("这台电脑缺少 Windows 脚本组件，无法创建快捷方式。");
+        dynamic shell = Shell() ?? throw new InvalidOperationException(Lang.T("这台电脑缺少 Windows 脚本组件，无法创建快捷方式。"));
         dynamic link = shell.CreateShortcut(shortcutPath);
         link.TargetPath = target;
         link.WorkingDirectory = workingDirectory;
@@ -52,7 +52,7 @@ public static class Shortcuts
     public static string? TargetOf(string shortcutPath)
     {
         if (!File.Exists(shortcutPath)) return null;
-        dynamic shell = Shell() ?? throw new InvalidOperationException("这台电脑缺少 Windows 脚本组件，无法读取快捷方式。");
+        dynamic shell = Shell() ?? throw new InvalidOperationException(Lang.T("这台电脑缺少 Windows 脚本组件，无法读取快捷方式。"));
         dynamic link = shell.CreateShortcut(shortcutPath);
         var target = link.TargetPath as string;
         return string.IsNullOrWhiteSpace(target) ? null : target;
@@ -69,7 +69,7 @@ public static class Shortcuts
     public static bool Remove(string shortcutPath)
     {
         if (!File.Exists(shortcutPath)) return false;
-        if (!LooksLikeOurs(shortcutPath)) throw new InvalidOperationException(shortcutPath + " 不是本程序创建的快捷方式，没有删除。请自己确认后手动删除它。");
+        if (!LooksLikeOurs(shortcutPath)) throw new InvalidOperationException(shortcutPath + Lang.T(" 不是本程序创建的快捷方式，没有删除。请自己确认后手动删除它。"));
         File.Delete(shortcutPath);
         return true;
     }
@@ -81,8 +81,8 @@ public static class Shortcuts
         var target = ResolveTarget(launcherPath);
         var working = ProgramFolder(launcherPath);
         var problems = new List<string>();
-        Sync(desktop, DesktopPath(), "桌面", target, working, problems);
-        Sync(startMenu, StartMenuPath(), "开始菜单", target, working, problems);
+        Sync(desktop, DesktopPath(), Lang.T("桌面"), target, working, problems);
+        Sync(startMenu, StartMenuPath(), Lang.T("开始菜单"), target, working, problems);
         if (problems.Count > 0) throw new InvalidOperationException(string.Join("\n", problems));
     }
 
@@ -94,6 +94,6 @@ public static class Shortcuts
             else Remove(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or System.Runtime.InteropServices.COMException)
-        { problems.Add(label + "：" + ex.Message); }
+        { problems.Add(Lang.F("{0}：{1}", label, ex.Message)); }
     }
 }

@@ -53,6 +53,8 @@ SyncTests.Run(Check);
 PaperOrderTests.Run(Check);
 ViewTests.Run(Check);
 ShortcutTests.Run(Check);
+LangTests.Run(Check);
+UpdateTests.Run(Check);
 
 // Renaming the product moved the local runtime root; the old root must migrate once,
 // keep the sync device identity, and never overwrite a root that already has data.

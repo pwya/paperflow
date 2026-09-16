@@ -35,7 +35,7 @@ public sealed class Storage
                 if (Directory.Exists(source)) Copytree(source, target);
                 else if (File.Exists(source) && !File.Exists(target)) File.Copy(source, target, false);
             }
-            return File.Exists(Path.Combine(current, "papers.json")) ? "已把原 PaperProgress 的本机资料迁移到新目录，原目录保持不动。" : null;
+            return File.Exists(Path.Combine(current, "papers.json")) ? Lang.T("已把原 PaperProgress 的本机资料迁移到新目录，原目录保持不动。") : null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -60,41 +60,41 @@ public sealed class Storage
             // Preserve the damaged original before restoring the last verified snapshot.
             var damaged = Path.Combine(DirectoryPath, $"papers.damaged-{DateTime.Now:yyyyMMdd-HHmmssfff}.json");
             File.Copy(FilePath, damaged, false);
-            if (!File.Exists(BackupPath)) throw new InvalidDataException($"资料无法读取。原文件已保留在 {damaged}，请从备份恢复。", ex);
+            if (!File.Exists(BackupPath)) throw new InvalidDataException(Lang.F("资料无法读取。原文件已保留在 {0}，请从备份恢复。", damaged), ex);
             var recovered = Parse(File.ReadAllText(BackupPath, Encoding.UTF8));
             File.Copy(BackupPath, FilePath, true);
-            RecoveryNotice = $"已从上次备份恢复。损坏原文件保留在：{damaged}";
+            RecoveryNotice = Lang.F("已从上次备份恢复。损坏原文件保留在：{0}", damaged);
             return recovered;
         }
     }
 
     public static Library Parse(string text)
     {
-        if (text.Length > 30_000_000) throw new InvalidDataException("导入文件超过 30 MB。");
-        var library = JsonSerializer.Deserialize<Library>(text, JsonOptions) ?? throw new InvalidDataException("资料为空。");
+        if (text.Length > 30_000_000) throw new InvalidDataException(Lang.T("导入文件超过 30 MB。"));
+        var library = JsonSerializer.Deserialize<Library>(text, JsonOptions) ?? throw new InvalidDataException(Lang.T("资料为空。"));
         Validate(library);
         return library;
     }
 
     public static void Validate(Library library)
     {
-        if (library.Version != 1 || library.Papers == null || library.Settings == null) throw new InvalidDataException("文件版本或结构不受支持。");
-        if (library.Papers.Count > 10000) throw new InvalidDataException("论文数量超过 10000 篇。");
-        if (library.Papers.Any(p => p == null)) throw new InvalidDataException("论文记录不能为 null。");
-        if (library.Papers.Select(p => p.Id).Distinct().Count() != library.Papers.Count) throw new InvalidDataException("论文编号重复。");
+        if (library.Version != 1 || library.Papers == null || library.Settings == null) throw new InvalidDataException(Lang.T("文件版本或结构不受支持。"));
+        if (library.Papers.Count > 10000) throw new InvalidDataException(Lang.T("论文数量超过 10000 篇。"));
+        if (library.Papers.Any(p => p == null)) throw new InvalidDataException(Lang.T("论文记录不能为 null。"));
+        if (library.Papers.Select(p => p.Id).Distinct().Count() != library.Papers.Count) throw new InvalidDataException(Lang.T("论文编号重复。"));
         foreach (var p in library.Papers)
         {
             if (string.IsNullOrWhiteSpace(p.Id) || string.IsNullOrWhiteSpace(p.Title) || p.Title.Length > 500)
-                throw new InvalidDataException("论文编号或标题无效（标题最多 500 字）。");
+                throw new InvalidDataException(Lang.T("论文编号或标题无效（标题最多 500 字）。"));
             if (p.Stages == null || p.Stages.Count != 7 || p.Stages.Where((s, i) => s == null || s.Name != Paper.StageNames[i] || (s.Done && s.Skipped)).Any())
-                throw new InvalidDataException("必须包含完整的七个标准阶段，且完成与不适用不能同时选中。");
-            if (p.Stages.Where((s, i) => s.Skipped && i != 5).Any()) throw new InvalidDataException("仅返修阶段允许设为不适用。");
+                throw new InvalidDataException(Lang.T("必须包含完整的七个标准阶段，且完成与不适用不能同时选中。"));
+            if (p.Stages.Where((s, i) => s.Skipped && i != 5).Any()) throw new InvalidDataException(Lang.T("仅返修阶段允许设为不适用。"));
             if (p.StartDate.Year < 1900 || p.StartDate.Year > 2200 || p.DueDate?.Year < 1900 || p.DueDate?.Year > 2200)
-                throw new InvalidDataException("日期需在 1900—2200 年之间。");
-            if (p.History == null || p.History.Any(h => h == null || h.Description == null)) throw new InvalidDataException("修改记录无效。");
+                throw new InvalidDataException(Lang.T("日期需在 1900—2200 年之间。"));
+            if (p.History == null || p.History.Any(h => h == null || h.Description == null)) throw new InvalidDataException(Lang.T("修改记录无效。"));
             p.Subject ??= ""; p.Language ??= ""; p.Collaborators ??= ""; p.Journal ??= "";
             p.NextAction ??= ""; p.Outcome ??= ""; p.Notes ??= "";
-            if (!Paper.Priorities.Contains(p.Priority)) throw new InvalidDataException("优先级必须是高、中或低。");
+            if (!Paper.Priorities.Contains(p.Priority)) throw new InvalidDataException(Lang.T("优先级必须是高、中或低。"));
             if (!Paper.Statuses.Contains(p.Status)) p.Status = "准备中";
         }
         var s = library.Settings;
@@ -119,6 +119,9 @@ public sealed class Storage
         s.BodyScale = double.IsFinite(s.BodyScale) ? Math.Clamp(s.BodyScale, 0.6, 2) : 1;
         s.CaptionScale = double.IsFinite(s.CaptionScale) ? Math.Clamp(s.CaptionScale, 0.6, 2) : 1;
         s.SyncFolder ??= ""; s.LauncherPath ??= "";
+        // 新字段用 ASCII 码值存储，显示文字随语言走；不认识的值一律回默认。
+        s.Language = Lang.Normalize(s.Language);
+        if (s.UpdateMode is not ("always" or "daily" or "never")) s.UpdateMode = "daily";
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;
         s.TextSize = double.IsFinite(s.TextSize) ? Math.Clamp(s.TextSize, 9, 36) : 13;
         s.UiScale = double.IsFinite(s.UiScale) ? Math.Clamp(s.UiScale, 0.8, 2) : 1;
@@ -149,7 +152,7 @@ public sealed class Storage
             if (!File.Exists(daily)) File.Copy(FilePath, daily);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        { BackupNotice = "每日备份失败：" + ex.Message; }
+        { BackupNotice = Lang.T("每日备份失败：") + ex.Message; }
     }
 
     public static Paper Clone(Paper p) => JsonSerializer.Deserialize<Paper>(JsonSerializer.Serialize(p))!;

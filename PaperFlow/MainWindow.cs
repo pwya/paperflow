@@ -35,6 +35,13 @@ public sealed class MainWindow : Window
     private readonly TextBlock toastText = new();
     private readonly Button toastAction = new();
     private readonly Button toastClose = new();
+    private readonly Border updateBar = new();
+    private readonly TextBlock updateText = new();
+    private readonly Button updateAction = new();
+    private readonly Button updateClose = new();
+    private Action? updateActionHandler;
+    private UpdateManifest? updateOffered;
+    private bool updating;
     private readonly DispatcherTimer toastTimer = new() { Interval = TimeSpan.FromSeconds(8) };
     private Action? toastActionHandler;
     private readonly TextBox search = new();
@@ -114,7 +121,7 @@ public sealed class MainWindow : Window
         var layered = new Grid(); layered.Children.Add(scrim); layered.Children.Add(root);
         frame.Child = layered;
 
-        var heading = new Grid { Margin = new Thickness(14, 8, 10, 5), Background = Brushes.Transparent, ToolTip = "拖动标题栏或空白处移动小部件" };
+        var heading = new Grid { Margin = new Thickness(14, 8, 10, 5), Background = Brushes.Transparent, ToolTip = Lang.T("拖动标题栏或空白处移动小部件") };
         heading.ColumnDefinitions.Add(new ColumnDefinition()); heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         heading.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); heading.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var brand = new StackPanel { Orientation = Orientation.Horizontal };
@@ -122,16 +129,16 @@ public sealed class MainWindow : Window
         var brandTitle = Text("PaperFlow", 18, "#24352F", -1, "title"); brandTitle.FontWeight = FontWeights.SemiBold; brand.Children.Add(brandTitle);
         heading.Children.Add(brand);
         var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var add = ActionButton("＋", AddPaper, true); add.ToolTip = "新增论文 · Ctrl+N"; add.Padding = new Thickness(10 * Appearance.Scale, 4 * Appearance.Scale, 10 * Appearance.Scale, 4 * Appearance.Scale); add.FontSize = 17 * Appearance.TextScale; AutomationProperties.SetName(add, "新增论文"); chrome.Children.Add(add);
-        options.Content = "论文选项"; options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options); quietChrome.Add(options);
+        var add = ActionButton("＋", AddPaper, true); add.ToolTip = Lang.T("新增论文 · Ctrl+N"); add.Padding = new Thickness(10 * Appearance.Scale, 4 * Appearance.Scale, 10 * Appearance.Scale, 4 * Appearance.Scale); add.FontSize = 17 * Appearance.TextScale; AutomationProperties.SetName(add, Lang.T("新增论文")); chrome.Children.Add(add);
+        options.Content = Lang.T("论文选项"); options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options); quietChrome.Add(options);
         pin.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin); quietChrome.Add(pin);
-        var settingsButton = ActionButton("设置", OpenSettings); chrome.Children.Add(settingsButton); quietChrome.Add(settingsButton);
+        var settingsButton = ActionButton(Lang.T("设置"), OpenSettings); chrome.Children.Add(settingsButton); quietChrome.Add(settingsButton);
         hiddenToggle.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale);
         hiddenToggle.Click += (_, _) => Commit(l => l.Settings.ShowHiddenNow = !l.Settings.ShowHiddenNow);
         chrome.Children.Add(hiddenToggle); quietChrome.Add(hiddenToggle);
         // No taskbar button means minimising would hide the widget with nowhere to return
         // from, so the only place-away control is the collapse-to-tray button.
-        var close = ActionButton("×", Close); close.ToolTip = "收起到系统托盘，双击托盘图标恢复"; chrome.Children.Add(close); quietChrome.Add(close);
+        var close = ActionButton("×", Close); close.ToolTip = Lang.T("收起到系统托盘，双击托盘图标恢复"); chrome.Children.Add(close); quietChrome.Add(close);
         Grid.SetColumn(chrome, 1); heading.Children.Add(chrome);
         // Large text or a narrow window pushes the buttons onto a second row instead of
         // clipping the title. Nothing is hidden, the header just reflows.
@@ -148,11 +155,12 @@ public sealed class MainWindow : Window
 
         var top = new StackPanel { Margin = new Thickness(17, 0, 17, 6), Background = Brushes.Transparent };
         summary.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); top.Children.Add(summary);
-        AutomationProperties.SetName(search, "搜索论文、学科、期刊"); search.ToolTip = "搜索论文、学科、期刊、合作者或备注";
+        AutomationProperties.SetName(search, Lang.T("搜索论文、学科、期刊")); search.ToolTip = Lang.T("搜索论文、学科、期刊、合作者或备注");
         search.TextChanged += (_, _) => { if (ready) Render(); };
-        filter.ItemsSource = new[] { "全部论文", "进行中", "已收录", "已归档" }; filter.SelectedIndex = 0; filter.Margin = new Thickness(7, 0, 0, 0);
+        filter.ItemsSource = new[] { Lang.T("全部论文"), Lang.T("进行中"), Lang.T("已收录"), Lang.T("已归档") }; filter.SelectedIndex = 0; filter.Margin = new Thickness(7, 0, 0, 0);
         filter.SelectionChanged += (_, _) => { if (ready) Render(); };
-        sort.ItemsSource = ViewRules.SortModes; sort.SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SortModes, library.Settings.SortMode)); sort.Margin = new Thickness(7, 0, 0, 0);
+        // 显示按语言走，值还是原来的规范值，所以下面的索引逻辑一个字都不用改。
+        sort.ItemsSource = Lang.Choices(ViewRules.SortModes); sort.DisplayMemberPath = "Label"; sort.SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SortModes, library.Settings.SortMode)); sort.Margin = new Thickness(7, 0, 0, 0);
         // 排序方式会保存下来，否则重启就悄悄回到手动排序，用户会以为顺序没同步。
         sort.SelectionChanged += (_, _) => { if (ready && ViewRules.SortModes[Math.Max(0, sort.SelectedIndex)] != library.Settings.SortMode) Commit(l => l.Settings.SortMode = ViewRules.SortModes[Math.Max(0, sort.SelectedIndex)]); };
         DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
@@ -161,10 +169,11 @@ public sealed class MainWindow : Window
         foot.SetResourceReference(Border.BorderBrushProperty, "Line");
         footer.Text = sync.Status; footer.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); footer.TextTrimming = TextTrimming.CharacterEllipsis; foot.Child = footer;
         DockPanel.SetDock(foot, Dock.Bottom); root.Children.Add(foot);
-        pager.Children.Add(ActionButton("‹ 上一页", () => TurnPage(-1)));
+        pager.Children.Add(ActionButton(Lang.T("‹ 上一页"), () => TurnPage(-1)));
         pager.Children.Add(pageLabel);
-        pager.Children.Add(ActionButton("下一页 ›", () => TurnPage(1)));
+        pager.Children.Add(ActionButton(Lang.T("下一页 ›"), () => TurnPage(1)));
         DockPanel.SetDock(pager, Dock.Bottom); root.Children.Add(pager);
+        BuildUpdateBar(); DockPanel.SetDock(updateBar, Dock.Bottom); root.Children.Add(updateBar);
         BuildToast(); DockPanel.SetDock(toast, Dock.Bottom); root.Children.Add(toast);
         scroller = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, Margin = new Thickness(13, 0, 9, 0), Content = cards };
         scroller.AllowDrop = true;
@@ -178,12 +187,12 @@ public sealed class MainWindow : Window
         };
         root.Children.Add(scroller);
 
-        tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = "PaperFlow · 双击打开", Visible = !demonstration };
+        tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = Lang.T("PaperFlow · 双击打开"), Visible = !demonstration };
         var trayMenu = new Forms.ContextMenuStrip();
-        trayMenu.Items.Add("显示 PaperFlow", null, (_, _) => Dispatcher.Invoke(Reveal));
-        trayMenu.Items.Add("始终置顶 / 取消置顶", null, (_, _) => Dispatcher.Invoke(TogglePin));
-        trayMenu.Items.Add("放好桌面和开始菜单快捷方式", null, (_, _) => Dispatcher.Invoke(CreateShortcuts));
-        trayMenu.Items.Add("退出", null, (_, _) => Dispatcher.Invoke(ExitApplication));
+        trayMenu.Items.Add(Lang.T("显示 PaperFlow"), null, (_, _) => Dispatcher.Invoke(Reveal));
+        trayMenu.Items.Add(Lang.T("始终置顶 / 取消置顶"), null, (_, _) => Dispatcher.Invoke(TogglePin));
+        trayMenu.Items.Add(Lang.T("放好桌面和开始菜单快捷方式"), null, (_, _) => Dispatcher.Invoke(CreateShortcuts));
+        trayMenu.Items.Add(Lang.T("退出"), null, (_, _) => Dispatcher.Invoke(ExitApplication));
         tray.ContextMenuStrip = trayMenu;
         tray.DoubleClick += (_, _) => Dispatcher.Invoke(Reveal);
         Closing += (_, e) => { if (!quitting) { e.Cancel = true; SaveWindow(); Hide(); } };
@@ -206,13 +215,13 @@ public sealed class MainWindow : Window
                 bool changed = await Task.Run(sync.Poll);
                 if (changed) { library.Papers = sync.Snapshot().Papers; store.Save(library); Render(); }
                 footer.Text = sync.Status;
-                footer.ToolTip = sync.Folder == "" ? store.DirectoryPath : "资料文件夹：" + sync.Folder + "\n跨设备到达时间由你的网盘客户端决定，文件夹更新不等于云端上传已完成。";
+                footer.ToolTip = sync.Folder == "" ? store.DirectoryPath : Lang.T("资料文件夹：") + sync.Folder + Lang.T("\n跨设备到达时间由你的网盘客户端决定，文件夹更新不等于云端上传已完成。");
             }
-            catch (Exception ex) { footer.Text = "同步需要留意 · " + ex.Message; }
+            catch (Exception ex) { footer.Text = Lang.T("同步需要留意 · ") + ex.Message; }
             finally { polling = false; }
         };
         if (!demonstration) timer.Start(); ready = true; Render();
-        if (demonstration) { footer.Text = "演示数据 · 所有论文均为虚构 · " + Product.Name + " " + Product.Version; footer.ToolTip = null; }
+        if (demonstration) { footer.Text = Lang.T("演示数据 · 所有论文均为虚构 · ") + Product.Name + " " + Product.Version; footer.ToolTip = null; }
         SessionEndingHook();
     }
 
@@ -238,24 +247,25 @@ public sealed class MainWindow : Window
         SetWindowLong(handle, GwlExStyle, (GetWindowLong(handle, GwlExStyle) | WsExToolWindow) & ~WsExAppWindow);
     }
     private void ExitApplication() { if (!SaveWindow()) return; quitting = true; Close(); }
-    internal void CloseDemonstration() { if (!demonstration) throw new InvalidOperationException("仅供演示导出。"); quitting = true; Close(); }
+    internal void CloseDemonstration() { if (!demonstration) throw new InvalidOperationException(Lang.T("仅供演示导出。")); quitting = true; Close(); }
     protected override void OnSourceInitialized(EventArgs e) { base.OnSourceInitialized(e); HideFromAltTab(); }
 
     // Write a complete candidate snapshot before adopting it, so failed writes do not appear saved.
-    private bool Commit(Action<Library> edit, string notice = "已保存")
+    private bool Commit(Action<Library> edit, string? notice = null)
     {
+        notice ??= Lang.T("已保存");
         try
         {
             var candidate = Storage.CloneLibrary(library); edit(candidate);
             sync.Commit(library, candidate); candidate.Papers = sync.Snapshot().Papers; library = candidate;
-            try { store.Save(candidate); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { footer.Text = "修改已记录，快照备份待重试 · " + ex.Message; Render(); return true; }
-            footer.Text = store.BackupNotice == null ? $"{notice} · {DateTime.Now:HH:mm} · 本地自动备份" : "已保存 · " + store.BackupNotice;
+            try { store.Save(candidate); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { footer.Text = Lang.T("修改已记录，快照备份待重试 · ") + ex.Message; Render(); return true; }
+            footer.Text = store.BackupNotice == null ? Lang.F("{0} · {1:HH:mm} · 本地自动备份", notice, DateTime.Now) : Lang.T("已保存 · ") + store.BackupNotice;
             footer.ToolTip = store.BackupNotice; Render(); return true;
         }
         catch (Exception ex)
         {
-            Render(); footer.Text = "保存失败 · 本次修改未生效";
-            MessageBox.Show(this, "无法保存，本次修改没有写入。\n\n" + ex.Message, "保存失败", MessageBoxButton.OK, MessageBoxImage.Error); return false;
+            Render(); footer.Text = Lang.T("保存失败 · 本次修改未生效");
+            MessageBox.Show(this, Lang.T("无法保存，本次修改没有写入。\n\n") + ex.Message, Lang.T("保存失败"), MessageBoxButton.OK, MessageBoxImage.Error); return false;
         }
     }
     private bool SaveWindow() => Commit(l =>
@@ -275,7 +285,7 @@ public sealed class MainWindow : Window
         var dialog = new NewPaperDialog { Owner = this };
         if (dialog.ShowDialog() != true) return;
         var paper = new Paper { Title = dialog.PaperTitle }; paper.Record("创建论文 · 自动生成七阶段");
-        if (Commit(l => l.Papers.Insert(0, paper), "已新增论文")) { filter.SelectedIndex = 0; search.Clear(); scroller.ScrollToTop(); }
+        if (Commit(l => l.Papers.Insert(0, paper), Lang.T("已新增论文"))) { filter.SelectedIndex = 0; search.Clear(); scroller.ScrollToTop(); }
     }
 
     private void Render()
@@ -312,39 +322,45 @@ public sealed class MainWindow : Window
         toastText.Foreground = Appearance.Paint(Appearance.Current.Ink);
         toastAction.Foreground = Appearance.Paint(Appearance.Current.Accent);
         toastClose.Foreground = Appearance.Paint(Appearance.Current.Muted);
-        pin.Content = library.Settings.Topmost ? "已置顶" : "置顶"; pin.ToolTip = "F12 切换置顶";
+        updateBar.Background = Appearance.Paint(Appearance.Current.Card, Math.Max(0.94, Appearance.Opacity));
+        updateBar.BorderBrush = Appearance.Paint(Appearance.Current.Border, .9);
+        updateText.Foreground = Appearance.Paint(Appearance.Current.Ink);
+        updateAction.Foreground = Appearance.Paint(Appearance.Current.Accent);
+        updateClose.Foreground = Appearance.Paint(Appearance.Current.Muted);
+        pin.Content = Lang.T(library.Settings.Topmost ? "已置顶" : "置顶"); pin.ToolTip = Lang.T("F12 切换置顶");
         pin.Foreground = library.Settings.Topmost ? Brush("#21846B") : Brush("#78867F");
-        compact.Content = library.Settings.Compact ? "展开" : "紧凑";
+        compact.Content = Lang.T(library.Settings.Compact ? "展开" : "紧凑");
         var active = library.Papers.Where(p => !p.Archived).ToList();
-        summary.Text = $"{active.Count} 篇论文   ·   {active.Count(p => !p.Stages[6].Done)} 篇推进中   ·   {active.Count(p => p.Stages[6].Done)} 篇已收录" + (filter.SelectedIndex != 0 || search.Text != "" ? "   ·   已筛选" : "");
+        summary.Text = Lang.P(active.Count, "{0} 篇论文   ·   {1} 篇推进中   ·   {2} 篇已收录", "{0} paper   ·   {1} in progress   ·   {2} accepted", "{0} papers   ·   {1} in progress   ·   {2} accepted", active.Count, active.Count(p => !p.Stages[6].Done), active.Count(p => p.Stages[6].Done))
+            + (filter.SelectedIndex != 0 || search.Text != "" ? Lang.T("   ·   已筛选") : "");
         var candidates = Candidates();
         // 右上角的临时开关：有被隐藏的论文（或正展开着）时才出现，按阶段分组翻页时不需要它。
         int hiddenCount = candidates.Count(p => ViewRules.SelectedStage(p, library.Settings));
         hiddenToggle.Visibility = library.Settings.PageMode != ViewRules.PageModes[2] && library.Settings.HideSelectedStages && (hiddenCount > 0 || library.Settings.ShowHiddenNow) ? Visibility.Visible : Visibility.Collapsed;
-        hiddenToggle.Content = library.Settings.ShowHiddenNow ? $"收起隐藏 {hiddenCount} 篇" : $"显示隐藏 {hiddenCount} 篇";
+        hiddenToggle.Content = Lang.F(library.Settings.ShowHiddenNow ? "收起隐藏 {0} 篇" : "显示隐藏 {0} 篇", hiddenCount);
         hiddenToggle.ToolTip = library.Settings.ShowHiddenNow
-            ? "把这些按设置隐藏的论文收回去"
-            : "临时看一眼按当前设置被隐藏的论文，它们会显示成灰底，方便区分";
-        AutomationProperties.SetName(hiddenToggle, "显示或隐藏按阶段隐藏的论文");
+            ? Lang.T("把这些按设置隐藏的论文收回去")
+            : Lang.T("临时看一眼按当前设置被隐藏的论文，它们会显示成灰底，方便区分");
+        AutomationProperties.SetName(hiddenToggle, Lang.T("显示或隐藏按阶段隐藏的论文"));
         var pagePapers = ViewRules.Apply(candidates, library.Settings);
-        summary.Text = $"{active.Count} 篇论文 · 当前显示 {pagePapers.Count} 篇"
-            + (library.Settings.PageMode == ViewRules.PageModes[2] ? " · 阶段分组" : library.Settings.HideSelectedStages ? $" · 按阶段隐藏 {candidates.Count(p => ViewRules.SelectedStage(p, library.Settings))} 篇" : "")
-            + (library.Settings.SortMode == ViewRules.SortModes[0] ? "" : " · 排序：" + library.Settings.SortMode);
-        summary.ToolTip = "隐藏和翻页仅改变显示，不删除论文。点击论文选项调整。";
+        summary.Text = Lang.P(active.Count, "{0} 篇论文 · 当前显示 {1} 篇", "{0} paper · showing {1}", "{0} papers · showing {1}", active.Count, pagePapers.Count)
+            + (library.Settings.PageMode == ViewRules.PageModes[2] ? Lang.T(" · 阶段分组") : library.Settings.HideSelectedStages ? Lang.F(" · 按阶段隐藏 {0} 篇", candidates.Count(p => ViewRules.SelectedStage(p, library.Settings))) : "")
+            + (library.Settings.SortMode == ViewRules.SortModes[0] ? "" : Lang.T(" · 排序：") + Lang.Value(library.Settings.SortMode));
+        summary.ToolTip = Lang.T("隐藏和翻页仅改变显示，不删除论文。点击论文选项调整。");
         pager.Visibility = ViewRules.PageCount(library.Settings) > 1 ? Visibility.Visible : Visibility.Collapsed;
         pageLabel.Text = $"{ViewRules.PageTitle(library.Settings)} · {library.Settings.PageIndex + 1}/{ViewRules.PageCount(library.Settings)}";
         pageLabel.Foreground = Brush("#24352F");
-        pageLabel.ToolTip = library.Settings.PageMode == ViewRules.PageModes[2] ? "所选阶段：" + string.Join("、", library.Settings.HiddenStages.Select(i => Paper.StageLabels[i])) : null;
+        pageLabel.ToolTip = library.Settings.PageMode == ViewRules.PageModes[2] ? Lang.T("所选阶段：") + string.Join(Lang.ListSeparator, library.Settings.HiddenStages.Select(Lang.Stage)) : null;
         cards.Children.Clear();
         foreach (var p in pagePapers) cards.Children.Add(BuildCard(p));
         if (cards.Children.Count == 0)
         {
             var empty = new StackPanel { Margin = new Thickness(20, 45, 20, 40) };
-            var title = Text(library.Papers.Count == 0 ? "从第一篇论文开始" : "这里暂时没有论文", 22, "#24352F", -1, "title"); title.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(title);
-            var hint = Text(library.Papers.Count == 0 ? "点击右上角 ＋，输入论文标题。\n七个阶段和进度条会自动准备好。" : "论文可能在其他页，或被当前筛选隐藏。\n点击论文选项调整显示范围。", 13, "#78867F", -1, "caption");
+            var title = Text(Lang.T(library.Papers.Count == 0 ? "从第一篇论文开始" : "这里暂时没有论文"), 22, "#24352F", -1, "title"); title.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(title);
+            var hint = Text(Lang.T(library.Papers.Count == 0 ? "点击右上角 ＋，输入论文标题。\n七个阶段和进度条会自动准备好。" : "论文可能在其他页，或被当前筛选隐藏。\n点击论文选项调整显示范围。"), 13, "#78867F", -1, "caption");
             hint.TextAlignment = TextAlignment.Center; hint.Margin = new Thickness(0, 15, 0, 20); empty.Children.Add(hint);
-            if (library.Papers.Count == 0) { var demo = ActionButton("查看三篇示例", AddExamples); demo.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(demo); }
-            else { var adjust = ActionButton("调整论文选项", OpenOptions); adjust.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(adjust); }
+            if (library.Papers.Count == 0) { var demo = ActionButton(Lang.T("查看三篇示例"), AddExamples); demo.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(demo); }
+            else { var adjust = ActionButton(Lang.T("调整论文选项"), OpenOptions); adjust.HorizontalAlignment = HorizontalAlignment.Center; empty.Children.Add(adjust); }
             cards.Children.Add(empty);
         }
         Dispatcher.BeginInvoke(new Action(() => layoutChrome?.Invoke()), DispatcherPriority.Loaded);
@@ -391,7 +407,7 @@ public sealed class MainWindow : Window
         toastAction.Background = Brushes.Transparent; toastAction.Padding = new Thickness(8, 2, 8, 2); toastAction.Visibility = Visibility.Collapsed;
         toastAction.Click += (_, _) => { var action = toastActionHandler; HideToast(); action?.Invoke(); };
         toastClose.Content = "×"; toastClose.Background = Brushes.Transparent; toastClose.Padding = new Thickness(8, 2, 8, 2);
-        toastClose.ToolTip = "收起这条提示"; toastClose.Click += (_, _) => HideToast();
+        toastClose.ToolTip = Lang.T("收起这条提示"); toastClose.Click += (_, _) => HideToast();
         var body = new Grid();
         body.ColumnDefinitions.Add(new ColumnDefinition()); body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         body.Children.Add(toastText);
@@ -416,6 +432,110 @@ public sealed class MainWindow : Window
         toastTimer.Stop(); toastTimer.Start();
     }
     private void HideToast() { toastTimer.Stop(); toast.Visibility = Visibility.Collapsed; toastActionHandler = null; }
+
+    // ---------- 更新：只下载、不上传，且只有用户点了按钮才会下载 ----------
+    // 一条不自动消失的提示条：发现新版 → 下载并安装 → 重启并更新。
+    private void BuildUpdateBar()
+    {
+        updateBar.Visibility = Visibility.Collapsed;
+        updateBar.CornerRadius = new CornerRadius(10); updateBar.BorderThickness = new Thickness(1);
+        updateBar.Margin = new Thickness(15, 0, 15, 9); updateBar.Padding = new Thickness(14, 9, 10, 9);
+        updateText.TextWrapping = TextWrapping.Wrap; updateText.VerticalAlignment = VerticalAlignment.Center;
+        updateAction.Background = Brushes.Transparent; updateAction.Padding = new Thickness(8, 2, 8, 2);
+        updateAction.Click += (_, _) => { var action = updateActionHandler; action?.Invoke(); };
+        updateClose.Content = "×"; updateClose.Background = Brushes.Transparent; updateClose.Padding = new Thickness(8, 2, 8, 2);
+        updateClose.ToolTip = Lang.T("先不更新，下次启动再说"); updateClose.Click += (_, _) => { updateBar.Visibility = Visibility.Collapsed; };
+        var body = new Grid();
+        body.ColumnDefinitions.Add(new ColumnDefinition()); body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        body.Children.Add(updateText);
+        Grid.SetColumn(updateAction, 1); body.Children.Add(updateAction);
+        Grid.SetColumn(updateClose, 2); body.Children.Add(updateClose);
+        updateBar.Child = body;
+    }
+    private void OfferUpdate(UpdateManifest manifest)
+    {
+        if (demonstration || manifest == null) return;
+        updateOffered = manifest;
+        UpdateBarText(Lang.F("有新版本 {0}", manifest.Version), Lang.T("下载并安装"), StartUpdate);
+    }
+    private void UpdateBarText(string text, string actionLabel, Action action)
+    {
+        updateText.Text = text;
+        updateText.FontFamily = new FontFamily(Appearance.FamilyFor("body"));
+        updateText.FontSize = 12.5 * Appearance.RoleScale("body") * Appearance.TextScale;
+        updateAction.Content = actionLabel;
+        updateAction.FontFamily = new FontFamily(Appearance.FamilyFor("body"));
+        updateAction.FontSize = 12 * Appearance.RoleScale("body") * Appearance.TextScale;
+        updateAction.IsEnabled = true;
+        updateActionHandler = action;
+        updateBar.Visibility = Visibility.Visible;
+    }
+    private async void StartUpdate()
+    {
+        var manifest = updateOffered;
+        if (manifest == null || updating) return;
+        updating = true;
+        UpdateBarText(Lang.T("更新在后台下载，不影响你继续用。"), Lang.T("正在下载…"), () => { });
+        updateAction.IsEnabled = false;
+        try
+        {
+            var progress = new Progress<double>(value => updateText.Text = Lang.F("正在下载更新 {0}%", Math.Round(value)));
+            using var client = Updates.Client();
+            var file = await Updates.DownloadAsync(client, manifest, Updates.CacheFolder(), progress, System.Threading.CancellationToken.None);
+            var installed = Updates.Install(manifest, file, Shortcuts.ProgramFolder(library.Settings.LauncherPath));
+            UpdateBarText(Lang.F("新版本已就绪 {0}，重启后生效。", manifest.Version), Lang.T("重启并更新"), () =>
+            {
+                if (!SaveWindow()) return;
+                quitting = true; Restart(installed);
+            });
+        }
+        catch (Exception ex)
+        {
+            UpdateBarText(Lang.T("下载失败") + " · " + ex.Message, Lang.T("重试"), StartUpdate);
+        }
+        finally { updating = false; }
+    }
+    // 自动检查失败要安静（离线是常态），手动检查才说出来。
+    internal async Task CheckForUpdatesAsync(bool manual)
+    {
+        if (demonstration) return;
+        if (!manual && !Updates.ShouldCheck(library.Settings.UpdateMode, library.Settings.LastUpdateCheckUtc, DateTime.UtcNow)) return;
+        try
+        {
+            using var client = Updates.Client();
+            var manifest = await Updates.FetchAsync(client, System.Threading.CancellationToken.None);
+            Commit(l => l.Settings.LastUpdateCheckUtc = DateTime.UtcNow);
+            if (manifest != null) OfferUpdate(manifest);
+        }
+        catch (Exception ex)
+        {
+            // 失败也记下时间，免得断网时每次启动都去试一遍。
+            try { Commit(l => l.Settings.LastUpdateCheckUtc = DateTime.UtcNow); } catch (Exception) { }
+            if (manual) ShowNotice(Lang.F("检查更新失败：{0}", ex.Message));
+        }
+    }
+    // 关掉自己再开一个：新进程先等旧进程退出，避免抢单实例锁把挂件弄丢。
+    // executable 为空就重开当前这个程序文件；装完更新时传新版本自己的 exe。
+    private void Restart(string? executable = null)
+    {
+        try
+        {
+            var args = new List<string>();
+            var original = Environment.GetCommandLineArgs().Skip(1).ToList();
+            for (int i = 0; i < original.Count; i++) { if (original[i] == "--wait-for") { i++; continue; } args.Add(original[i]); }
+            args.Add("--wait-for"); args.Add(Environment.ProcessId.ToString());
+            string target = executable ?? Environment.ProcessPath ?? "";
+            if (target == "") throw new InvalidOperationException(Lang.T("找不到要重新打开的程序文件。"));
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target)
+            {
+                UseShellExecute = false,
+                WorkingDirectory = Path.GetDirectoryName(target)!,
+                Arguments = string.Join(" ", args.Select(a => a.Contains(' ', StringComparison.Ordinal) ? "\"" + a + "\"" : a))
+            });
+            quitting = true; Close();
+        }
+        catch (Exception ex) { ShowNotice(Lang.F("没能自动重启，请自己从托盘退出再打开：{0}", ex.Message)); }
+    }
 
     // 当前筛选、搜索、排序之后还剩哪些论文；提示条判断"这篇还在不在眼前"要用同一份名单。
     private List<Paper> Candidates()
@@ -464,7 +584,7 @@ public sealed class MainWindow : Window
         var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Margin = new Thickness(0, 0, 0, 1) };
         var dots = PriorityDots(p);
         titleArea.Children.Add(dots);
-        var name = Text(p.Title, small ? 14 : 15, "#24352F", -1, "title"); name.FontWeight = library.Settings.TitleBold ? FontWeights.SemiBold : FontWeights.Normal; name.TextTrimming = TextTrimming.CharacterEllipsis; name.VerticalAlignment = VerticalAlignment.Center; name.ToolTip = p.Title + "\n拖动调整优先顺序";
+        var name = Text(p.Title, small ? 14 : 15, "#24352F", -1, "title"); name.FontWeight = library.Settings.TitleBold ? FontWeights.SemiBold : FontWeights.Normal; name.TextTrimming = TextTrimming.CharacterEllipsis; name.VerticalAlignment = VerticalAlignment.Center; name.ToolTip = p.Title + Lang.T("\n拖动调整优先顺序");
         titleArea.Children.Add(name);
         // 百分比放在标题行右侧，不跟进度条挤在一起，也不再抢戏。
         var titleRow = new Grid();
@@ -472,32 +592,32 @@ public sealed class MainWindow : Window
         titleRow.Children.Add(titleArea);
         if (dimmed)
         {
-            var tag = Text("已隐藏 · " + Paper.StageLabels[Math.Clamp(p.CurrentStageIndex, 0, Paper.StageLabels.Length - 1)], 10.5, "#78867F", -1, "caption");
-            var chip = new Border { Child = tag, Background = Appearance.Paint(Appearance.Current.Card, .85), CornerRadius = new CornerRadius(Math.Min(Appearance.ChipRadius, 8 * Appearance.Scale)), Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), ToolTip = "按其当前阶段，这类论文在你的设置里是隐藏的；点右上角可以收回去" };
+            var tag = Text(Lang.T("已隐藏 · ") + Lang.Stage(p.CurrentStageIndex), 10.5, "#78867F", -1, "caption");
+            var chip = new Border { Child = tag, Background = Appearance.Paint(Appearance.Current.Card, .85), CornerRadius = new CornerRadius(Math.Min(Appearance.ChipRadius, 8 * Appearance.Scale)), Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), ToolTip = Lang.T("按其当前阶段，这类论文在你的设置里是隐藏的；点右上角可以收回去") };
             Grid.SetColumn(chip, 1); titleRow.Children.Add(chip);
         }
         var pct = Text($"{p.Progress}%", Appearance.PercentSize); pct.FontWeight = FontWeights.SemiBold; pct.VerticalAlignment = VerticalAlignment.Center; pct.Margin = new Thickness(10, 0, 0, 0);
         if (Appearance.RoleColor("body") == "") pct.Foreground = Appearance.PercentAccent ? Appearance.Paint(Appearance.Current.Accent) : Brush("#78867F");
-        AutomationProperties.SetName(pct, $"{p.Title} 进度 {p.Progress}%");
+        AutomationProperties.SetName(pct, Lang.F("{0} 进度 {1}%", p.Title, p.Progress));
         Grid.SetColumn(pct, 2); titleRow.Children.Add(pct); stack.Children.Add(titleRow);
         var metadata = string.Join(" / ", new[] { p.Subject, p.Language, p.Journal }.Where(v => !string.IsNullOrWhiteSpace(v)));
-        var progressRow = new Grid { Margin = new Thickness(0, 4 * Appearance.Scale, 0, 5 * Appearance.Scale), ToolTip = "下一步：" + (p.NextAction != "" ? p.NextAction : p.NextStage) };
+        var progressRow = new Grid { Margin = new Thickness(0, 4 * Appearance.Scale, 0, 5 * Appearance.Scale), ToolTip = Lang.T("下一步：") + (p.NextAction != "" ? p.NextAction : p.NextStage) };
         var track = new Grid { Height = Appearance.BarHeight * Appearance.Scale, VerticalAlignment = VerticalAlignment.Center };
         track.Children.Add(new Border { Background = Brush("#EBEFE9"), CornerRadius = new CornerRadius(5) });
         var inner = new Grid(); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, p.Progress), GridUnitType.Star) }); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, 100 - p.Progress), GridUnitType.Star) });
         var fill = new Border { Background = Brush(p.Stages[6].Done ? "#2F8B6D" : p.Status == "待返修" ? "#C69544" : "#4A9E83"), CornerRadius = new CornerRadius(5) }; inner.Children.Add(fill); track.Children.Add(inner);
-        AutomationProperties.SetName(track, $"{p.Title} 进度 {p.Progress}%"); progressRow.Children.Add(track);
+        AutomationProperties.SetName(track, Lang.F("{0} 进度 {1}%", p.Title, p.Progress)); progressRow.Children.Add(track);
         stack.Children.Add(progressRow);
         var checks = new StageFlowPanel();
         for (int i = 0; i < p.Stages.Count; i++)
         {
             int index = i; var stage = p.Stages[i];
-            var cb = new CheckBox { Content = Paper.StageLabels[i] + (stage.Skipped ? "（免）" : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = (small ? 11 : 12) * Appearance.RoleScale("body") * Appearance.TextScale };
+            var cb = new CheckBox { Content = Lang.Stage(i) + (stage.Skipped ? Lang.T("（免）") : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = (small ? 11 : 12) * Appearance.RoleScale("body") * Appearance.TextScale };
             cb.SetResourceReference(StyleProperty, Appearance.ChipStyle switch { "pill" => "StagePill", "tag" => "StageTag", "chip" => "StageCheck", _ => "StageText" });
-            AutomationProperties.SetName(cb, p.Title + " · " + Paper.StageLabels[i]);
+            AutomationProperties.SetName(cb, p.Title + " · " + Lang.Stage(i));
             if (Appearance.ChipStyle == "tag") cb.Background = Appearance.Paint(Appearance.Tags.Length == 0 ? Appearance.Current.Accent : Appearance.Tags[i % Appearance.Tags.Length]);
             cb.Padding = new Thickness(small ? 4 : 5, 3, small ? 4 : 5, 3); cb.Margin = new Thickness(0, 0, Appearance.ChipStyle == "text" ? 12 * Appearance.Scale : 4, 3);
-            cb.ToolTip = stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : i == 4 ? "勾选表示进入在审；继续勾选返修或收录后，移出在审分组。" : "点击切换；进度按适用阶段等权计算";
+            cb.ToolTip = Lang.T(stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : i == 4 ? "勾选表示进入在审；继续勾选返修或收录后，移出在审分组。" : "点击切换；进度按适用阶段等权计算");
             // 监听状态变化而不是 Click：键盘、鼠标和自动化切换都走同一条路径。
             void Toggle(bool done)
             {
@@ -514,20 +634,20 @@ public sealed class MainWindow : Window
             cb.Unchecked += (_, _) => Toggle(false);
             checks.Children.Add(cb);
         }
-        var due = Text(p.DueDate != null && !p.Stages[6].Done ? p.DeadlineText : $"已开始 {p.ElapsedDays} 天", 11, p.DueDate?.Date < DateTime.Today && !p.Stages[6].Done ? "#BE624C" : "#8A948C");
-        due.Margin = new Thickness(4, 0, 5, 3); due.ToolTip = $"开始日期：{p.StartDate:yyyy-MM-dd}\n已开始 {p.ElapsedDays} 天"; checks.Children.Add(due);
+        var due = Text(p.DueDate != null && !p.Stages[6].Done ? p.DeadlineText : Lang.P(p.ElapsedDays, "已开始 {0} 天", "Started {0} day ago", "Started {0} days ago", p.ElapsedDays), 11, p.DueDate?.Date < DateTime.Today && !p.Stages[6].Done ? "#BE624C" : "#8A948C");
+        due.Margin = new Thickness(4, 0, 5, 3); due.ToolTip = Lang.P(p.ElapsedDays, "开始日期：{0:yyyy-MM-dd}\n已开始 {1} 天", "Started {0:yyyy-MM-dd}\n{1} day in", "Started {0:yyyy-MM-dd}\n{1} days in", p.StartDate, p.ElapsedDays); checks.Children.Add(due);
         if (!string.IsNullOrWhiteSpace(p.NextAction))
         {
-            var next = Text("下一步 " + p.NextAction, 11, "#6C7C70"); next.MaxWidth = 150 * Appearance.TextScale; next.TextTrimming = TextTrimming.CharacterEllipsis; next.ToolTip = p.NextAction; next.Margin = new Thickness(4, 0, 0, 3); checks.Children.Add(next); checks.OptionalTail = next;
+            var next = Text(Lang.T("下一步 ") + p.NextAction, 11, "#6C7C70"); next.MaxWidth = 150 * Appearance.TextScale; next.TextTrimming = TextTrimming.CharacterEllipsis; next.ToolTip = p.NextAction; next.Margin = new Thickness(4, 0, 0, 3); checks.Children.Add(next); checks.OptionalTail = next;
         }
         // One settings entry per paper, anchored at the bottom right corner of the card.
         var bottom = new Grid();
         bottom.ColumnDefinitions.Add(new ColumnDefinition()); bottom.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         bottom.Children.Add(checks);
         var settings = new Button { Content = "⚙", FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = 13 * Appearance.RoleScale("body") * Appearance.TextScale, Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), Margin = new Thickness(7, 0, 0, 3), VerticalAlignment = VerticalAlignment.Bottom, Foreground = Brush("#62766A") };
-        settings.ToolTip = (metadata == "" ? "尚未填写学科、期刊等资料" : metadata + " · " + p.EffectiveStatus) + "\n编辑资料、修改记录、排序、复制、归档";
+        settings.ToolTip = (metadata == "" ? Lang.T("尚未填写学科、期刊等资料") : metadata + " · " + Lang.Value(p.EffectiveStatus)) + Lang.T("\n编辑资料、修改记录、排序、复制、归档");
         settings.Click += (_, _) => PaperMenu(p, settings);
-        AutomationProperties.SetName(settings, p.Title + " 的论文设置");
+        AutomationProperties.SetName(settings, Lang.F("{0} 的论文设置", p.Title));
         Grid.SetColumn(settings, 1); bottom.Children.Add(settings); stack.Children.Add(bottom);
         AttachPaperDrag(card, p.Id, dots, () => PriorityMenu(p, dots));
         return card;
@@ -543,8 +663,8 @@ public sealed class MainWindow : Window
         double size = 6.5 * Appearance.Scale;
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         for (int i = 0; i < 3; i++) row.Children.Add(new System.Windows.Shapes.Ellipse { Width = size, Height = size, Margin = new Thickness(i == 0 ? 0 : 3.4 * Appearance.Scale, 0, 0, 0), Fill = i < level ? color : Brush("#EBEFE9") });
-        var dots = new Border { Child = row, Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Padding = new Thickness(0, 3, 8 * Appearance.Scale, 3), VerticalAlignment = VerticalAlignment.Center, ToolTip = $"{p.Priority}优先级 · 三个点分别代表高、中、低\n点击修改，按住拖动调整顺序" };
-        AutomationProperties.SetName(dots, p.Title + " 的优先级：" + p.Priority);
+        var dots = new Border { Child = row, Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Padding = new Thickness(0, 3, 8 * Appearance.Scale, 3), VerticalAlignment = VerticalAlignment.Center, ToolTip = Lang.F("{0}优先级 · 三个点分别代表高、中、低\n点击修改，按住拖动调整顺序", Lang.Value(p.Priority)) };
+        AutomationProperties.SetName(dots, p.Title + Lang.T(" 的优先级：") + Lang.Value(p.Priority));
         return dots;
     }
 
@@ -615,7 +735,7 @@ public sealed class MainWindow : Window
             if (!draggingPaper || e.Data.GetData(PaperDragFormat) is not string source || source != draggedPaperId || source == id) return;
             var visible = cards.Children.OfType<Border>().Select(c => c.Tag as string).Where(x => x != null).Cast<string>().ToList();
             bool after = e.GetPosition(card).Y >= card.ActualHeight / 2;
-            if (Commit(l => { if (PaperOrder.MoveVisible(l.Papers, visible, source, id, after)) l.Papers.Single(p => p.Id == source).Record("调整论文优先顺序"); }, "已保存优先顺序")) sort.SelectedIndex = 0;
+            if (Commit(l => { if (PaperOrder.MoveVisible(l.Papers, visible, source, id, after)) l.Papers.Single(p => p.Id == source).Record("调整论文优先顺序"); }, Lang.T("已保存优先顺序"))) sort.SelectedIndex = 0;
         };
     }
 
@@ -623,19 +743,19 @@ public sealed class MainWindow : Window
     {
         var menu = new ContextMenu { PlacementTarget = anchor };
         void Item(string title, Action action) { var item = new MenuItem { Header = title }; item.Click += (_, _) => action(); menu.Items.Add(item); }
-        Item("编辑论文资料", () => EditPaper(p));
-        Item("查看修改记录", () => ShowHistory(p));
+        Item(Lang.T("编辑论文资料"), () => EditPaper(p));
+        Item(Lang.T("查看修改记录"), () => ShowHistory(p));
         menu.Items.Add(new Separator());
-        Item("上移一位", () => MovePaper(p.Id, -1)); Item("下移一位", () => MovePaper(p.Id, 1));
-        Item("复制为新论文（阶段清零）", () =>
+        Item(Lang.T("上移一位"), () => MovePaper(p.Id, -1)); Item(Lang.T("下移一位"), () => MovePaper(p.Id, 1));
+        Item(Lang.T("复制为新论文（阶段清零）"), () =>
         {
-            if (Commit(l => { var copy = Storage.Clone(p); copy.Id = Guid.NewGuid().ToString("N"); copy.Title = p.Title.Length > 490 ? p.Title[..490] + "（副本）" : p.Title + "（副本）"; copy.Stages = Paper.StageNames.Select(n => new Stage { Name = n }).ToList(); copy.History.Clear(); copy.Archived = false; copy.StartDate = DateTime.Today; copy.DueDate = null; copy.Status = "准备中"; copy.NextAction = ""; copy.Outcome = ""; copy.Notes = ""; copy.Record("复制论文资料 · 七阶段清零"); l.Papers.Insert(0, copy); }))
-                ShowNotice("已复制为新论文 · 它已经放在列表最上面");
+            if (Commit(l => { var copy = Storage.Clone(p); copy.Id = Guid.NewGuid().ToString("N"); var suffix = Lang.T("（副本）"); copy.Title = p.Title.Length > 490 - suffix.Length ? p.Title[..(490 - suffix.Length)] + suffix : p.Title + suffix; copy.Stages = Paper.StageNames.Select(n => new Stage { Name = n }).ToList(); copy.History.Clear(); copy.Archived = false; copy.StartDate = DateTime.Today; copy.DueDate = null; copy.Status = "准备中"; copy.NextAction = ""; copy.Outcome = ""; copy.Notes = ""; copy.Record("复制论文资料 · 七阶段清零"); l.Papers.Insert(0, copy); }))
+                ShowNotice(Lang.T("已复制为新论文 · 它已经放在列表最上面"));
         });
-        Item(p.Archived ? "恢复到论文列表" : "归档（保留资料）", () =>
+        Item(Lang.T(p.Archived ? "恢复到论文列表" : "归档（保留资料）"), () =>
         {
             if (!Commit(l => { var paper = l.Papers.Single(x => x.Id == p.Id); paper.Archived = !paper.Archived; paper.Record(paper.Archived ? "归档论文" : "恢复论文"); })) return;
-            ShowNotice(p.Archived ? "已恢复到论文列表" : "已归档 · 在论文选项的显示范围里选“已归档”可以再找到它");
+            ShowNotice(Lang.T(p.Archived ? "已恢复到论文列表" : "已归档 · 在论文选项的显示范围里选“已归档”可以再找到它"));
         });
         menu.IsOpen = true;
     }
@@ -644,7 +764,7 @@ public sealed class MainWindow : Window
         var menu = new ContextMenu { PlacementTarget = anchor };
         foreach (var value in Paper.Priorities)
         {
-            var item = new MenuItem { Header = value + "优先级", IsCheckable = true, IsChecked = p.Priority == value };
+            var item = new MenuItem { Header = Lang.F("{0}优先级", Lang.Value(value)), IsCheckable = true, IsChecked = p.Priority == value };
             item.Click += (_, _) => Commit(l => { var paper = l.Papers.Single(x => x.Id == p.Id); if (paper.Priority != value) { paper.Priority = value; paper.Record("优先级设为" + value); } });
             menu.Items.Add(item);
         }
@@ -662,14 +782,21 @@ public sealed class MainWindow : Window
     }
     private void ShowHistory(Paper p)
     {
-        var box = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(18), Text = string.Join("\n\n", p.History.Select(h => $"{h.At:yyyy-MM-dd HH:mm:ss}   {h.Description}")) };
-        new Window { Title = "修改记录 · " + p.Title, Owner = this, Width = 560 * Appearance.DialogScale, Height = 500 * Appearance.DialogScale, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = box }.ShowDialog();
+        var box = new TextBox { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(18), Text = string.Join("\n\n", p.History.Select(h => $"{h.At:yyyy-MM-dd HH:mm:ss}   {Lang.History(h.Description)}")) };
+        new Window { Title = Lang.T("修改记录 · ") + p.Title, Owner = this, Width = 560 * Appearance.DialogScale, Height = 500 * Appearance.DialogScale, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = box }.ShowDialog();
     }
     private void OpenSettings()
     {
         var original = Storage.CloneLibrary(library).Settings;
         var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, PreviewAppearance, EstimateVisiblePapers) { Owner = this };
-        if (dialog.ShowDialog() == true) Commit(l => l.Settings = dialog.Result);
+        if (dialog.ShowDialog() == true)
+        {
+            bool languageChanged = !string.Equals(Lang.Effective(original.Language), Lang.Effective(dialog.Result.Language), StringComparison.Ordinal);
+            if (!Commit(l => l.Settings = dialog.Result)) return;
+            // 语言换了就重启一次：挂件上的按钮、托盘菜单是开窗口时建好的，重启最干净。
+            if (languageChanged) { Restart(); return; }
+            if (Updates.Offered is UpdateManifest found) OfferUpdate(found);
+        }
         else Commit(l => l.Settings = original);
     }
     // 挂件自己不占任务栏，最容易的“弄丢”方式就是找不到入口。托盘菜单里一键把两个入口放好。
@@ -678,51 +805,51 @@ public sealed class MainWindow : Window
         try
         {
             Shortcuts.Apply(true, true, library.Settings.LauncherPath);
-            tray.ShowBalloonTip(6000, Product.Name, "桌面和开始菜单各放好一个入口。要固定在任务栏，右键那个快捷方式选“固定到任务栏”。", Forms.ToolTipIcon.Info);
+            tray.ShowBalloonTip(6000, Product.Name, Lang.T("桌面和开始菜单各放好一个入口。要固定在任务栏，右键那个快捷方式选“固定到任务栏”。"), Forms.ToolTipIcon.Info);
         }
-        catch (Exception ex) { MessageBox.Show(this, "快捷方式未能创建。\n" + ex.Message, Product.Name, MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { MessageBox.Show(this, Lang.T("快捷方式未能创建。\n") + ex.Message, Product.Name, MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void OpenOptions()
     {
-        var window = new Window { Title = "论文选项", Width = Math.Min(490 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40), Height = Math.Min(760 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30), Owner = this, ResizeMode = ResizeMode.CanResize, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+        var window = new Window { Title = Lang.T("论文选项"), Width = Math.Min(490 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40), Height = Math.Min(760 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30), Owner = this, ResizeMode = ResizeMode.CanResize, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner };
         var root = new DockPanel { Margin = new Thickness(22) }; window.Content = root;
         var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
         DockPanel.SetDock(controls, Dock.Bottom); root.Children.Add(controls);
         var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto });
-        body.Children.Add(Text("搜索与视图", 20));
-        body.Children.Add(Text("搜索论文、期刊、学科或合作者", 11, "#78867F"));
+        body.Children.Add(Text(Lang.T("搜索与视图"), 20));
+        body.Children.Add(Text(Lang.T("搜索论文、期刊、学科或合作者"), 11, "#78867F"));
         search.Margin = new Thickness(0, 9, 0, 12); body.Children.Add(search);
-        body.Children.Add(Text("显示范围", 12)); filter.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(filter);
-        body.Children.Add(Text("排序方式", 12)); sort.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(sort);
-        var small = new CheckBox { Content = "紧凑视图（保留七阶段）", IsChecked = library.Settings.Compact }; small.Click += (_, _) => Commit(l => l.Settings.Compact = small.IsChecked == true); body.Children.Add(small);
+        body.Children.Add(Text(Lang.T("显示范围"), 12)); filter.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(filter);
+        body.Children.Add(Text(Lang.T("排序方式"), 12)); sort.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(sort);
+        var small = new CheckBox { Content = Lang.T("紧凑视图（保留七阶段）"), IsChecked = library.Settings.Compact }; small.Click += (_, _) => Commit(l => l.Settings.Compact = small.IsChecked == true); body.Children.Add(small);
         void Label(string text) { var label = Text(text, 13); label.Margin = new Thickness(0, 16, 0, 7); body.Children.Add(label); }
         void ChangeView(Action<Preferences> change) => Commit(l => { change(l.Settings); l.Settings.PageIndex = 0; });
-        Label("只显示这些优先级");
+        Label(Lang.T("只显示这些优先级"));
         var priorities = new WrapPanel(); body.Children.Add(priorities);
         foreach (var value in Paper.Priorities)
         {
-            var check = new CheckBox { Content = value + "优先级", IsChecked = library.Settings.VisiblePriorities.Contains(value), Margin = new Thickness(0, 0, 18, 5) };
+            var check = new CheckBox { Content = Lang.F("{0}优先级", Lang.Value(value)), IsChecked = library.Settings.VisiblePriorities.Contains(value), Margin = new Thickness(0, 0, 18, 5) };
             check.Click += (_, _) => ChangeView(p => { p.VisiblePriorities.Remove(value); if (check.IsChecked == true) p.VisiblePriorities.Add(value); }); priorities.Children.Add(check);
         }
-        Label("暂时隐藏的阶段");
-        var hide = new CheckBox { Content = "隐藏所选阶段的论文", IsChecked = library.Settings.HideSelectedStages, Margin = new Thickness(0, 0, 0, 8) };
+        Label(Lang.T("暂时隐藏的阶段"));
+        var hide = new CheckBox { Content = Lang.T("隐藏所选阶段的论文"), IsChecked = library.Settings.HideSelectedStages, Margin = new Thickness(0, 0, 0, 8) };
         hide.Click += (_, _) => ChangeView(p => p.HideSelectedStages = hide.IsChecked == true); body.Children.Add(hide);
         var stages = new WrapPanel(); body.Children.Add(stages);
         for (int i = 0; i < Paper.StageLabels.Length; i++)
         {
             int index = i;
-            var check = new CheckBox { Content = Paper.StageLabels[i], IsChecked = library.Settings.HiddenStages.Contains(i), Margin = new Thickness(0, 0, 14, 7) };
+            var check = new CheckBox { Content = Lang.Stage(i), IsChecked = library.Settings.HiddenStages.Contains(i), Margin = new Thickness(0, 0, 14, 7) };
             check.Click += (_, _) => ChangeView(p => { p.HiddenStages.Remove(index); if (check.IsChecked == true) p.HiddenStages.Add(index); }); stages.Children.Add(check);
         }
-        var explanation = Text("按最后一个已勾选阶段归类；未勾选时归入开题。\n例如：在审后进入返修，会重新显示。", 11, "#78867F"); explanation.TextWrapping = TextWrapping.Wrap; body.Children.Add(explanation);
-        var peek = Text("挂件右上角有个“显示隐藏 N 篇”的临时开关：点一下就能看一眼这些论文，展开时它们显示成灰底并带“已隐藏”标记，这里的设置不受影响。", 11, "#78867F");
+        var explanation = Text(Lang.T("按最后一个已勾选阶段归类；未勾选时归入开题。\n例如：在审后进入返修，会重新显示。"), 11, "#78867F"); explanation.TextWrapping = TextWrapping.Wrap; body.Children.Add(explanation);
+        var peek = Text(Lang.T("挂件右上角有个“显示隐藏 N 篇”的临时开关：点一下就能看一眼这些论文，展开时它们显示成灰底并带“已隐藏”标记，这里的设置不受影响。"), 11, "#78867F");
         peek.TextWrapping = TextWrapping.Wrap; peek.Margin = new Thickness(0, 6, 0, 0); body.Children.Add(peek);
-        Label("翻页方式");
-        var paging = new ComboBox { ItemsSource = ViewRules.PageModes, SelectedItem = library.Settings.PageMode }; body.Children.Add(paging);
-        paging.SelectionChanged += (_, _) => ChangeView(p => p.PageMode = paging.SelectedItem as string ?? ViewRules.PageModes[0]);
-        var pageHint = Text("优先级：高 → 中 → 低。\n阶段分组：第一页排除所选阶段，第二页只看所选阶段。\n阶段分页会将隐藏项放到第二页；优先级筛选仍生效。", 11, "#78867F"); pageHint.TextWrapping = TextWrapping.Wrap; pageHint.Margin = new Thickness(0, 8, 0, 0); body.Children.Add(pageHint);
-        controls.Children.Add(ActionButton("显示全部", () => { search.Clear(); filter.SelectedIndex = 0; sort.SelectedIndex = 0; ChangeView(p => { p.HideSelectedStages = false; p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
-        controls.Children.Add(ActionButton("完成", window.Close, true));
+        Label(Lang.T("翻页方式"));
+        var paging = new ComboBox { ItemsSource = Lang.Choices(ViewRules.PageModes), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.PageModes, library.Settings.PageMode)) }; body.Children.Add(paging);
+        paging.SelectionChanged += (_, _) => ChangeView(p => p.PageMode = ViewRules.PageModes[Math.Max(0, paging.SelectedIndex)]);
+        var pageHint = Text(Lang.T("优先级：高 → 中 → 低。\n阶段分组：第一页排除所选阶段，第二页只看所选阶段。\n阶段分页会将隐藏项放到第二页；优先级筛选仍生效。"), 11, "#78867F"); pageHint.TextWrapping = TextWrapping.Wrap; pageHint.Margin = new Thickness(0, 8, 0, 0); body.Children.Add(pageHint);
+        controls.Children.Add(ActionButton(Lang.T("显示全部"), () => { search.Clear(); filter.SelectedIndex = 0; sort.SelectedIndex = 0; ChangeView(p => { p.HideSelectedStages = false; p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
+        controls.Children.Add(ActionButton(Lang.T("完成"), window.Close, true));
         window.Closed += (_, _) => { body.Children.Remove(search); body.Children.Remove(filter); body.Children.Remove(sort); };
         window.Loaded += (_, _) => search.Focus(); window.ShowDialog();
     }
@@ -742,34 +869,34 @@ public sealed class MainWindow : Window
     }
     private void Export()
     {
-        var dialog = new Microsoft.Win32.SaveFileDialog { Title = "导出完整备份", Filter = "论文进度备份 (*.json)|*.json", FileName = $"论文进度-{DateTime.Now:yyyyMMdd-HHmm}.json" };
+        var dialog = new Microsoft.Win32.SaveFileDialog { Title = Lang.T("导出完整备份"), Filter = Lang.T("论文进度备份 (*.json)|*.json"), FileName = Lang.F("论文进度-{0:yyyyMMdd-HHmm}.json", DateTime.Now) };
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            if (Path.GetFullPath(dialog.FileName).Equals(Path.GetFullPath(store.FilePath), StringComparison.OrdinalIgnoreCase) || Path.GetFullPath(dialog.FileName).Equals(Path.GetFullPath(store.BackupPath), StringComparison.OrdinalIgnoreCase)) throw new IOException("请另选位置，不要覆盖正在使用的资料文件。");
-            File.WriteAllText(dialog.FileName, System.Text.Json.JsonSerializer.Serialize(library, Storage.JsonOptions), System.Text.Encoding.UTF8); footer.Text = "完整备份已导出";
+            if (Path.GetFullPath(dialog.FileName).Equals(Path.GetFullPath(store.FilePath), StringComparison.OrdinalIgnoreCase) || Path.GetFullPath(dialog.FileName).Equals(Path.GetFullPath(store.BackupPath), StringComparison.OrdinalIgnoreCase)) throw new IOException(Lang.T("请另选位置，不要覆盖正在使用的资料文件。"));
+            File.WriteAllText(dialog.FileName, System.Text.Json.JsonSerializer.Serialize(library, Storage.JsonOptions), System.Text.Encoding.UTF8); footer.Text = Lang.T("完整备份已导出");
         }
-        catch (Exception ex) { MessageBox.Show(this, ex.Message, "导出失败"); }
+        catch (Exception ex) { MessageBox.Show(this, ex.Message, Lang.T("导出失败")); }
     }
     private void Import()
     {
-        var dialog = new Microsoft.Win32.OpenFileDialog { Title = "导入备份（只添加新编号，不覆盖已有论文）", Filter = "论文进度备份 (*.json)|*.json" };
+        var dialog = new Microsoft.Win32.OpenFileDialog { Title = Lang.T("导入备份（只添加新编号，不覆盖已有论文）"), Filter = Lang.T("论文进度备份 (*.json)|*.json") };
         if (dialog.ShowDialog(this) != true) return;
         try
         {
-            if (new FileInfo(dialog.FileName).Length > 30_000_000) throw new InvalidDataException("文件超过 30 MB。");
+            if (new FileInfo(dialog.FileName).Length > 30_000_000) throw new InvalidDataException(Lang.T("文件超过 30 MB。"));
             var incoming = Storage.Parse(File.ReadAllText(dialog.FileName, System.Text.Encoding.UTF8));
             var merged = Storage.Merge(library, incoming); int added = merged.Papers.Count - library.Papers.Count;
-            if (Commit(l => l.Papers = merged.Papers, $"导入了 {added} 篇新论文"))
-                MessageBox.Show(this, $"新增 {added} 篇，已有编号的记录保持原样。\n导入前资料已自动备份。", "导入完成");
+            if (Commit(l => l.Papers = merged.Papers, Lang.F("导入了 {0} 篇新论文", added)))
+                MessageBox.Show(this, Lang.F("新增 {0} 篇，已有编号的记录保持原样。\n导入前资料已自动备份。", added), Lang.T("导入完成"));
         }
-        catch (Exception ex) { MessageBox.Show(this, "文件没有导入，原资料保持原样。\n" + ex.Message, "导入失败"); }
+        catch (Exception ex) { MessageBox.Show(this, Lang.T("文件没有导入，原资料保持原样。\n") + ex.Message, Lang.T("导入失败")); }
     }
     private void AddExamples() => Commit(l =>
     {
-        var one = new Paper { Title = "示例 · 论文 A", Subject = "管理学", Language = "中文", Status = "写作中", NextAction = "完成投稿前检查", StartDate = DateTime.Today.AddDays(-24) };
-        var two = new Paper { Title = "示例 · 论文 B", Subject = "经济学", Language = "英文", Status = "待返修", NextAction = "整理审稿意见与回复", DueDate = DateTime.Today.AddDays(7), StartDate = DateTime.Today.AddDays(-68) };
-        var three = new Paper { Title = "示例 · 论文 C", Subject = "公共管理", Language = "中文", Status = "准备中", NextAction = "整理语料与数据", StartDate = DateTime.Today.AddDays(-5) };
+        var one = new Paper { Title = Lang.T("示例 · 论文 A"), Subject = Lang.T("管理学"), Language = Lang.T("中文"), Status = "写作中", NextAction = Lang.T("完成投稿前检查"), StartDate = DateTime.Today.AddDays(-24) };
+        var two = new Paper { Title = Lang.T("示例 · 论文 B"), Subject = Lang.T("经济学"), Language = Lang.T("英文"), Status = "待返修", NextAction = Lang.T("整理审稿意见与回复"), DueDate = DateTime.Today.AddDays(7), StartDate = DateTime.Today.AddDays(-68) };
+        var three = new Paper { Title = Lang.T("示例 · 论文 C"), Subject = Lang.T("公共管理"), Language = Lang.T("中文"), Status = "准备中", NextAction = Lang.T("整理语料与数据"), StartDate = DateTime.Today.AddDays(-5) };
         foreach (var (p, count) in new[] { (one, 4), (two, 5), (three, 1) }) { for (int i = 0; i < count; i++) p.Stages[i].Done = true; p.Record("添加示例论文 · 可编辑或归档"); l.Papers.Add(p); }
-    }, "已加入三篇示例，可编辑或归档");
+    }, Lang.T("已加入三篇示例，可编辑或归档"));
 }

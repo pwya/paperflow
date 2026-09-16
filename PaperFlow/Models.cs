@@ -48,15 +48,15 @@ public sealed class Paper
     [JsonIgnore] public int Progress => Total == 0 ? 0 : (int)Math.Round(100.0 * Completed / Total, MidpointRounding.AwayFromZero);
     [JsonIgnore] public bool IsComplete => Total > 0 && Completed == Total;
     [JsonIgnore] public int ElapsedDays => Math.Max(0, (DateTime.Today - StartDate.Date).Days);
-    [JsonIgnore] public string NextStage => Stages.FindIndex(s => !s.Done && !s.Skipped) is int i && i >= 0 ? StageLabels[i] : "阶段已全部完成";
+    [JsonIgnore] public string NextStage => Stages.FindIndex(s => !s.Done && !s.Skipped) is int i && i >= 0 ? Lang.Stage(i) : Lang.T("阶段已全部完成");
     [JsonIgnore] public int CurrentStageIndex => Math.Max(0, Stages.FindLastIndex(s => s.Done && !s.Skipped));
     [JsonIgnore] public string EffectiveStatus => Stages.Last().Done ? "已录用" : Status;
     [JsonIgnore] public string DeadlineText => DueDate is null ? "" : (DueDate.Value.Date - DateTime.Today).Days switch
     {
-        < 0 => $"已逾期 {(DateTime.Today - DueDate.Value.Date).Days} 天",
-        0 => "今天截止",
-        1 => "明天截止",
-        var days => $"还剩 {days} 天"
+        < 0 => Lang.P((DateTime.Today - DueDate.Value.Date).Days, "已逾期 {0} 天", "Overdue by {0} day", "Overdue by {0} days", (DateTime.Today - DueDate.Value.Date).Days),
+        0 => Lang.T("今天截止"),
+        1 => Lang.T("明天截止"),
+        var days => Lang.P(days, "还剩 {0} 天", "{0} day left", "{0} days left", days)
     };
 
     public void Record(string message)
@@ -116,6 +116,11 @@ public sealed class Preferences
     public double ImageScrim { get; set; } = 0.35;
     public string SyncFolder { get; set; } = "";
     public string LauncherPath { get; set; } = "";
+    // 界面语言：auto 看 Windows 显示语言，zh / en 是手动指定。只影响显示。
+    public string Language { get; set; } = Lang.Auto;
+    // 更新检查：always / daily / never，默认每天一次。只检查、不联网上传任何东西。
+    public string UpdateMode { get; set; } = "daily";
+    public DateTime? LastUpdateCheckUtc { get; set; }
     public bool Topmost { get; set; } = true;
     public bool Compact { get; set; }
     public int BarHeight { get; set; } = 20;

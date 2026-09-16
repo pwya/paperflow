@@ -49,6 +49,19 @@ try {
     $appArchive = Join-Path $destination "PaperFlow-$version-win-x64.zip"
     Compress-Archive -Path (Join-Path $package '*') -DestinationPath $appArchive -Force
     Copy-Item -LiteralPath (Join-Path $package 'build-info.json') -Destination $destination
+    # 程序内自动更新的两样东西：单独的 exe，和一份固定名字的 update.json。
+    # 清单里的地址必须是真的 Release 附件地址；程序只会在 `/releases/latest/download/update.json`
+    # 读这份清单，所以每个正式版本都要把它一起传上去。
+    $assetName = "PaperFlow-$version-win-x64.exe"
+    Copy-Item -LiteralPath $exe -Destination (Join-Path $destination $assetName) -Force
+    $update = @{
+        version = $version
+        url = "https://github.com/pwya/paperflow/releases/download/v$version/$assetName"
+        sha256 = $hash
+        length = (Get-Item -LiteralPath $exe).Length
+    }
+    [IO.File]::WriteAllText((Join-Path $destination 'update.json'), ($update | ConvertTo-Json), $encoding)
+    if ((Get-Content -LiteralPath (Join-Path $destination 'update.json') -Raw -Encoding UTF8 | ConvertFrom-Json).sha256 -ne $hash) { throw 'The update manifest does not match the built executable.' }
     if ($PrivateTarget) {
         $target = [IO.Path]::GetFullPath($PrivateTarget)
         if ($target.StartsWith($root + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or $target -eq $root) { throw 'The personal installation must be outside the source repository.' }

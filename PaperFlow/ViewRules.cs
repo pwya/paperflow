@@ -47,24 +47,24 @@ public static class ViewRules
     public static string PageTitle(Preferences p, int? page = null)
     {
         int index = Math.Clamp(page ?? p.PageIndex, 0, PageCount(p) - 1);
-        if (p.PageMode == PageModes[1]) return Paper.Priorities[index] + "优先级";
-        if (p.PageMode == PageModes[2]) return index == 0 ? "当前推进" : "所选阶段";
-        return "论文列表";
+        if (p.PageMode == PageModes[1]) return Lang.F("{0}优先级", Lang.Value(Paper.Priorities[index]));
+        if (p.PageMode == PageModes[2]) return index == 0 ? Lang.T("当前推进") : Lang.T("所选阶段");
+        return Lang.T("论文列表");
     }
     public static StageNotice? AfterStageToggle(Paper paper, Preferences p, IEnumerable<Paper> candidates)
     {
         var source = candidates.ToList();
         int current = Math.Clamp(p.PageIndex, 0, PageCount(p) - 1);
         if (Apply(source, p, current).Any(x => x.Id == paper.Id)) return null;
-        string label = Paper.StageLabels[Math.Clamp(paper.CurrentStageIndex, 0, Paper.StageLabels.Length - 1)];
+        string label = Lang.Stage(paper.CurrentStageIndex);
         for (int i = 0; i < PageCount(p); i++)
         {
             if (i == current) continue;
             if (Apply(source, p, i).Any(x => x.Id == paper.Id))
-                return new StageNotice("paged", i, $"已进入{label} · 它被放到了第 {i + 1} 页", $"翻到第 {i + 1} 页");
+                return new StageNotice("paged", i, Lang.F("已进入{0} · 它被放到了第 {1} 页", label, i + 1), Lang.F("翻到第 {0} 页", i + 1));
         }
         if (p.HideSelectedStages && SelectedStage(paper, p))
-            return new StageNotice("hidden", -1, $"已进入{label} · 按当前设置，这类论文被隐藏了", "立即显示");
+            return new StageNotice("hidden", -1, Lang.F("已进入{0} · 按当前设置，这类论文被隐藏了", label), Lang.T("立即显示"));
         return null;
     }
 }

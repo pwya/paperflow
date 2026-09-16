@@ -24,9 +24,15 @@ $privateInstall = Join-Path $syncRoot 'Apps/PaperFlow'   # $syncRoot 指向你�
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 -PrivateTarget $privateInstall
 ```
 
-脚本会测试、构建、记录提交编号与程序哈希，再生成 `artifacts/release-<版本>/` 下的源码 ZIP 和 Windows ZIP。两者都不读取个人 `data`。部署只加入新版本和更新启动入口/清单。相同版本若已有不同内容则拒绝覆盖，必须升版本。
+脚本会测试、构建、记录提交编号与程序哈希，再生成 `artifacts/release-<版本>/` 下的源码 ZIP、Windows ZIP、单独的程序 exe 与 `update.json`。它们都不读取个人 `data`。部署只加入新版本和更新启动入口/清单。相同版本若已有不同内容则拒绝覆盖，必须升版本。
 
-若只需公开包，省略 `-PrivateTarget`。公开发行应上传生成的 ZIP，不能从正在使用的同步文件夹重新打包。
+若只需公开包，省略 `-PrivateTarget`。公开发行应上传生成的文件，不能从正在使用的同步文件夹重新打包。每个正式 Release 必须同时挂上 `PaperFlow-<版本>-win-x64.exe` 和 `update.json`：程序只在 `https://github.com/pwya/paperflow/releases/latest/download/update.json` 读更新清单，清单再指向同一次发布的 exe。少传 `update.json` 时程序内的更新提示会安静地什么都不做（离线机器本来也不该联网），只是这一版不会被自动发现。
+
+## 程序内自动更新
+
+设置里“更新提示”三档（每次都提示 / 每天一次 / 不提示，默认每天一次）。检查是一次普通 GET，只读清单；只有用户点了“下载并安装”才会下载程序 exe，落本机缓存并校验长度与 SHA-256，校验不过就删掉并报错。安装方式与发布脚本一致：写 `versions/<版本>/PaperFlow.exe` 和新的 `channel.json`，旧清单留一份 `channel.json.previous`。装好后提示“重启并生效”，重启时新进程先等旧进程退出（`--wait-for`），避免单实例锁把挂件弄丢。
+
+开发与自动化验证用 `--update-url <清单地址>` 把清单指到本地服务器，整条下载安装链可以在不联网的情况下端到端跑一遍。
 
 所有自用电脑收到新版后，从托盘菜单完全退出，再打开原启动器。文件尚未到齐时继续使用已缓存的旧版；初次使用则等待完整同步。保持旧版本目录可供回退。
 

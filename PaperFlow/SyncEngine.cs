@@ -56,8 +56,8 @@ public static class SyncProtocol
     }
     public static SyncEvent Parse(string text)
     {
-        if (text.Length > 30_000_000) throw new InvalidDataException("同步记录过大。");
-        var ev = JsonSerializer.Deserialize<SyncEvent>(text) ?? throw new InvalidDataException("同步记录为空。");
+        if (text.Length > 30_000_000) throw new InvalidDataException(Lang.T("同步记录过大。"));
+        var ev = JsonSerializer.Deserialize<SyncEvent>(text) ?? throw new InvalidDataException(Lang.T("同步记录为空。"));
         // 读别人的记录用宽松检查；本机自己写出去的记录在 Commit 里用严格检查。
         Inspect(ev); return ev;
     }
@@ -65,43 +65,43 @@ public static class SyncProtocol
     {
         Inspect(ev);
         // 本机自己生成的记录必须完全看得懂；看不懂说明是程序 bug，要响。
-        if (ev.Unsupported) throw new InvalidDataException("同步记录版本不受支持：" + ev.Version);
-        if (ev.Unknown > 0) throw new InvalidDataException("本机生成的同步记录含未知字段。");
+        if (ev.Unsupported) throw new InvalidDataException(Lang.T("同步记录版本不受支持：") + ev.Version);
+        if (ev.Unknown > 0) throw new InvalidDataException(Lang.T("本机生成的同步记录含未知字段。"));
     }
     // 兼容性约定：结构坏了照旧抛错；只是"本机不认识"的内容跳过并计数，
     // 让同一条记录里其他能读懂的改动照样生效。文件始终保留，升级后自动补上。
     public static void Inspect(SyncEvent ev)
     {
         if (!Guid.TryParseExact(ev.Id, "N", out _) || !Guid.TryParseExact(ev.Device, "N", out _) || ev.Counter < 1 || ev.Counter > long.MaxValue - 1000 || ev.Edits == null || ev.Edits.Count == 0 || ev.Edits.Count > 300000)
-            throw new InvalidDataException("同步记录格式不受支持。");
+            throw new InvalidDataException(Lang.T("同步记录格式不受支持。"));
         ev.Unknown = 0; ev.Unsupported = ev.Version != 1;
         if (ev.Unsupported) return;
-        if (ev.Edits.Any(x => x == null)) throw new InvalidDataException("空修改记录。");
+        if (ev.Edits.Any(x => x == null)) throw new InvalidDataException(Lang.T("空修改记录。"));
         foreach (var edit in ev.Edits)
         {
             edit.Unknown = false;
-            if (string.IsNullOrWhiteSpace(edit.Field)) throw new InvalidDataException("同步字段缺失。");
-            if (string.IsNullOrWhiteSpace(edit.PaperId) || edit.PaperId.Length > 200) throw new InvalidDataException("论文编号无效。");
+            if (string.IsNullOrWhiteSpace(edit.Field)) throw new InvalidDataException(Lang.T("同步字段缺失。"));
+            if (string.IsNullOrWhiteSpace(edit.PaperId) || edit.PaperId.Length > 200) throw new InvalidDataException(Lang.T("论文编号无效。"));
             if (Scalars.TryGetValue(edit.Field, out var property))
             {
                 var value = edit.Value.Deserialize(property.PropertyType);
-                if (property.PropertyType == typeof(string) && value is not string) throw new InvalidDataException("文字字段不能为空值。");
-                if (edit.Field == "Title" && (value is not string title || string.IsNullOrWhiteSpace(title) || title.Length > 500)) throw new InvalidDataException("论文标题无效。");
-                if (edit.Field == "Priority" && (value is not string priority || !Paper.Priorities.Contains(priority))) throw new InvalidDataException("优先级无效。");
-                if ((edit.Field == "StartDate" || edit.Field == "DueDate") && value is DateTime date && (date.Year < 1900 || date.Year > 2200)) throw new InvalidDataException("日期无效。");
+                if (property.PropertyType == typeof(string) && value is not string) throw new InvalidDataException(Lang.T("文字字段不能为空值。"));
+                if (edit.Field == "Title" && (value is not string title || string.IsNullOrWhiteSpace(title) || title.Length > 500)) throw new InvalidDataException(Lang.T("论文标题无效。"));
+                if (edit.Field == "Priority" && (value is not string priority || !Paper.Priorities.Contains(priority))) throw new InvalidDataException(Lang.T("优先级无效。"));
+                if ((edit.Field == "StartDate" || edit.Field == "DueDate") && value is DateTime date && (date.Year < 1900 || date.Year > 2200)) throw new InvalidDataException(Lang.T("日期无效。"));
             }
             else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal))
             {
                 if (!int.TryParse(edit.Field[6..], out int i) || i < 0 || i > 6) { edit.Unknown = true; ev.Unknown++; continue; }
                 var stage = edit.Value.Deserialize<Stage>();
-                if (stage == null || stage.Done && stage.Skipped || stage.Skipped && i != 5) throw new InvalidDataException("阶段无效。");
+                if (stage == null || stage.Done && stage.Skipped || stage.Skipped && i != 5) throw new InvalidDataException(Lang.T("阶段无效。"));
                 if (stage.Name != Paper.StageNames[i]) { edit.Unknown = true; ev.Unknown++; }
             }
-            else if (edit.Field == "position") { if (!edit.Value.TryGetInt32(out int position) || position < 0) throw new InvalidDataException("排序无效。"); }
+            else if (edit.Field == "position") { if (!edit.Value.TryGetInt32(out int position) || position < 0) throw new InvalidDataException(Lang.T("排序无效。")); }
             else if (edit.Field == "history")
             {
                 var history = edit.Value.Deserialize<List<Change>>();
-                if (history == null || history.Any(h => h == null || h.Description == null)) throw new InvalidDataException("历史记录无效。");
+                if (history == null || history.Any(h => h == null || h.Description == null)) throw new InvalidDataException(Lang.T("历史记录无效。"));
             }
             else { edit.Unknown = true; ev.Unknown++; }
         }
@@ -149,9 +149,10 @@ public sealed class SyncEngine
     private readonly Dictionary<string, SyncEvent> events = new();
     private readonly string localJournal;
     private readonly string device;
-    private string status = "本机自动保存";
+    // 留空表示“还没说过话”，届时按当前语言取默认文案——语言可能比同步引擎晚一步准备好。
+    private string status = "";
     public string Folder { get; }
-    public string Status { get { lock (gate) return status; } }
+    public string Status { get { lock (gate) return status.Length == 0 ? Lang.T("本机自动保存") : status; } }
     public int Revision { get { lock (gate) return events.Count; } }
     // 有几条记录带着本机不认识的内容（多半来自更新版本）。升级后会自动补上。
     public int Held { get { lock (gate) return events.Values.Count(e => e.Unsupported || e.Unknown > 0); } }
@@ -165,7 +166,7 @@ public sealed class SyncEngine
         var identity = Path.Combine(localDirectory, "device-id.txt");
         if (!File.Exists(identity)) AtomicWrite(identity, Guid.NewGuid().ToString("N"));
         device = File.ReadAllText(identity).Trim();
-        if (!Guid.TryParseExact(device, "N", out _)) throw new InvalidDataException("本机同步标识损坏，请保留资料后重新配置。");
+        if (!Guid.TryParseExact(device, "N", out _)) throw new InvalidDataException(Lang.T("本机同步标识损坏，请保留资料后重新配置。"));
         foreach (var path in Directory.GetFiles(localJournal, "*.json")) { var ev = SyncProtocol.Parse(File.ReadAllText(path)); events.TryAdd(ev.Id, ev); }
         var initialized = Path.Combine(localDirectory, "journal-initialized.txt");
         if (!File.Exists(initialized))
@@ -184,7 +185,7 @@ public sealed class SyncEngine
             SyncProtocol.Validate(ev);
             // Local append is the commit point, before any network filesystem operation.
             AtomicWrite(Path.Combine(localJournal, ev.Id + ".json"), JsonSerializer.Serialize(ev, Storage.JsonOptions));
-            events.Add(ev.Id, ev); status = Folder == "" ? "本机已保存" : "本机已保存 · 等待写入同步文件夹";
+            events.Add(ev.Id, ev); status = Folder == "" ? Lang.T("本机已保存") : Lang.T("本机已保存 · 等待写入同步文件夹");
         }
     }
     public bool Poll()
@@ -202,7 +203,7 @@ public sealed class SyncEngine
                 {
                 var name = Path.GetFileNameWithoutExtension(path);
                 lock (gate) { if (events.ContainsKey(name)) continue; }
-                if (new FileInfo(path).Length > 30_000_000) throw new InvalidDataException("同步文件过大：" + Path.GetFileName(path));
+                if (new FileInfo(path).Length > 30_000_000) throw new InvalidDataException(Lang.T("同步文件过大：") + Path.GetFileName(path));
                 var text = File.ReadAllText(path); var ev = SyncProtocol.Parse(text);
                 lock (gate)
                 {
@@ -222,13 +223,13 @@ public sealed class SyncEngine
             }
             int held = Held;
             lock (gate) status = unreadable > 0
-                ? $"本机已保存 · {unreadable} 个同步文件暂无法读取，将重试"
+                ? Lang.F("本机已保存 · {0} 个同步文件暂无法读取，将重试", unreadable)
                 : held > 0
-                    ? $"同步文件夹已更新 · {held} 条记录含更新版本的字段，已保留待升级后生效"
-                    : "同步文件夹已更新 · " + DateTime.Now.ToString("HH:mm");
+                    ? Lang.F("同步文件夹已更新 · {0} 条记录含更新版本的字段，已保留待升级后生效", held)
+                    : Lang.T("同步文件夹已更新 · ") + DateTime.Now.ToString("HH:mm");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
-        { lock (gate) status = "本机已保存 · 同步待重试（" + ex.Message + "）"; }
+        { lock (gate) status = Lang.F("本机已保存 · 同步待重试（{0}）", ex.Message); }
         return changed;
     }
     public static void AtomicWrite(string path, string text)

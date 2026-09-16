@@ -21,7 +21,7 @@ public static class StartupEntry
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);
         if (!enabled) { key.DeleteValue(Name, false); key.DeleteValue(LegacyName, false); return; }
-        if (launcher == "" || !File.Exists(launcher)) throw new IOException("启动入口不可用，请从固定的启动器打开后再设置。");
+        if (launcher == "" || !File.Exists(launcher)) throw new IOException(Lang.T("启动入口不可用，请从固定的启动器打开后再设置。"));
         key.SetValue(Name, "\"" + launcher + "\"");
         key.DeleteValue(LegacyName, false);
     }

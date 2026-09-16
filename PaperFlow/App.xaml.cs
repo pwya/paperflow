@@ -12,6 +12,21 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // 还没读到设置之前先跟随系统语言，这样连“资料打不开”这类早期提示也是对的语言。
+        Lang.Apply(null);
+        // 换语言/装完更新后的自动重开：新进程先等旧进程退出，免得单实例锁把挂件弄丢。
+        int waitIndex = Array.IndexOf(e.Args, "--wait-for");
+        if (waitIndex >= 0 && e.Args.Length > waitIndex + 1 && int.TryParse(e.Args[waitIndex + 1], out int previous))
+        {
+            try { System.Diagnostics.Process.GetProcessById(previous).WaitForExit(20000); }
+            catch (Exception) { }
+        }
+        int updateUrlIndex = Array.IndexOf(e.Args, "--update-url");
+        if (updateUrlIndex >= 0 && e.Args.Length > updateUrlIndex + 1)
+        {
+            // 只给开发和自动化测试用：把更新清单指到本地地址，验证整条下载安装链。
+            if (Uri.TryCreate(e.Args[updateUrlIndex + 1], UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps)) Updates.ManifestUrl = url.ToString();
+        }
         int promoIndex = Array.IndexOf(e.Args, "--promotional-assets");
         int galleryIndex = Array.IndexOf(e.Args, "--theme-gallery");
         int chimeIndex = Array.IndexOf(e.Args, "--sound-check");
@@ -19,7 +34,7 @@ public partial class App : Application
         {
             try
             {
-                if (chimeIndex + 1 >= e.Args.Length) throw new ArgumentException("请指定音效输出目录。");
+                if (chimeIndex + 1 >= e.Args.Length) throw new ArgumentException(Lang.T("请指定音效输出目录。"));
                 Chime.ExportSamples(Path.GetFullPath(e.Args[chimeIndex + 1]));
                 Shutdown(0);
             }
@@ -33,7 +48,7 @@ public partial class App : Application
             {
                 try
                 {
-                    if (galleryIndex + 1 >= e.Args.Length) throw new ArgumentException("请指定主题一览图的输出目录。");
+                    if (galleryIndex + 1 >= e.Args.Length) throw new ArgumentException(Lang.T("请指定主题一览图的输出目录。"));
                     await ThemeGallery.Generate(Path.GetFullPath(e.Args[galleryIndex + 1]));
                     Shutdown(0);
                 }
@@ -48,7 +63,7 @@ public partial class App : Application
             {
                 try
                 {
-                    if (promoIndex + 1 >= e.Args.Length) throw new ArgumentException("请指定宣传图输出目录。");
+                    if (promoIndex + 1 >= e.Args.Length) throw new ArgumentException(Lang.T("请指定宣传图输出目录。"));
                     await PromotionExporter.Generate(Path.GetFullPath(e.Args[promoIndex + 1]));
                     Shutdown(0);
                 }
@@ -90,12 +105,16 @@ public partial class App : Application
             var window = new MainWindow(storage, library, sync);
             MainWindow = window;
             window.Show();
-            if (storage.RecoveryNotice != null) MessageBox.Show(window, storage.RecoveryNotice, "已恢复备份");
-            else if (migrationNotice != null) MessageBox.Show(window, migrationNotice + "\n\n原目录 %LOCALAPPDATA%\\PaperProgress 未被修改，确认新版本正常后可以自行删除。", "PaperFlow 已升级", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (storage.RecoveryNotice != null) MessageBox.Show(window, storage.RecoveryNotice, Lang.T("已恢复备份"));
+            else if (migrationNotice != null) MessageBox.Show(window, migrationNotice + Lang.T("\n\n原目录 %LOCALAPPDATA%\\PaperProgress 未被修改，确认新版本正常后可以自行删除。"), Lang.T("PaperFlow 已升级"), MessageBoxButton.OK, MessageBoxImage.Information);
+            // 启动后过几秒再看更新：不挡启动，也不在演示导出里联网。
+            var updateTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+            updateTimer.Tick += (_, _) => { updateTimer.Stop(); _ = window.CheckForUpdatesAsync(false); };
+            updateTimer.Start();
         }
         catch (Exception ex)
         {
-            MessageBox.Show("无法打开论文资料，程序没有覆盖原数据。\n\n" + ex.Message, "PaperFlow", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(Lang.T("无法打开论文资料，程序没有覆盖原数据。\n\n") + ex.Message, "PaperFlow", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }

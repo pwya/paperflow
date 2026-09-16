@@ -104,6 +104,8 @@ public static class Appearance
     }
     public static void Apply(Preferences p)
     {
+        // 语言先定下来：后面的文案、主题名都要按它取。
+        Lang.Apply(p.Language);
         Current = Themes.Find(p.Theme);
         if (p.FollowSystemTheme) Current = Themes.Follow(Current, SystemIsDark());
         if (IsColor(p.AccentColor) && p.AccentColor != "") Current = Current with { Accent = p.AccentColor };

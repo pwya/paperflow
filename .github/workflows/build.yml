@@ -21,3 +21,7 @@ jobs:
           name: PaperFlow-public
           path: artifacts/release-*/*
           if-no-files-found: error
+          # Build artifacts are free for public repositories, but they add up (about 80 MB
+          # per run). A week is enough to inspect a build; the release itself lives in the
+          # Releases page, which has its own (separate) storage.
+          retention-days: 7

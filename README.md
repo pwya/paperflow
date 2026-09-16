@@ -8,7 +8,9 @@ Windows 桌面小部件，盯住多篇论文的投稿进度。同时显示粗进
 
 ## 使用
 
-下载 Windows x64 发布包，完整解压到自己选择的文件夹，打开 `PaperFlow.Launcher.exe`。发行包自带 .NET 8；启动器使用 Windows 自带的 .NET Framework 4.x。面向 Windows 10/11 x64，尚未覆盖其他系统与 ARM 原生版本。源码构建需要 .NET 8 SDK。
+在[本仓库的 Releases 页面](https://github.com/pwya/paperflow/releases)下载最新的 `PaperFlow-<版本>-win-x64.zip`，完整解压到自己选择的文件夹，打开 `PaperFlow.Launcher.exe`。发行包自带 .NET 8；启动器使用 Windows 自带的 .NET Framework 4.x。面向 Windows 10/11 x64，尚未覆盖其他系统与 ARM 原生版本。源码构建需要 .NET 8 SDK。
+
+程序没有购买代码签名证书，所以**第一次运行时 Windows 可能弹出蓝色的 SmartScreen 提示**（“Windows 已保护你的电脑”）。点“更多信息”，再点“仍要运行”即可；之后不会再问。介意这一点的话可以自己从源码构建。
 
 - 右上角 `＋` 新增论文，自动生成七个阶段：开题、语料&数据整理、初稿、自修、在审、返修、收录。旧“投稿”的勾选直接显示为“在审”，进度保持原样。
 - 每个阶段等权，自动显示完成数、百分比和粗进度条；无需返修时可在资料里选择跳过返修，分母相应调整。

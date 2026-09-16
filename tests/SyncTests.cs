@@ -87,5 +87,34 @@ static class SyncTests
         a.Poll(); b.Poll(); a.Poll();
         check(b.Snapshot().Papers[0].Priority == "高" && a.Snapshot().Papers[0].Notes == "Concurrent synthetic note", "priority sync preserves unrelated concurrent edit");
         check(new SyncEngine(Local("a"), shared, seed).Snapshot().Papers[0].Priority == "高", "priority survives journal replay");
+
+        // 兼容桥梁：更新版本写的字段，旧版本跳过但保留，同一条记录里能读懂的改动照常生效。
+        var targetId = a.Snapshot().Papers[0].Id;
+        string Envelope(string version, long counter, string edits) =>
+            "{\"Version\":" + version + ",\"Id\":\"" + Guid.NewGuid().ToString("N") + "\",\"Device\":\"" + Guid.NewGuid().ToString("N") + "\",\"Counter\":" + counter + ",\"Edits\":[" + edits + "]}";
+        string Note(string value) => "{\"PaperId\":\"" + targetId + "\",\"Field\":\"Notes\",\"Value\":\"" + value + "\"}";
+        var mixed = SyncProtocol.Parse(Envelope("1", 900,
+            Note("written by a newer version") + "," +
+            "{\"PaperId\":\"" + targetId + "\",\"Field\":\"StageTemplate\",\"Value\":{\"Name\":\"custom\"}}," +
+            "{\"PaperId\":\"" + targetId + "\",\"Field\":\"stage:9\",\"Value\":{\"Name\":\"future stage\",\"Done\":true,\"Skipped\":false}}"));
+        check(mixed.Unknown == 2 && !mixed.Unsupported, "unknown fields are counted instead of rejected");
+        check(mixed.Edits.Count(x => x.Unknown) == 2 && mixed.Edits.Any(x => x.Field == "Notes" && !x.Unknown), "only the unreadable edits are marked");
+        var creationEvent = SyncProtocol.Parse(Envelope("1", 899, "{\"PaperId\":\"" + targetId + "\",\"Field\":\"Title\",\"Value\":\"Synthetic paper A\"}"));
+        var reducedMixed = SyncProtocol.Reduce(new[] { creationEvent, mixed });
+        check(reducedMixed.Papers.Single().Notes == "written by a newer version", "readable edits in the same record still apply");
+        bool loud = false; try { SyncProtocol.Validate(mixed); } catch (InvalidDataException) { loud = true; }
+        check(loud, "records this device writes must never contain unknown fields");
+        var futureEvent = SyncProtocol.Parse(Envelope("2", 901, Note("from version two")));
+        check(futureEvent.Unsupported && SyncProtocol.Reduce(new[] { creationEvent, futureEvent }).Papers.Single().Notes != "from version two", "a record from a newer version is held instead of applied");
+        var holder = new SyncEngine(Local("holder"), Local("holder-shared"), new Library());
+        Directory.CreateDirectory(Path.Combine(Local("holder-shared"), "events-v1"));
+        File.WriteAllText(Path.Combine(Local("holder-shared"), "events-v1", "newer.json"), Envelope("1", 902,
+            "{\"PaperId\":\"" + targetId + "\",\"Field\":\"Title\",\"Value\":\"Synthetic held paper\"}," +
+            Note("kept for later") + ",{\"PaperId\":\"" + targetId + "\",\"Field\":\"FutureField\",\"Value\":42}"));
+        holder.Poll();
+        check(holder.Snapshot().Papers.Single().Notes == "kept for later", "the readable half of a mixed record arrives");
+        check(holder.Held == 1 && holder.Status.Contains("更新版本"), "held records are reported, not hidden");
+        var journalText = string.Join("", Directory.GetFiles(Path.Combine(Local("holder"), "journal")).Select(File.ReadAllText));
+        check(journalText.Contains("FutureField"), "the original record survives on disk for the next upgrade");
     }
 }

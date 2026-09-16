@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace PaperFlow;
 
@@ -12,6 +13,8 @@ public sealed class SyncEdit
     public string PaperId { get; set; } = "";
     public string Field { get; set; } = "";
     public JsonElement Value { get; set; }
+    // 本机不认识这个字段（多半来自更新版本）。跳过它，但保留文件，升级后再补上。
+    [JsonIgnore] public bool Unknown { get; set; }
 }
 public sealed class SyncEvent
 {
@@ -20,6 +23,9 @@ public sealed class SyncEvent
     public string Device { get; set; } = "";
     public long Counter { get; set; }
     public List<SyncEdit> Edits { get; set; } = new();
+    [JsonIgnore] public int Unknown { get; set; }
+    // 整条记录来自更新版本：文件保留，等升级后再读，绝不丢弃。
+    [JsonIgnore] public bool Unsupported { get; set; }
 }
 
 // Each edit is an immutable, uniquely named file. The synced folder transports files; it never
@@ -52,15 +58,28 @@ public static class SyncProtocol
     {
         if (text.Length > 30_000_000) throw new InvalidDataException("同步记录过大。");
         var ev = JsonSerializer.Deserialize<SyncEvent>(text) ?? throw new InvalidDataException("同步记录为空。");
-        Validate(ev); return ev;
+        // 读别人的记录用宽松检查；本机自己写出去的记录在 Commit 里用严格检查。
+        Inspect(ev); return ev;
     }
     public static void Validate(SyncEvent ev)
     {
-        if (ev.Version != 1 || !Guid.TryParseExact(ev.Id, "N", out _) || !Guid.TryParseExact(ev.Device, "N", out _) || ev.Counter < 1 || ev.Counter > long.MaxValue - 1000 || ev.Edits == null || ev.Edits.Count == 0 || ev.Edits.Count > 300000)
+        Inspect(ev);
+        // 本机自己生成的记录必须完全看得懂；看不懂说明是程序 bug，要响。
+        if (ev.Unsupported) throw new InvalidDataException("同步记录版本不受支持：" + ev.Version);
+        if (ev.Unknown > 0) throw new InvalidDataException("本机生成的同步记录含未知字段。");
+    }
+    // 兼容性约定：结构坏了照旧抛错；只是"本机不认识"的内容跳过并计数，
+    // 让同一条记录里其他能读懂的改动照样生效。文件始终保留，升级后自动补上。
+    public static void Inspect(SyncEvent ev)
+    {
+        if (!Guid.TryParseExact(ev.Id, "N", out _) || !Guid.TryParseExact(ev.Device, "N", out _) || ev.Counter < 1 || ev.Counter > long.MaxValue - 1000 || ev.Edits == null || ev.Edits.Count == 0 || ev.Edits.Count > 300000)
             throw new InvalidDataException("同步记录格式不受支持。");
+        ev.Unknown = 0; ev.Unsupported = ev.Version != 1;
+        if (ev.Unsupported) return;
         if (ev.Edits.Any(x => x == null)) throw new InvalidDataException("空修改记录。");
         foreach (var edit in ev.Edits)
         {
+            edit.Unknown = false;
             if (string.IsNullOrWhiteSpace(edit.Field)) throw new InvalidDataException("同步字段缺失。");
             if (string.IsNullOrWhiteSpace(edit.PaperId) || edit.PaperId.Length > 200) throw new InvalidDataException("论文编号无效。");
             if (Scalars.TryGetValue(edit.Field, out var property))
@@ -73,9 +92,10 @@ public static class SyncProtocol
             }
             else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal))
             {
-                if (!int.TryParse(edit.Field[6..], out int i) || i < 0 || i > 6) throw new InvalidDataException("阶段编号无效。");
+                if (!int.TryParse(edit.Field[6..], out int i) || i < 0 || i > 6) { edit.Unknown = true; ev.Unknown++; continue; }
                 var stage = edit.Value.Deserialize<Stage>();
-                if (stage == null || stage.Name != Paper.StageNames[i] || stage.Done && stage.Skipped || stage.Skipped && i != 5) throw new InvalidDataException("阶段无效。");
+                if (stage == null || stage.Done && stage.Skipped || stage.Skipped && i != 5) throw new InvalidDataException("阶段无效。");
+                if (stage.Name != Paper.StageNames[i]) { edit.Unknown = true; ev.Unknown++; }
             }
             else if (edit.Field == "position") { if (!edit.Value.TryGetInt32(out int position) || position < 0) throw new InvalidDataException("排序无效。"); }
             else if (edit.Field == "history")
@@ -83,17 +103,18 @@ public static class SyncProtocol
                 var history = edit.Value.Deserialize<List<Change>>();
                 if (history == null || history.Any(h => h == null || h.Description == null)) throw new InvalidDataException("历史记录无效。");
             }
-            else throw new InvalidDataException("不支持的同步字段：" + edit.Field);
+            else { edit.Unknown = true; ev.Unknown++; }
         }
     }
     public static Library Reduce(IEnumerable<SyncEvent> source)
     {
         var papers = new Dictionary<string, Paper>(); var positions = new Dictionary<string, int>();
-        foreach (var ev in source.GroupBy(e => e.Id).Select(g => g.First()).OrderBy(e => e.Counter).ThenBy(e => e.Device, StringComparer.Ordinal).ThenBy(e => e.Id, StringComparer.Ordinal))
+        foreach (var ev in source.Where(e => !e.Unsupported).GroupBy(e => e.Id).Select(g => g.First()).OrderBy(e => e.Counter).ThenBy(e => e.Device, StringComparer.Ordinal).ThenBy(e => e.Id, StringComparer.Ordinal))
         {
-            Validate(ev);
+            Inspect(ev);
             foreach (var edit in ev.Edits)
             {
+                if (edit.Unknown) continue;
                 if (!papers.TryGetValue(edit.PaperId, out var p)) { p = new Paper { Id = edit.PaperId }; papers.Add(p.Id, p); }
                 if (Scalars.TryGetValue(edit.Field, out var property)) property.SetValue(p, edit.Value.Deserialize(property.PropertyType));
                 else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal)) p.Stages[int.Parse(edit.Field[6..])] = edit.Value.Deserialize<Stage>()!;
@@ -113,6 +134,7 @@ public static class SyncProtocol
         // changed, preserving unrelated fields that arrived while the dialog was open.
         foreach (var edit in edits)
         {
+            if (edit.Unknown) continue;
             var p = target.Papers.Single(x => x.Id == edit.PaperId);
             if (Scalars.TryGetValue(edit.Field, out var property)) property.SetValue(p, edit.Value.Deserialize(property.PropertyType));
             else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal)) p.Stages[int.Parse(edit.Field[6..])] = edit.Value.Deserialize<Stage>()!;
@@ -131,6 +153,8 @@ public sealed class SyncEngine
     public string Folder { get; }
     public string Status { get { lock (gate) return status; } }
     public int Revision { get { lock (gate) return events.Count; } }
+    // 有几条记录带着本机不认识的内容（多半来自更新版本）。升级后会自动补上。
+    public int Held { get { lock (gate) return events.Values.Count(e => e.Unsupported || e.Unknown > 0); } }
     public SyncEngine(string localDirectory, string sharedDirectory, Library legacy)
     {
         Folder = sharedDirectory;
@@ -196,7 +220,12 @@ public sealed class SyncEngine
                 var destination = Path.Combine(shared, ev.Id + ".json");
                 if (!File.Exists(destination)) AtomicWrite(destination, JsonSerializer.Serialize(ev, Storage.JsonOptions));
             }
-            lock (gate) status = unreadable > 0 ? $"本机已保存 · {unreadable} 个同步文件暂无法读取，将重试" : "同步文件夹已更新 · " + DateTime.Now.ToString("HH:mm");
+            int held = Held;
+            lock (gate) status = unreadable > 0
+                ? $"本机已保存 · {unreadable} 个同步文件暂无法读取，将重试"
+                : held > 0
+                    ? $"同步文件夹已更新 · {held} 条记录含更新版本的字段，已保留待升级后生效"
+                    : "同步文件夹已更新 · " + DateTime.Now.ToString("HH:mm");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
         { lock (gate) status = "本机已保存 · 同步待重试（" + ex.Message + "）"; }

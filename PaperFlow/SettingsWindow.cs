@@ -18,7 +18,7 @@ public sealed class SettingsWindow : Window
     // 方案改名同理：论文身上记着方案名，改名要一起跟过去。
     public List<(string From, string To)> SchemeRenames { get; } = new();
     // 方案改阶段之后，要按作者的选择推给正在用它的论文。
-    public List<(string Name, List<string> Stages, bool OnlyUnchanged)> SchemeStageUpdates { get; } = new();
+    public List<(string Name, List<string> OldStages, List<string> Stages, bool OnlyUnchanged)> SchemeStageUpdates { get; } = new();
     private bool ready;
     // 分类名跟着语言走；用属性而不是静态字段，免得第一次取值时的语言被永久记住。
     private static string[] Categories => new[] { Lang.T("外观"), Lang.T("字体与文字"), Lang.T("视图与分页"), Lang.T("阶段方案"), Lang.T("同步与启动"), Lang.T("关于与反馈") };
@@ -352,14 +352,15 @@ public sealed class SettingsWindow : Window
                     // 阶段改了要问问正在用它的那些论文：一起更新，还是只更新没单独改过的。
                     if (!current.StageNames.SequenceEqual(editor.ResultStages))
                     {
-                        var (usingCount, editedCount) = schemeUsage(editor.ResultSchemeName);
+                        // 用旧名字问：此刻论文身上记的还是改名前的名字。
+                        var (usingCount, editedCount) = schemeUsage(current.Name);
                         if (usingCount > 0)
                         {
                             var answer = MessageBox.Show(this,
                                 Lang.F("有 {0} 篇论文在用《{1}》，其中 {2} 篇你单独改过。\n\n“是”：一起更新（单独改过的会被覆盖）\n“否”：只更新没单独改过的\n“取消”：都不动，只改方案库", usingCount, Lang.T(editor.ResultSchemeName), editedCount),
                                 Lang.T("改方案"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
-                            if (answer == MessageBoxResult.Yes) SchemeStageUpdates.Add((editor.ResultSchemeName, editor.ResultStages, false));
-                            else if (answer == MessageBoxResult.No) SchemeStageUpdates.Add((editor.ResultSchemeName, editor.ResultStages, true));
+                            if (answer == MessageBoxResult.Yes) SchemeStageUpdates.Add((editor.ResultSchemeName, current.StageNames, editor.ResultStages, false));
+                            else if (answer == MessageBoxResult.No) SchemeStageUpdates.Add((editor.ResultSchemeName, current.StageNames, editor.ResultStages, true));
                         }
                     }
                     Result.CustomSchemes[at] = new StageScheme(editor.ResultSchemeName, editor.ResultStages);

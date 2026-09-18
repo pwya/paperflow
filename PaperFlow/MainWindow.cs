@@ -921,7 +921,7 @@ public sealed class MainWindow : Window
             }
             // 方案改过阶段：按作者在设置里的选择，推给正在用它的论文（按名字保留勾选）。
             if (dialog.SchemeStageUpdates.Count > 0)
-                Commit(l => { foreach (var (schemeName, stages, onlyUnchanged) in dialog.SchemeStageUpdates) Schemes.PushToPapers(l.Papers, schemeName, stages, onlyUnchanged, l.Settings.CustomSchemes); });
+                Commit(l => { foreach (var (schemeName, oldStages, stages, onlyUnchanged) in dialog.SchemeStageUpdates) Schemes.PushToPapers(l.Papers, schemeName, oldStages, stages, onlyUnchanged); });
             // 语言换了就重启一次：挂件上的按钮、托盘菜单是开窗口时建好的，重启最干净。
             if (languageChanged) { Restart(); return; }
             if (Updates.Offered is UpdateManifest found) OfferUpdate(found);

@@ -175,13 +175,13 @@ static class SchemeTests
         var p3 = new Paper { Title = "p3" };
         var (usedBy, editedBy) = Schemes.Usage(new[] { p1, p2, p3 }, "甲方案", knownList);
         check(usedBy == 2 && editedBy == 1, "usage counts the papers using a scheme and the hand-edited ones");
-        check(Schemes.PushToPapers(new[] { p1, p2, p3 }, "甲方案", new[] { "一", "二", "三", "新的一步" }, false, knownList) == 2, "a scheme change reaches every paper that uses it");
+        check(Schemes.PushToPapers(new[] { p1, p2, p3 }, "甲方案", schemeA.StageNames, new[] { "一", "二", "三", "新的一步" }, false) == 2, "a scheme change reaches every paper that uses it");
         check(p1.Stages.Count == 4 && p1.Stages[0].Done && !p1.Stages[3].Done, "matching stages keep their ticks when a scheme grows");
         check(p3.Stages.Count == 7, "papers on another scheme are left alone");
         var knownTwo = new List<StageScheme> { new StageScheme("甲方案", new List<string> { "一", "二" }) };
         var q1 = new Paper { Title = "q1", SchemeName = "甲方案" }; q1.Stages = Schemes.NewStages(new[] { "一", "二" });
         var q2 = new Paper { Title = "q2", SchemeName = "甲方案" }; q2.Stages = Schemes.NewStages(new[] { "一", "二", "四" });
-        check(Schemes.PushToPapers(new[] { q1, q2 }, "甲方案", new[] { "一", "二", "三" }, true, knownTwo) == 1, "only the untouched papers are updated when asked");
+        check(Schemes.PushToPapers(new[] { q1, q2 }, "甲方案", knownTwo[0].StageNames, new[] { "一", "二", "三" }, true) == 1, "only the untouched papers are updated when asked");
         check(q1.Stages.Select(s => s.Name).SequenceEqual(new[] { "一", "二", "三" }), "the untouched paper follows the scheme");
         check(q2.Stages.Select(s => s.Name).SequenceEqual(new[] { "一", "二", "四" }), "the hand-edited paper stays as it was");
 

@@ -135,14 +135,15 @@ public static class Schemes
     }
 
     // 把方案的新阶段推到正在用它的论文上：按名字保留勾选，返回改了几篇。
-    public static int PushToPapers(IEnumerable<Paper> papers, string schemeName, IReadOnlyList<string> stages, bool onlyUnchanged, IEnumerable<StageScheme> known)
+    // oldStages 是"改之前"的方案阶段，用来判断哪几篇是用户单独改过的（不能拿改完的新方案去比）。
+    public static int PushToPapers(IEnumerable<Paper> papers, string schemeName, IReadOnlyList<string> oldStages, IReadOnlyList<string> newStages, bool onlyUnchanged)
     {
-        var scheme = All(known).FirstOrDefault(s => s.Name == schemeName);
+        var before = new StageScheme(schemeName, oldStages.ToList());
         int changed = 0;
         foreach (var paper in papers.Where(p => p.SchemeName == schemeName).ToList())
         {
-            if (onlyUnchanged && scheme != null && !Matches(scheme, paper.Stages.Select(s => s.Name))) continue;
-            paper.Stages = Switch(paper.Stages, stages);
+            if (onlyUnchanged && !Matches(before, paper.Stages.Select(s => s.Name))) continue;
+            paper.Stages = Switch(paper.Stages, newStages);
             changed++;
         }
         return changed;

@@ -122,6 +122,14 @@ static class UpdateTests
             var parsedExe = UpdateManifest.Parse("{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + sha + "\",\"length\":" + payload.Length + "}", false);
             check(!parsedExe.IsArchive && parsedExe.ExeSha256 == sha && parsedExe.ExeLength == payload.Length, "older exe manifests still mean the same file for both fields");
 
+            // ---------- 更新说明：点"下载并安装"之前要看到这一版改了什么 ----------
+            check(parsedExe.Notes == "" && parsedExe.NotesFor(true) == "", "an old manifest without notes still parses and shows nothing");
+            var withNotes = UpdateManifest.Parse("{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + sha + "\",\"length\":" + payload.Length + ",\"notes\":\"## 新增\\n- 阶段方案\",\"notesEn\":\"## Added\\n- Stage schemes\"}", false);
+            check(withNotes.Notes.Contains("阶段方案") && withNotes.NotesFor(true).Contains("Stage schemes") && withNotes.NotesFor(false) == withNotes.Notes, "release notes are carried in both languages");
+            var chineseOnly = UpdateManifest.Parse("{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + sha + "\",\"length\":" + payload.Length + ",\"notes\":\"只有中文\"}", false);
+            check(chineseOnly.NotesFor(true) == "只有中文", "an english interface falls back to the chinese notes");
+            Reject(() => UpdateManifest.Parse("{\"version\":\"9.9.9\",\"url\":\"https://example.test/PaperFlow-9.9.9-win-x64.exe\",\"sha256\":\"" + sha + "\",\"length\":" + payload.Length + ",\"notes\":\"" + new string('字', UpdateManifest.MaxNotesLength + 1) + "\"}", false), "notes longer than the panel can show are refused");
+
             // ---------- 两个候选地址（Gitee 镜像 + GitHub）----------
             check(Updates.ManifestUrls.Count == 2 && Updates.ManifestUrls[0].Contains("gitee.com") && Updates.ManifestUrls[1].Contains("github.com"), "the mirror is tried first, GitHub stays as the second source");
             string mirrorUrl = Updates.GiteeManifestUrl, upstreamUrl = Updates.DefaultManifestUrl;

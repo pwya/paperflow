@@ -222,6 +222,14 @@ public sealed class MainWindow : Window
         };
         if (!demonstration) timer.Start(); ready = true; Render();
         if (demonstration) { footer.Text = Lang.T("演示数据 · 所有论文均为虚构 · ") + Product.Name + " " + Product.Version; footer.ToolTip = null; }
+        // 刚更新完：底部条说一句"已更新到 x.y.z · 查看这次改了什么"，点开就是更新说明。
+        if (!demonstration && library.Settings.PendingReleaseVersion.Length > 0)
+        {
+            string installedVersion = library.Settings.PendingReleaseVersion, installedNotes = library.Settings.PendingReleaseNotes;
+            Commit(l => { l.Settings.PendingReleaseVersion = ""; l.Settings.PendingReleaseNotes = ""; });
+            ShowNotice(Lang.F("已更新到 {0} · 查看这次改了什么", installedVersion), Lang.T("查看"),
+                () => new UpdateNotesDialog(installedVersion, installedNotes) { Owner = this }.ShowDialog());
+        }
         SessionEndingHook();
     }
 
@@ -457,7 +465,11 @@ public sealed class MainWindow : Window
     {
         if (demonstration || manifest == null) return;
         updateOffered = manifest;
-        UpdateBarText(Lang.F("有新版本 {0}", manifest.Version), Lang.T("下载并安装"), StartUpdate);
+        UpdateBarText(Lang.F("有新版本 {0}", manifest.Version), Lang.T("下载并安装"), () =>
+        {
+            // 先看这一版改了什么，点"下载并安装"才真的开始下载。
+            if (new UpdateNotesDialog(manifest.Version, manifest.NotesFor(Lang.IsEnglish)) { Owner = this }.ShowDialog() == true) StartUpdate();
+        });
     }
     // 检查没成功也要说话：这一条最多一天出现一次（由三档节奏决定），并且有关掉的 ×。
     private void OfferUpdateProblem(UpdateFailure failure)
@@ -494,6 +506,8 @@ public sealed class MainWindow : Window
             using var client = Updates.DownloadClient();
             var file = await Updates.DownloadAsync(client, manifest, Updates.CacheFolder(), progress, System.Threading.CancellationToken.None);
             var installed = Updates.Install(manifest, file, Shortcuts.ProgramFolder(library.Settings.LauncherPath));
+            // 重启之后还能再看一次这份说明（只在本机留一次）。
+            Commit(l => { l.Settings.PendingReleaseVersion = manifest.Version; l.Settings.PendingReleaseNotes = manifest.NotesFor(Lang.IsEnglish); });
             UpdateBarText(Lang.F("新版本已就绪 {0}，重启后生效。", manifest.Version), Lang.T("重启并更新"), () =>
             {
                 if (!SaveWindow()) return;
@@ -603,7 +617,9 @@ public sealed class MainWindow : Window
         var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Margin = new Thickness(0, 0, 0, 1) };
         var dots = PriorityDots(p);
         titleArea.Children.Add(dots);
-        var name = Text(p.Title, small ? 14 : 15, "#24352F", -1, "title"); name.FontWeight = library.Settings.TitleBold ? FontWeights.SemiBold : FontWeights.Normal; name.TextTrimming = TextTrimming.CharacterEllipsis; name.VerticalAlignment = VerticalAlignment.Center; name.ToolTip = p.Title + Lang.T("\n拖动调整优先顺序");
+        var name = ScrollingTitle(p.Title, library.Settings.TitleBold, small ? 14 : 15);
+        name.VerticalAlignment = VerticalAlignment.Center;
+        name.ToolTip = p.Title + Lang.T("\n按住拖动调整优先顺序；标题太长时，鼠标停在这里会滚动显示全名");
         titleArea.Children.Add(name);
         // 百分比放在标题行右侧，不跟进度条挤在一起，也不再抢戏。
         var titleRow = new Grid();
@@ -715,6 +731,38 @@ public sealed class MainWindow : Window
     {
         var typeface = new Typeface(new FontFamily(Appearance.FamilyFor("title")), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
         return new FormattedText(text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, typeface, Math.Max(1, size), Brushes.Black, 1.0).Width;
+    }
+
+    // 标题放不下时：平时显示省略号，鼠标停上去就缓缓横向滚动，把完整标题露出来。
+    private static FrameworkElement ScrollingTitle(string text, bool bold, double baseSize)
+    {
+        double size = baseSize * Appearance.RoleScale("title") * Appearance.TextScale;
+        var label = Text(text, baseSize, "#24352F", -1, "title");
+        label.FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal;
+        label.TextTrimming = TextTrimming.CharacterEllipsis;
+        label.HorizontalAlignment = HorizontalAlignment.Left;
+        var clip = new Grid { ClipToBounds = true };
+        var shift = new TranslateTransform(); label.RenderTransform = shift;
+        clip.Children.Add(label);
+        double natural = TextWidth(text, size), offset = 0;
+        var slide = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(30) };
+        void Reset() { slide.Stop(); offset = 0; shift.X = 0; label.Width = double.NaN; label.TextTrimming = TextTrimming.CharacterEllipsis; }
+        slide.Tick += (_, _) =>
+        {
+            double overflow = natural - clip.ActualWidth;
+            if (overflow <= 1 || clip.ActualWidth <= 1) { Reset(); return; }
+            offset += 1.6;
+            if (offset > overflow) offset = 0;
+            shift.X = -offset;
+        };
+        clip.MouseEnter += (_, _) =>
+        {
+            if (natural <= clip.ActualWidth + 1) return;
+            label.TextTrimming = TextTrimming.None; label.Width = natural; offset = 0; shift.X = 0;
+            slide.Start();
+        };
+        clip.MouseLeave += (_, _) => Reset();
+        return clip;
     }
     private static bool IsWithin(DependencyObject? node, DependencyObject ancestor)
     {

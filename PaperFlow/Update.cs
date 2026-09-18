@@ -21,8 +21,12 @@ public sealed record UpdateFailure(string Message, bool Network);
 // 现在下载的是一个 zip（里面是 versions/<版本>/PaperFlow.exe）：Sha256/Length 是压缩包的，
 // ExeSha256/ExeLength 是解压出来的那个程序文件的。老格式（url 直接指向 exe）仍然读得懂：
 // 那时 ExeSha256/ExeLength 就等于 Sha256/Length。
-public sealed record UpdateManifest(string Version, string Url, string Sha256, long Length, string ExeSha256, long ExeLength)
+public sealed record UpdateManifest(string Version, string Url, string Sha256, long Length, string ExeSha256, long ExeLength, string Notes = "", string NotesEn = "")
 {
+    // 更新说明就是 CHANGELOG 里这一版的小节，发布脚本抽出来写进清单——程序里看到的和
+    // Release 页面上看到的是同一段字。中英各一份，英文没写就退回中文。
+    public const int MaxNotesLength = 4000;
+    public string NotesFor(bool english) => english && NotesEn.Length > 0 ? NotesEn : Notes;
     public bool IsArchive => Url.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
     // 清单是别人（Release 附件）给的，坏数据必须响亮拒绝，不能猜。
     public static UpdateManifest Parse(string json, bool allowInsecureUrl)
@@ -46,7 +50,9 @@ public sealed record UpdateManifest(string Version, string Url, string Sha256, l
             if (exeLength < 1 || exeLength > 300_000_000) throw new InvalidDataException(Lang.T("更新清单的文件大小无效。"));
         }
         else { exeSha = sha.ToLowerInvariant(); exeLength = length; }
-        return new UpdateManifest(version, url, sha.ToLowerInvariant(), length, exeSha, exeLength);
+        string notes = Text(root, "notes"), notesEn = Text(root, "notesEn");
+        if (notes.Length > MaxNotesLength || notesEn.Length > MaxNotesLength) throw new InvalidDataException(Lang.T("更新清单里的更新说明太长。"));
+        return new UpdateManifest(version, url, sha.ToLowerInvariant(), length, exeSha, exeLength, notes, notesEn);
     }
     private static string Text(JsonElement root, string name)
         => root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()!.Trim() : "";

@@ -32,6 +32,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 
 
 清单里的 `sha256`/`length` 描述压缩包本身，`exeSha256`/`exeLength` 描述压缩包里那个 `versions/<版本>/PaperFlow.exe`；发布脚本会真的把那个文件从压缩包里抠出来算一遍哈希，对不上就拒绝出包。压缩包内部的路径必须正好是 `versions/<版本>/PaperFlow.exe`（`Compress-Archive` 写的是反斜杠，比较时要归一化——应用侧就是这么做的）。
 
+清单里还有一个 `notes`：**程序里"这次改了什么"显示的就是它**。这段文字只有一份来源——`CHANGELOG.md` 里这一版的小节，发布脚本自动抽出来写进 `update.json`，同时生成 `release-notes.md` 放在 `artifacts/release-<版本>/` 里供 Release 正文使用。所以程序里看到的和 Release 页面上看到的永远是同一段字。这一版在 CHANGELOG 里没有小节、或者小节超过 4000 字，脚本会直接拒绝出包（更新说明面板放不下）。英文说明可以另写一份放进 `notesEn`，目前留空，英文界面就显示中文那份。
+
 ## 两份清单怎么取舍
 
 - **镜像不许抢先**：Gitee 报的版本比 GitHub 高时忽略它（镜像只允许落后）。

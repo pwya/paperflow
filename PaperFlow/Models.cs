@@ -134,6 +134,9 @@ public sealed class Preferences
     public DateTime? LastUpdateCheckUtc { get; set; }
     // 上一次检查为什么没成功（空字符串表示上次是成功的）。只存本机，给设置页看。
     public string LastUpdateError { get; set; } = "";
+    // 刚装完的更新：重启后把这一版改了什么再显示一次。只在本机，不参与同步。
+    public string PendingReleaseVersion { get; set; } = "";
+    public string PendingReleaseNotes { get; set; } = "";
     public bool Topmost { get; set; } = true;
     public bool Compact { get; set; }
     public int BarHeight { get; set; } = 20;

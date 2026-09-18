@@ -138,6 +138,10 @@ public sealed class Storage
         s.Language = Lang.Normalize(s.Language);
         if (s.UpdateMode is not ("always" or "daily" or "never")) s.UpdateMode = "daily";
         s.LastUpdateError ??= "";
+        s.PendingReleaseVersion ??= "";
+        s.PendingReleaseNotes ??= "";
+        // 更新说明只用来显示一次；长度不对劲就当没有，不让它留在文件里。
+        if (s.PendingReleaseNotes.Length > UpdateManifest.MaxNotesLength) { s.PendingReleaseVersion = ""; s.PendingReleaseNotes = ""; }
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;
         s.TextSize = double.IsFinite(s.TextSize) ? Math.Clamp(s.TextSize, 9, 36) : 13;
         s.UiScale = double.IsFinite(s.UiScale) ? Math.Clamp(s.UiScale, 0.8, 2) : 1;

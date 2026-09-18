@@ -68,6 +68,23 @@ try {
     $assetName = 'PaperFlow-{0}-win-x64.zip' -f $version
     $updateUrl = 'https://github.com/pwya/paperflow/releases/download/v{0}/{1}' -f $version, $assetName
     $zipHash = (Get-FileHash -LiteralPath $appArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    # The in-app update panel shows "what changed in this version" before downloading. That text is
+    # written once: the CHANGELOG section for this version. Releases without it are refused here so
+    # the app and the Release page can never drift apart.
+    $notes = ''
+    $changelog = Join-Path $source 'CHANGELOG.md'
+    if (Test-Path -LiteralPath $changelog) {
+        $lines = Get-Content -LiteralPath $changelog -Encoding UTF8
+        $start = -1
+        for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match ('^##\s+' + [regex]::Escape($version) + '\s*$')) { $start = $i + 1; break } }
+        if ($start -ge 0) {
+            $end = $lines.Count
+            for ($i = $start; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^##\s') { $end = $i; break } }
+            $notes = (($lines[$start..($end - 1)]) -join "`n").Trim()
+        }
+    }
+    if ($notes.Length -eq 0) { throw ("CHANGELOG.md has no section for " + $version + "; that section is what the in-app update panel shows.") }
+    if ($notes.Length -gt 4000) { throw ("The CHANGELOG section for " + $version + " is longer than 4000 characters; the in-app update panel cannot show it.") }
     $update = @{
         version = $version
         url = $updateUrl
@@ -76,12 +93,14 @@ try {
         # 解压出来的那个程序文件自己的哈希与长度：启动器与 channel.json 要的是它。
         exeSha256 = $hash
         exeLength = (Get-Item -LiteralPath $exe).Length
+        notes = $notes
     }
     [IO.File]::WriteAllText((Join-Path $destination 'update.json'), ($update | ConvertTo-Json), $encoding)
+    [IO.File]::WriteAllText((Join-Path $destination 'release-notes.md'), $notes, $encoding)
     # 清单是程序内更新唯一的入口，这里逐项对一遍：压缩包、里面的程序、哈希、大小都要对上。
     $written = Get-Content -LiteralPath (Join-Path $destination 'update.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not (Test-Path -LiteralPath $appArchive)) { throw 'The Windows archive for in-app updates is missing.' }
-    if ($written.version -ne $version -or $written.url -ne $updateUrl -or $written.sha256 -ne $zipHash -or $written.exeSha256 -ne $hash) { throw 'The update manifest does not describe the published archive.' }
+    if ($written.version -ne $version -or $written.url -ne $updateUrl -or $written.sha256 -ne $zipHash -or $written.exeSha256 -ne $hash -or $written.notes -ne $notes) { throw 'The update manifest does not describe the published archive.' }
     if ((Get-Item -LiteralPath $appArchive).Length -ne [long]$written.length) { throw 'The update manifest length does not match the published archive.' }
     if ((Get-Item -LiteralPath $exe).Length -ne [long]$written.exeLength) { throw 'The update manifest program length does not match the built program.' }
     # 真去压缩包里把那个文件抠出来算一遍哈希：自动更新就靠这一条路径。

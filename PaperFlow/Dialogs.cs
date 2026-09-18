@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Media;
 using Microsoft.Win32;
 
 namespace PaperFlow;
@@ -192,6 +193,34 @@ public sealed class PaperEditor : Window
             var pick = new CheckBox { Content = Lang.T(Schemes.Display(stage.Name)), IsChecked = stage.Skipped, Margin = new Thickness(0, 0, 16, 6) };
             skipPicks.Add(pick); skipRow.Children.Add(pick);
         }
+    }
+}
+
+// 点"下载并安装"之前，先把这一版改了什么摆出来。原文来自 CHANGELOG 本节（发布脚本抽进 update.json），
+// 所以程序里看到的和 Release 页面上是同一段字。
+public sealed class UpdateNotesDialog : Window
+{
+    public UpdateNotesDialog(string version, string notes)
+    {
+        Title = Lang.T("这次更新改了什么");
+        Width = Math.Min(580 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40);
+        Height = Math.Min(640 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30);
+        WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = true;
+        SetResourceReference(BackgroundProperty, "WindowBackground"); SetResourceReference(ForegroundProperty, "Ink");
+        var root = new DockPanel { Margin = new Thickness(22) }; Content = root;
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
+        DockPanel.SetDock(actions, Dock.Bottom); root.Children.Add(actions);
+        var headline = MainWindow.Text(Lang.F("PaperFlow {0} 改了什么", version), 20); headline.Margin = new Thickness(0, 0, 0, 10); root.Children.Add(headline);
+        var box = new TextBox
+        {
+            IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            BorderThickness = new Thickness(0), Background = Brushes.Transparent,
+            Text = notes.Length == 0 ? Lang.T("这一版没有附更新说明。") : notes,
+            FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = 12.5 * Appearance.RoleScale("body") * Appearance.TextScale
+        };
+        root.Children.Add(box);
+        actions.Children.Add(MainWindow.ActionButton(Lang.T("以后再说"), () => DialogResult = false));
+        actions.Children.Add(MainWindow.ActionButton(Lang.T("下载并安装"), () => DialogResult = true, true));
     }
 }
 

@@ -33,7 +33,8 @@ public sealed class SyncEvent
 // are independent last-writer registers ordered by Lamport counter, device id, event id.
 public static class SyncProtocol
 {
-    private static readonly string[] ScalarNames = { "Title", "Subject", "Language", "Collaborators", "Journal", "Status", "Priority", "NextAction", "Outcome", "Notes", "StartDate", "DueDate", "UpdatedAt", "Archived" };
+    // Tags / SchemeName 走标量：老版本不认识它们，会按既有桥梁"跳过并保留"，不会整条拒绝。
+    private static readonly string[] ScalarNames = { "Title", "Subject", "Language", "Collaborators", "Journal", "Status", "Priority", "NextAction", "Outcome", "Notes", "StartDate", "DueDate", "UpdatedAt", "Archived", "SchemeName", "Tags" };
     private static readonly Dictionary<string, PropertyInfo> Scalars = ScalarNames.ToDictionary(n => n, n => typeof(Paper).GetProperty(n)!);
     private static JsonElement Json(object? value) => JsonSerializer.SerializeToElement(value);
     public static List<SyncEdit> Diff(Library before, Library after)

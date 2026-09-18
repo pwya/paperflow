@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -86,9 +87,14 @@ public sealed class Storage
         {
             if (string.IsNullOrWhiteSpace(p.Id) || string.IsNullOrWhiteSpace(p.Title) || p.Title.Length > 500)
                 throw new InvalidDataException(Lang.T("论文编号或标题无效（标题最多 500 字）。"));
-            if (p.Stages == null || p.Stages.Count != 7 || p.Stages.Where((s, i) => s == null || s.Name != Paper.StageNames[i] || (s.Done && s.Skipped)).Any())
-                throw new InvalidDataException(Lang.T("必须包含完整的七个标准阶段，且完成与不适用不能同时选中。"));
-            if (p.Stages.Where((s, i) => s.Skipped && i != 5).Any()) throw new InvalidDataException(Lang.T("仅返修阶段允许设为不适用。"));
+            if (p.Stages == null || p.Stages.Any(s => s == null)) throw new InvalidDataException(Lang.T("论文的阶段数据缺失。"));
+            if (p.Stages.Any(s => s.Done && s.Skipped)) throw new InvalidDataException(Lang.T("完成与不适用不能同时选中。"));
+            p.SchemeName = string.IsNullOrWhiteSpace(p.SchemeName) ? Schemes.DefaultName : p.SchemeName.Trim();
+            var stageProblem = Schemes.Inspect(p.SchemeName, p.Stages.Select(s => s.Name).ToList());
+            if (stageProblem != SchemeProblem.None) throw new InvalidDataException(Why(stageProblem));
+            p.Tags = (p.Tags ?? new()).Select(t => t.Trim()).Where(t => t.Length > 0).Distinct().ToList();
+            if (p.Tags.Count > Schemes.MaxTags) throw new InvalidDataException(Lang.T("一篇论文最多贴三个标签。"));
+            if (p.Tags.Any(t => !Schemes.IsValidTagName(t))) throw new InvalidDataException(Lang.T("名字不能超过六个汉字那么宽。"));
             if (p.StartDate.Year < 1900 || p.StartDate.Year > 2200 || p.DueDate?.Year < 1900 || p.DueDate?.Year > 2200)
                 throw new InvalidDataException(Lang.T("日期需在 1900—2200 年之间。"));
             if (p.History == null || p.History.Any(h => h == null || h.Description == null)) throw new InvalidDataException(Lang.T("修改记录无效。"));
@@ -98,7 +104,16 @@ public sealed class Storage
             if (!Paper.Statuses.Contains(p.Status)) p.Status = "准备中";
         }
         var s = library.Settings;
+        // HiddenStages / HideSelectedStages：字段留着给 1.13.x 兼容，2.0.0 的界面会在下一刀移除读取。
         s.HiddenStages = (s.HiddenStages ?? new() { 4 }).Where(i => i >= 0 && i < 7).Distinct().ToList();
+        s.CustomSchemes = NormalizeSchemes(s.CustomSchemes);
+        s.CustomTags = (s.CustomTags ?? new()).Select(t => t.Trim()).Where(t => t.Length > 0).Distinct().ToList();
+        if (s.CustomTags.Count > Schemes.MaxCustomTags) throw new InvalidDataException(Lang.T("自建标签最多二十个。"));
+        if (s.CustomTags.Any(t => !Schemes.IsValidTagName(t))) throw new InvalidDataException(Lang.T("名字不能超过六个汉字那么宽。"));
+        // 认得的标签 = 自建的 + 论文上贴过的（换台电脑时自建标签可能还没跟过来，贴过的一样算数）。
+        // 对不上的隐藏勾直接去掉，不留指不到东西的幽灵设置。
+        var knownTags = s.CustomTags.Concat(library.Papers.SelectMany(p => p.Tags)).Distinct(StringComparer.Ordinal).ToList();
+        s.HiddenTags = (s.HiddenTags ?? new()).Where(knownTags.Contains).Distinct(StringComparer.Ordinal).ToList();
         s.VisiblePriorities = (s.VisiblePriorities ?? Paper.Priorities.ToList()).Where(Paper.Priorities.Contains).Distinct().ToList();
         if (!ViewRules.PageModes.Contains(s.PageMode)) s.PageMode = "不翻页";
         if (!ViewRules.SortModes.Contains(s.SortMode)) s.SortMode = ViewRules.SortModes[0];
@@ -155,6 +170,33 @@ public sealed class Storage
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         { BackupNotice = Lang.T("每日备份失败：") + ex.Message; }
     }
+
+    // 自建方案：结构坏了要响亮报错，不静默修；同名重复的留第一份。
+    private static List<StageScheme> NormalizeSchemes(List<StageScheme>? schemes)
+    {
+        var result = new List<StageScheme>();
+        foreach (var scheme in schemes ?? new())
+        {
+            if (scheme == null) throw new InvalidDataException(Lang.T("方案数据为空。"));
+            string name = (scheme.Name ?? "").Trim();
+            var stages = (scheme.StageNames ?? new()).Select(s => (s ?? "").Trim()).ToList();
+            var problem = Schemes.Inspect(name, stages);
+            if (problem != SchemeProblem.None) throw new InvalidDataException(Why(problem));
+            if (Schemes.IsBuiltIn(name)) throw new InvalidDataException(Lang.T("自建方案不能和内置方案同名。"));
+            if (result.Any(x => x.Name == name)) continue;
+            result.Add(new StageScheme(name, stages));
+        }
+        return result;
+    }
+
+    // 一套方案为什么不能用。界面提示也复用这几句，避免两处说法不一致。
+    public static string Why(SchemeProblem problem) => problem switch
+    {
+        SchemeProblem.TooFewStages or SchemeProblem.TooManyStages => Lang.T("一套方案至少 2 个阶段、最多 12 个。"),
+        SchemeProblem.EmptyName => Lang.T("名字不能为空。"),
+        SchemeProblem.DuplicateName => Lang.T("同一套方案里不能有同名的阶段。"),
+        _ => Lang.T("名字不能超过十二个汉字那么宽。")
+    };
 
     public static Paper Clone(Paper p) => JsonSerializer.Deserialize<Paper>(JsonSerializer.Serialize(p))!;
     public static Library CloneLibrary(Library source) => Parse(JsonSerializer.Serialize(source));

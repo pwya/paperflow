@@ -20,8 +20,9 @@ public sealed class Change
 
 public sealed class Paper
 {
+    // 内置"标准七步"方案的阶段。新论文默认用它；老数据也是这七个名字。
     public static readonly string[] StageNames = { "开题", "语料&数据整理", "初稿", "自修", "投稿", "返修", "收录" };
-    // Stable stored names preserve historical event files; display names may evolve.
+    // 老数据的显示名映射（第 5 步存的是"投稿"、显示成"在审"）。新代码用 Schemes.Display。
     public static readonly string[] StageLabels = { "开题", "语料&数据整理", "初稿", "自修", "在审", "返修", "收录" };
     public static readonly string[] Priorities = { "高", "中", "低" };
     public static readonly string[] Statuses = { "准备中", "写作中", "审稿中", "待返修", "已修回", "已录用", "准备转投", "暂停" };
@@ -36,6 +37,10 @@ public sealed class Paper
     public string NextAction { get; set; } = "";
     public string Outcome { get; set; } = "";
     public string Notes { get; set; } = "";
+    // 这篇论文来自哪套方案（方案跟着论文走）。名字对不上时按"标准七步"处理。
+    public string SchemeName { get; set; } = Schemes.DefaultName;
+    // 隐藏用标签：用户自建的短记号，最多三个，用来把论文收起来。
+    public List<string> Tags { get; set; } = new();
     public DateTime StartDate { get; set; } = DateTime.Today;
     public DateTime? DueDate { get; set; }
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
@@ -48,7 +53,7 @@ public sealed class Paper
     [JsonIgnore] public int Progress => Total == 0 ? 0 : (int)Math.Round(100.0 * Completed / Total, MidpointRounding.AwayFromZero);
     [JsonIgnore] public bool IsComplete => Total > 0 && Completed == Total;
     [JsonIgnore] public int ElapsedDays => Math.Max(0, (DateTime.Today - StartDate.Date).Days);
-    [JsonIgnore] public string NextStage => Stages.FindIndex(s => !s.Done && !s.Skipped) is int i && i >= 0 ? Lang.Stage(i) : Lang.T("阶段已全部完成");
+    [JsonIgnore] public string NextStage => Stages.FindIndex(s => !s.Done && !s.Skipped) is int i && i >= 0 ? Lang.T(Schemes.Display(Stages[i].Name)) : Lang.T("阶段已全部完成");
     [JsonIgnore] public int CurrentStageIndex => Math.Max(0, Stages.FindLastIndex(s => s.Done && !s.Skipped));
     [JsonIgnore] public string EffectiveStatus => Stages.Last().Done ? "已录用" : Status;
     [JsonIgnore] public string DeadlineText => DueDate is null ? "" : (DueDate.Value.Date - DateTime.Today).Days switch
@@ -70,7 +75,7 @@ public sealed class Paper
         var stage = Stages[index];
         if (stage.Skipped || stage.Done == done) return;
         stage.Done = done;
-        Record($"{(done ? "完成" : "撤销完成")} · {StageLabels[index]}");
+        Record($"{(done ? "完成" : "撤销完成")} · {Schemes.Display(stage.Name)}");
     }
 }
 
@@ -114,6 +119,12 @@ public sealed class Preferences
     // 背景图片只在本机使用，路径不参与同步。
     public string BackgroundImage { get; set; } = "";
     public double ImageScrim { get; set; } = 0.35;
+    // 自建的阶段方案。内置两套写在代码里，不占数据；这里的都是用户自己另存出来的。
+    public List<StageScheme> CustomSchemes { get; set; } = new();
+    // 隐藏用标签：总开关默认关，标签默认一个都不预置。
+    public bool TagHidingEnabled { get; set; }
+    public List<string> CustomTags { get; set; } = new();
+    public List<string> HiddenTags { get; set; } = new();
     public string SyncFolder { get; set; } = "";
     public string LauncherPath { get; set; } = "";
     // 界面语言：auto 看 Windows 显示语言，zh / en 是手动指定。只影响显示。

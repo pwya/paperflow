@@ -43,5 +43,17 @@ static class ShortcutTests
         check(!string.IsNullOrWhiteSpace(Shortcuts.ResolveTarget("")), "an empty launcher path still yields a target");
         check(Shortcuts.ProgramFolder(launcher) == root, "the program folder follows the launcher");
         check(Shortcuts.DesktopPath().EndsWith(Shortcuts.FileName) && Shortcuts.StartMenuPath().EndsWith("Programs" + Path.DirectorySeparatorChar + Shortcuts.FileName), "both shortcut names are fixed");
+
+        // 试用模式：被显式指定资料目录启动时，绝不碰正式的快捷方式与开机启动。
+        bool wasPortable = Product.Portable;
+        Product.Portable = true;
+        try
+        {
+            bool shortcutRefused = false;
+            try { Shortcuts.Apply(true, true, launcher); } catch (InvalidOperationException) { shortcutRefused = true; }
+            check(shortcutRefused, "trial mode refuses to touch the desktop and start menu shortcuts");
+        }
+        finally { Product.Portable = wasPortable; }
+        check(!Shortcuts.Exists(link), "trial mode created nothing on the real desktop");
     }
 }

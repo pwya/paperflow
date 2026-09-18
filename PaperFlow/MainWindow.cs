@@ -654,7 +654,8 @@ public sealed class MainWindow : Window
             };
             tagRow.Children.Add(chip);
         }
-        if (tagRow.Children.Count > 0) { Grid.SetColumn(tagRow, 1); titleRow.Children.Add(tagRow); }
+        // 被临时展开时，右边那个"已隐藏 · 标签名"的角标已经把标签写出来了，不再重复一遍。
+        if (tagRow.Children.Count > 0 && !dimmed) { Grid.SetColumn(tagRow, 1); titleRow.Children.Add(tagRow); }
         var pct = Text($"{p.Progress}%", Appearance.PercentSize); pct.FontWeight = FontWeights.SemiBold; pct.VerticalAlignment = VerticalAlignment.Center; pct.Margin = new Thickness(10, 0, 0, 0);
         if (Appearance.RoleColor("body") == "") pct.Foreground = Appearance.PercentAccent ? Appearance.Paint(Appearance.Current.Accent) : Brush("#78867F");
         AutomationProperties.SetName(pct, Lang.F("{0} 进度 {1}%", p.Title, p.Progress));

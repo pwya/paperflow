@@ -96,7 +96,7 @@ static class SyncTests
         var mixed = SyncProtocol.Parse(Envelope("1", 900,
             Note("written by a newer version") + "," +
             "{\"PaperId\":\"" + targetId + "\",\"Field\":\"StageTemplate\",\"Value\":{\"Name\":\"custom\"}}," +
-            "{\"PaperId\":\"" + targetId + "\",\"Field\":\"stage:9\",\"Value\":{\"Name\":\"future stage\",\"Done\":true,\"Skipped\":false}}"));
+            "{\"PaperId\":\"" + targetId + "\",\"Field\":\"stage:20\",\"Value\":{\"Name\":\"future stage\",\"Done\":true,\"Skipped\":false}}"));
         check(mixed.Unknown == 2 && !mixed.Unsupported, "unknown fields are counted instead of rejected");
         check(mixed.Edits.Count(x => x.Unknown) == 2 && mixed.Edits.Any(x => x.Field == "Notes" && !x.Unknown), "only the unreadable edits are marked");
         var creationEvent = SyncProtocol.Parse(Envelope("1", 899, "{\"PaperId\":\"" + targetId + "\",\"Field\":\"Title\",\"Value\":\"Synthetic paper A\"}"));

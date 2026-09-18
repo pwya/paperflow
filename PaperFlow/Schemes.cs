@@ -60,13 +60,21 @@ public static class Schemes
     }
 
     // 这套方案本身能不能用；顺便判断一篇论文自己的阶段清单。
-    public static SchemeProblem Inspect(string name, IReadOnlyList<string> stages)
+    // 只看阶段清单（同步事件里的 stages 走这一条，它不带方案名）。
+    public static SchemeProblem InspectStages(IReadOnlyList<string> stages)
     {
         if (stages.Count < MinStages) return SchemeProblem.TooFewStages;
         if (stages.Count > MaxStages) return SchemeProblem.TooManyStages;
         if (stages.Any(s => string.IsNullOrWhiteSpace(s) || s != s.Trim())) return SchemeProblem.EmptyName;
         if (stages.Any(s => !IsValidStageName(s))) return SchemeProblem.NameTooWide;
         if (HasDuplicate(stages)) return SchemeProblem.DuplicateName;
+        return SchemeProblem.None;
+    }
+
+    public static SchemeProblem Inspect(string name, IReadOnlyList<string> stages)
+    {
+        var problem = InspectStages(stages);
+        if (problem != SchemeProblem.None) return problem;
         if (string.IsNullOrWhiteSpace(name) || name != name.Trim()) return SchemeProblem.EmptyName;
         return IsValidSchemeName(name) ? SchemeProblem.None : SchemeProblem.NameTooWide;
     }

@@ -48,7 +48,14 @@ public static class SyncProtocol
             void Add(string field, object? value) => edits.Add(new SyncEdit { PaperId = p.Id, Field = field, Value = Json(value) });
             foreach (var field in Scalars)
                 if (previous == null || Json(field.Value.GetValue(previous)).GetRawText() != Json(field.Value.GetValue(p)).GetRawText()) Add(field.Key, field.Value.GetValue(p));
-            for (int i = 0; i < 7; i++) if (previous == null || p.Stages[i].Done != previous.Stages[i].Done || p.Stages[i].Skipped != previous.Stages[i].Skipped) Add("stage:" + i, p.Stages[i]);
+            // 阶段怎么发：仍是"标准七步"的论文照旧发 stage:0…6（老版本完全看得懂）；被换成
+            // 自定义方案的论文改发一条 stages（整份清单），老版本会按既有桥梁跳过并保留。
+            var names = p.Stages.Select(s => s.Name).ToList();
+            bool canonical = names.SequenceEqual(Paper.StageNames);
+            bool structureChanged = previous == null || !previous.Stages.Select(s => s.Name).SequenceEqual(names);
+            if (structureChanged && !(canonical && previous == null)) Add("stages", p.Stages);
+            else for (int i = 0; i < p.Stages.Count; i++)
+                if (previous == null || p.Stages[i].Done != previous.Stages[i].Done || p.Stages[i].Skipped != previous.Stages[i].Skipped) Add("stage:" + i, p.Stages[i]);
             var history = p.History.Where(h => previous == null || !previous.History.Any(x => x.At == h.At && x.Description == h.Description)).ToList();
             if (history.Count > 0) Add("history", history);
             if (previous == null || before.Papers.FindIndex(x => x.Id == p.Id) != after.Papers.IndexOf(p)) Add("position", after.Papers.IndexOf(p));
@@ -93,10 +100,19 @@ public static class SyncProtocol
             }
             else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal))
             {
-                if (!int.TryParse(edit.Field[6..], out int i) || i < 0 || i > 6) { edit.Unknown = true; ev.Unknown++; continue; }
+                // 自定义方案允许 2–12 个阶段，所以这里只拦明显越界的下标；
+                // 名字对不对不再拿来判断版本（用户起的名字本来就可以和内置的不同）。
+                if (!int.TryParse(edit.Field[6..], out int i) || i < 0 || i >= Schemes.MaxStages) { edit.Unknown = true; ev.Unknown++; continue; }
                 var stage = edit.Value.Deserialize<Stage>();
-                if (stage == null || stage.Done && stage.Skipped || stage.Skipped && i != 5) throw new InvalidDataException(Lang.T("阶段无效。"));
-                if (stage.Name != Paper.StageNames[i]) { edit.Unknown = true; ev.Unknown++; }
+                if (stage == null || stage.Done && stage.Skipped || !Schemes.IsValidStageName(stage.Name)) throw new InvalidDataException(Lang.T("阶段无效。"));
+            }
+            else if (edit.Field == "stages")
+            {
+                // 整份阶段清单（换过方案的论文走这一条）。结构不对就响亮报错。
+                var stages = edit.Value.Deserialize<List<Stage>>();
+                if (stages == null || stages.Any(s => s == null)) throw new InvalidDataException(Lang.T("阶段无效。"));
+                if (Schemes.InspectStages(stages.Select(s => s.Name).ToList()) != SchemeProblem.None || stages.Any(s => s.Done && s.Skipped))
+                    throw new InvalidDataException(Lang.T("阶段无效。"));
             }
             else if (edit.Field == "position") { if (!edit.Value.TryGetInt32(out int position) || position < 0) throw new InvalidDataException(Lang.T("排序无效。")); }
             else if (edit.Field == "history")
@@ -118,7 +134,10 @@ public static class SyncProtocol
                 if (edit.Unknown) continue;
                 if (!papers.TryGetValue(edit.PaperId, out var p)) { p = new Paper { Id = edit.PaperId }; papers.Add(p.Id, p); }
                 if (Scalars.TryGetValue(edit.Field, out var property)) property.SetValue(p, edit.Value.Deserialize(property.PropertyType));
-                else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal)) p.Stages[int.Parse(edit.Field[6..])] = edit.Value.Deserialize<Stage>()!;
+                else if (edit.Field == "stages") p.Stages = edit.Value.Deserialize<List<Stage>>()!;
+                // 对面还在按七步往下发、本机这篇的阶段更短时：跳过这一条，不动本机的结构，也不炸。
+                else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal))
+                { int index = int.Parse(edit.Field[6..]); if (index < p.Stages.Count) p.Stages[index] = edit.Value.Deserialize<Stage>()!; }
                 else if (edit.Field == "position") positions[p.Id] = edit.Value.GetInt32();
                 else foreach (var h in edit.Value.Deserialize<List<Change>>()!) if (!p.History.Any(x => x.At == h.At && x.Description == h.Description)) p.History.Add(h);
             }
@@ -138,7 +157,9 @@ public static class SyncProtocol
             if (edit.Unknown) continue;
             var p = target.Papers.Single(x => x.Id == edit.PaperId);
             if (Scalars.TryGetValue(edit.Field, out var property)) property.SetValue(p, edit.Value.Deserialize(property.PropertyType));
-            else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal)) p.Stages[int.Parse(edit.Field[6..])] = edit.Value.Deserialize<Stage>()!;
+            else if (edit.Field == "stages") p.Stages = edit.Value.Deserialize<List<Stage>>()!;
+            else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal))
+            { int index = int.Parse(edit.Field[6..]); if (index < p.Stages.Count) p.Stages[index] = edit.Value.Deserialize<Stage>()!; }
             else if (edit.Field == "history") foreach (var h in edit.Value.Deserialize<List<Change>>()!) if (!p.History.Any(x => x.At == h.At && x.Description == h.Description)) p.History.Add(h);
         }
     }

@@ -106,5 +106,43 @@ static class SchemeTests
         check(old.SchemeName == Schemes.DefaultName && old.Tags.Count == 0, "a 1.13.7 file lands on the default scheme with no tags");
         check(old.Total == 6 && old.Progress == 50, "progress and denominator of an old file are unchanged");
         check(old.NextStage == Lang.T("初稿"), "the next stage of an old file still reads as before");
+
+        // 同步：默认七步的论文照旧发 stage:i；自定义方案的论文发整份 stages，老版本跳过并保留。
+        var paperId = Guid.NewGuid().ToString("N");
+        var customPaper = new Paper { Id = paperId, Title = "custom scheme sync", SchemeName = "我的方案" };
+        customPaper.Stages = Schemes.NewStages(new[] { "甲", "乙", "丙" });
+        customPaper.Stages[1].Done = true;
+        // before 是空的：真实场景里"新论文"那条记录带着标题，Reduce 才认得出这篇论文。
+        var before = new Library();
+        var after = new Library { Papers = new List<Paper> { customPaper } };
+        var edits = SyncProtocol.Diff(before, after);
+        check(edits.Any(e => e.Field == "stages") && !edits.Any(e => e.Field.StartsWith("stage:", StringComparison.Ordinal)), "a paper on a custom scheme sends its whole stage list");
+        var customEvent = new SyncEvent { Device = Guid.NewGuid().ToString("N"), Counter = 5, Edits = edits };
+        SyncProtocol.Validate(customEvent);
+        var reduced = SyncProtocol.Reduce(new[] { customEvent });
+        check(reduced.Papers.Single().Stages.Count == 3 && reduced.Papers.Single().Stages[1].Done && reduced.Papers.Single().SchemeName == "我的方案", "the reduced paper keeps the custom stages and its scheme name");
+
+        // 老机器还在按七步发 stage:6，而本机这篇只剩三步：跳过这一条，不许炸、不动结构。
+        var legacyStage = new SyncEvent
+        {
+            Device = Guid.NewGuid().ToString("N"), Counter = 6,
+            Edits = new List<SyncEdit> { new() { PaperId = paperId, Field = "stage:6", Value = System.Text.Json.JsonSerializer.SerializeToElement(new Stage { Name = "收录", Done = true }) } }
+        };
+        SyncProtocol.Inspect(legacyStage);
+        var merged = SyncProtocol.Reduce(new[] { customEvent, legacyStage });
+        check(merged.Papers.Single().Stages.Count == 3 && merged.Papers.Single().Stages[2].Name == "丙", "an out of range stage edit is skipped instead of crashing");
+        var lateStructure = new SyncEvent
+        {
+            Device = Guid.NewGuid().ToString("N"), Counter = 7,
+            Edits = new List<SyncEdit> { new() { PaperId = paperId, Field = "stage:0", Value = System.Text.Json.JsonSerializer.SerializeToElement(new Stage { Name = "开工", Done = true }) } }
+        };
+        SyncProtocol.Inspect(lateStructure);
+        check(SyncProtocol.Reduce(new[] { customEvent, lateStructure }).Papers.Single().Stages[0].Name == "开工", "an in range stage edit still lands");
+
+        // 默认七步的论文照旧逐格发，老版本读得懂。
+        var canonicalPaper = new Paper { Id = paperId, Title = "canonical sync" };
+        canonicalPaper.Stages[2].Done = true;
+        var canonicalEdits = SyncProtocol.Diff(new Library { Papers = new List<Paper> { new() { Id = paperId, Title = "canonical sync" } } }, new Library { Papers = new List<Paper> { canonicalPaper } });
+        check(canonicalEdits.Any(e => e.Field == "stage:2") && !canonicalEdits.Any(e => e.Field == "stages"), "a canonical paper still sends one edit per stage");
     }
 }

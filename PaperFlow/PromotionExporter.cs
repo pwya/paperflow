@@ -22,7 +22,7 @@ public static class PromotionExporter
     public const string ArticleDefaultDescription = "小部件也能换背景图：\n选一张你喜欢的图片、调好遮罩，\n文字照样看得清清楚楚。";
     public const string ArticleDefaultDetail = "自定义背景图  /  图片遮罩可调  /  独立本机外观";
     public const string ArticleDefaultTheme = "极简 · 白";
-    private sealed record Scene(string File, string Title, string Description, string Detail, string Theme, string Mode, int Page, int[] Hidden, bool Bold, int Height, string Layout = Themes.CardLayout);
+    private sealed record Scene(string File, string Title, string Description, string Detail, string Theme, string Mode, int Page, int[] Hidden, bool Bold, int Height, string Layout = Themes.CardLayout, bool SixStep = false, bool Tagged = false);
     public static Library CreateSample()
     {
         var library = new Library();
@@ -50,8 +50,8 @@ public static class PromotionExporter
         var scenes = new[] {
             new Scene("01-纸感总览", "把精力留给\n能推进的论文", "七个阶段，一眼看清进度。\n标题最左边的三个点表示优先级，\n进度条细而安静。", "纸感主题  /  多论文同屏  /  右下角统一论文设置", "纸感 · 竹青", ViewRules.PageModes[0], 0, new[] {4}, true, 800),
             new Scene("02-标签分页", "先做重要的事", "高、中、低三档优先级。\n阶段按类别分色，\n一眼看得出卡在哪一步。", "标签主题  /  按优先级翻页：高 → 中 → 低", "标签 · 蓝", ViewRules.PageModes[1], 0, new[] {4}, true, 540),
-            new Scene("03-阶段分页-推进", "正在推进的\n留在第一页", "把在审与收录单独分组。\n第一页只看当下能做的事，\n需要时再翻页查看其余论文。", "阶段分组  /  本页排除在审与收录", "纸感 · 雾蓝", ViewRules.PageModes[2], 0, new[] {4,6}, true, 700),
-            new Scene("04-阶段分页-在审", "等待中的论文\n也有自己的位置", "第二页只看在审与收录。\n隐藏只改变视图，\n论文资料和进度仍完整保留。", "深色主题  /  阶段分组  /  本页仅在审与收录", "夜航 · 霜蓝", ViewRules.PageModes[2], 1, new[] {4,6}, true, 540),
+            new Scene("03-阶段方案", "阶段也能\n自己配", "两套内置方案，也可以复制一份改成自己的：\n加、删、改名，按住卡片拖动排序。", "六步流程  /  可拖动排序  /  每篇论文各选一套", "柔光 · 陶土", ViewRules.PageModes[0], 0, Array.Empty<int>(), false, 800, Themes.CardLayout, true),
+            new Scene("04-隐藏用标签", "在等谁，\n一眼看到", "自己造标签贴在论文上，\n把在等消息的那几篇收起来，\n需要的时候再展开看一眼。", "隐藏用标签  /  最多贴三个  /  随时展开", "极简 · 白", ViewRules.PageModes[0], 0, Array.Empty<int>(), true, 700, Themes.CardLayout, false, true),
             new Scene("05-柔光与常规标题", "让桌面\n保持你的节奏", "二十多套主题，五种排版风格，\n还可以跟随 Windows 的深浅色，\n把小部件调成适合自己的样子。", "柔光主题  /  常规字重  /  独立本机外观", "柔光 · 陶土", ViewRules.PageModes[0], 0, new[] {4}, false, 800),
             new Scene("06-极简列表", "论文多的时候\n一屏看更多", "换成列表布局，去掉卡片，\n只用一条分隔线，\n一屏能看八到十篇。", "极简主题  /  列表布局  /  细进度条", "极简 · 白", ViewRules.PageModes[0], 0, new[] {4}, true, 800, Themes.ListLayout)
         };
@@ -59,7 +59,24 @@ public static class PromotionExporter
         foreach (var scene in scenes)
         {
             var library = CreateSample();
+            // 03：整库换成"六步流程"，看的是自定义方案的样子。
+            if (scene.SixStep)
+                for (int n = 0; n < library.Papers.Count; n++)
+                {
+                    var paper = library.Papers[n];
+                    paper.SchemeName = Schemes.SixStepName;
+                    paper.Stages = Schemes.NewStages(Schemes.SixStep.StageNames);
+                    for (int i = 0; i < Math.Min(n % 4 + 1, paper.Stages.Count); i++) paper.Stages[i].Done = true;
+                }
+            // 04：贴上三个标签，并把带"等编辑部意见"的那篇收起来（临时展开状态，所以显示成灰底）。
+            if (scene.Tagged)
+            {
+                library.Papers[0].Tags.Add("等老师反馈");
+                library.Papers[1].Tags.Add("等编辑部意见");
+                library.Papers[2].Tags.Add("等合作者反馈");
+            }
             library.Settings = new Preferences { Width = 1060, Height = scene.Height, Theme = scene.Theme, ListLayout = scene.Layout, TextSize = 16, BarHeight = 0, TitleBold = scene.Bold, HiddenStages = scene.Hidden.ToList(), PageMode = scene.Mode, PageIndex = scene.Page, Topmost = false };
+            if (scene.Tagged) { library.Settings.TagHidingEnabled = true; library.Settings.HiddenTags = new List<string> { "等编辑部意见" }; library.Settings.ShowHiddenNow = true; }
             var local = Path.Combine(work, scene.File); var storage = new Storage(local); var sync = new SyncEngine(local, "", library);
             var window = new MainWindow(storage, library, sync, true) { ShowInTaskbar = false, ShowActivated = false, Left = -20000, Top = -20000, Width = 1060, Height = scene.Height };
             window.Show(); await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); window.UpdateLayout();

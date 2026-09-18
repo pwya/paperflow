@@ -15,6 +15,13 @@ namespace PaperFlow;
 // desktop capture or existing runtime settings can be supplied to this exporter.
 public static class PromotionExporter
 {
+    // --article-poster 的默认值。这是开发者工具，不走界面词表，所以放在这个不参与翻译扫描的文件里。
+    public const string ArticleUsage = "请指定配图输出目录。";
+    public const string ArticleDefaultName = "paperflow-配图";
+    public const string ArticleDefaultTitle = "壁纸换成\n你喜欢的";
+    public const string ArticleDefaultDescription = "小部件也能换背景图：\n选一张你喜欢的图片、调好遮罩，\n文字照样看得清清楚楚。";
+    public const string ArticleDefaultDetail = "自定义背景图  /  图片遮罩可调  /  独立本机外观";
+    public const string ArticleDefaultTheme = "极简 · 白";
     private sealed record Scene(string File, string Title, string Description, string Detail, string Theme, string Mode, int Page, int[] Hidden, bool Bold, int Height, string Layout = Themes.CardLayout);
     public static Library CreateSample()
     {
@@ -106,20 +113,22 @@ public static class PromotionExporter
     // 公众号配图：用你自己的图当背景，界面部分仍然是代码生成的虚构论文。
     // backdrop = true  那张图铺满整张海报（上面盖一层浅色遮罩，文案才看得清）；
     // backdrop = false 那张图当作小组件自己的背景图，海报底仍是常规渐变。
-    public static async Task GenerateArticle(string directory, string background, bool backdrop, string name, string title, string description, string detail)
+    public static async Task GenerateArticle(string directory, string background, bool backdrop, string name, string title, string description, string detail, double scrim, int height = 760, string theme = "极简 · 白")
     {
         if (!File.Exists(background)) throw new FileNotFoundException("找不到背景图：" + background);
+        if (!Themes.IsKnown(theme)) throw new ArgumentException("不认识的主题：" + theme);
+        height = Math.Clamp(height, 480, 1400);
         Directory.CreateDirectory(directory);
         var work = Path.Combine(Path.GetTempPath(), "PaperFlow-article-" + Guid.NewGuid().ToString("N"));
         var library = CreateSample();
         library.Settings = new Preferences
         {
-            Width = 1060, Height = 760, Theme = "极简 · 白", ListLayout = Themes.CardLayout, TextSize = 15,
+            Width = 1060, Height = height, Theme = theme, ListLayout = Themes.CardLayout, TextSize = 15,
             HiddenStages = new List<int> { 4 }, PageMode = ViewRules.PageModes[0], PageIndex = 0, Topmost = false,
-            BackgroundImage = backdrop ? "" : background, BackgroundOpacity = 0.9, ImageScrim = 0.35
+            BackgroundImage = backdrop ? "" : background, BackgroundOpacity = 0.9, ImageScrim = scrim
         };
         var local = Path.Combine(work, "data"); var storage = new Storage(local); var sync = new SyncEngine(local, "", library);
-        var window = new MainWindow(storage, library, sync, true) { ShowInTaskbar = false, ShowActivated = false, Left = -20000, Top = -20000, Width = 1060, Height = 760 };
+        var window = new MainWindow(storage, library, sync, true) { ShowInTaskbar = false, ShowActivated = false, Left = -20000, Top = -20000, Width = 1060, Height = height };
         window.Show(); await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); window.UpdateLayout();
         var visual = (FrameworkElement)window.Content;
         var raw = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth * 2), (int)Math.Ceiling(visual.ActualHeight * 2), 192, 192, PixelFormats.Pbgra32);

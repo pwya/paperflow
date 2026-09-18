@@ -43,10 +43,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 
 ```powershell
 # 用指定图片当背景，渲染一张 2880×1920 的海报（界面部分仍是代码生成的虚构论文）
 PaperFlow.exe --article-poster <输出目录> --background <图片路径> --name <文件名> [--backdrop]
+             [--scrim <0-95>] [--height <像素，默认 760>] [--theme <主题名，默认 极简 · 白>]
              [--title <文案>] [--description <文案>] [--detail <文案>]
 ```
 
-不加 `--backdrop` 时，那张图作为**小组件自己的背景图**；加了 `--backdrop`，那张图铺满**整张海报**（会自动盖一层浅色遮罩保证文字可读）。同时还会输出一张 2 倍像素的 `-界面原图.png`。三次导出都不会读取任何真实资料。
+不加 `--backdrop` 时，那张图作为**小组件自己的背景图**；加了 `--backdrop`，那张图铺满**整张海报**（会自动盖一层浅色遮罩保证文字可读）。同时还会输出一张 2 倍像素的 `-界面原图.png`。
+
+配图当背景时：`--scrim` 是图片遮罩浓度（默认 35，数字越大字越清楚、图片越淡），`--height` 是小组件高度（默认 760，接近日常挂件的比例；调大到 1000 上下能更完整地露出方形背景图），`--theme` 决定取色（默认 `极简 · 白`，暖色可用 `柔光 · 陶土`，深色可用 `极简 · 夜`）。三次导出都不会读取任何真实资料。
 
 ## 镜像到 Gitee
 

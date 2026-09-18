@@ -30,7 +30,7 @@ public partial class App : Application
         int promoIndex = Array.IndexOf(e.Args, "--promotional-assets");
         int galleryIndex = Array.IndexOf(e.Args, "--theme-gallery");
         int chimeIndex = Array.IndexOf(e.Args, "--sound-check");
-        // 公众号配图：--article-poster <输出目录> --background <图片> [--backdrop] [--name <文件名>] [--title/--description/--detail <文案>]
+        // 公众号配图：--article-poster <输出目录> --background <图片> [--backdrop] [--name <文件名>] [--scrim <0-95>] [--height <像素>] [--theme <主题名>] [--title/--description/--detail <文案>]
         int articleIndex = Array.IndexOf(e.Args, "--article-poster");
         if (articleIndex >= 0)
         {
@@ -39,13 +39,16 @@ public partial class App : Application
             {
                 try
                 {
-                    if (articleIndex + 1 >= e.Args.Length) throw new ArgumentException("请指定配图输出目录。");
+                    if (articleIndex + 1 >= e.Args.Length) throw new ArgumentException(PromotionExporter.ArticleUsage);
                     string Value(string flag, string fallback) { int at = Array.IndexOf(e.Args, flag); return at >= 0 && at + 1 < e.Args.Length ? e.Args[at + 1] : fallback; }
                     string directory = Path.GetFullPath(e.Args[articleIndex + 1]);
                     string background = Path.GetFullPath(Value("--background", ""));
-                    string name = Value("--name", "paperflow-配图");
+                    string name = Value("--name", PromotionExporter.ArticleDefaultName);
+                    double scrim = double.TryParse(Value("--scrim", "35"), out double parsed) ? Math.Clamp(parsed / 100.0, 0, 0.95) : 0.35;
+                    int height = int.TryParse(Value("--height", "760"), out int pixels) ? pixels : 760;
                     await PromotionExporter.GenerateArticle(directory, background, Array.IndexOf(e.Args, "--backdrop") >= 0, name,
-                        Value("--title", "论文进度\n就在桌面上"), Value("--description", "七个阶段，一眼看清进度。\n点一下就能更新。\n还可以换成你自己的背景图。"), Value("--detail", "极简主题  /  自定义背景图  /  多论文同屏"));
+                        Value("--title", PromotionExporter.ArticleDefaultTitle), Value("--description", PromotionExporter.ArticleDefaultDescription), Value("--detail", PromotionExporter.ArticleDefaultDetail),
+                        scrim, height, Value("--theme", PromotionExporter.ArticleDefaultTheme));
                     Shutdown(0);
                 }
                 catch (Exception ex) { Console.Error.WriteLine(ex); Shutdown(1); }

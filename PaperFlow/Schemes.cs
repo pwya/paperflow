@@ -77,6 +77,39 @@ public static class Schemes
 
     public static StageScheme? Find(string name) => BuiltIn.FirstOrDefault(s => s.Name == name);
 
+    // 内置两套 + 用户自建的，给下拉和面板用。
+    public static List<StageScheme> All(IEnumerable<StageScheme> custom) => BuiltIn.Concat(custom).ToList();
+
+    // 这套方案里有没有这个名字（用来判断"改过没有"）。
+    public static bool Matches(StageScheme scheme, IEnumerable<string> stages) => scheme.StageNames.SequenceEqual(stages);
+
+    // 这篇论文现在用的是哪套方案：名字对得上、内容一字不差才算没改过；否则它就是自己单独改过的。
+    public static (StageScheme Scheme, bool Changed) Resolve(Paper paper, IEnumerable<StageScheme> custom)
+    {
+        string name = string.IsNullOrWhiteSpace(paper.SchemeName) ? DefaultName : paper.SchemeName;
+        var stages = paper.Stages.Select(s => s.Name).ToList();
+        var found = BuiltIn.Concat(custom).FirstOrDefault(s => s.Name == name);
+        return found != null && Matches(found, stages) ? (found, false) : (new StageScheme(name, stages), true);
+    }
+
+    // 拖动排序：把第 from 个搬到第 to 个位置。下标越界就原样返回，不抛异常。
+    public static List<string> Move(IReadOnlyList<string> stages, int from, int to)
+    {
+        var list = stages.ToList();
+        if (from < 0 || from >= list.Count) return list;
+        string item = list[from];
+        list.RemoveAt(from);
+        list.Insert(Math.Clamp(to, 0, list.Count), item);
+        return list;
+    }
+
+    // 汇总里"X 篇……"那半句用的名字：所有论文最后一格同名就用它，不然退回到中性的"已完成"。
+    public static string CompletionLabel(IEnumerable<Paper> papers)
+    {
+        var names = papers.Select(p => p.Stages.Count == 0 ? "" : Display(p.Stages[^1].Name)).Where(n => n.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        return names.Count == 1 ? names[0] : "已完成";
+    }
+
     // 显示名：内置的"投稿"在界面上叫"在审"，自建阶段原样显示。
     public static string Display(string storedName) => storedName == Submission ? UnderReview : storedName;
 

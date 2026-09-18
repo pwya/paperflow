@@ -15,12 +15,15 @@ public sealed class SettingsWindow : Window
     public Preferences Result { get; }
     // 用户在这个窗口里改过的标签名字：保存时要把论文上贴着的旧名字一起改掉。
     public List<(string From, string To)> TagRenames { get; } = new();
+    // 方案改名同理：论文身上记着方案名，改名要一起跟过去。
+    public List<(string From, string To)> SchemeRenames { get; } = new();
     private bool ready;
     // 分类名跟着语言走；用属性而不是静态字段，免得第一次取值时的语言被永久记住。
-    private static string[] Categories => new[] { Lang.T("外观"), Lang.T("字体与文字"), Lang.T("视图与分页"), Lang.T("同步与启动"), Lang.T("关于与反馈") };
+    private static string[] Categories => new[] { Lang.T("外观"), Lang.T("字体与文字"), Lang.T("视图与分页"), Lang.T("阶段方案"), Lang.T("同步与启动"), Lang.T("关于与反馈") };
 
-    public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview, Func<int> estimate)
+    public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview, Func<int> estimate, Func<string, int>? schemeUsage = null)
     {
+        schemeUsage ??= (_ => 0);
         Result = JsonSerializer.Deserialize<Preferences>(JsonSerializer.Serialize(settings))!;
         double scale = Appearance.DialogScale;
         // Inside a normal window the text stops at 250%, so the form always fits.
@@ -295,7 +298,76 @@ public sealed class SettingsWindow : Window
         Label(view, Lang.T("铺满屏幕时界面会不会挤，取决于字号和界面缩放的组合。字号很大时阶段标签会换行、卡片自然变高，一屏能看到的论文会变少，这是正常的。"), 11);
 
         // ---------- 同步与启动 ----------
-        var sync = pages[3];
+        // ---------- 阶段方案 ----------
+        var schemes = pages[3];
+        Label(schemes, Lang.T("阶段方案"), 20);
+        Label(schemes, Lang.T("一套方案就是一串有序的阶段。内置两套可以直接用；自己的方案可以随便加、改名、删，也可以按住卡片左边的点拖动排序。换方案时同名阶段会保留勾选，对不上的会变回未勾。"), 11);
+        // schemeRows 先声明：下面几个按钮的 lambda 会调用 RebuildSchemes。
+        var schemeRows = new StackPanel(); schemes.Children.Add(schemeRows);
+        Label(schemes, Lang.T("内置方案"), 16);
+        foreach (var built in Schemes.BuiltIn)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2 * Appearance.Scale, 0, 2 * Appearance.Scale) };
+            row.Children.Add(new TextBlock { Text = Lang.T(built.Name) + " · " + string.Join(Lang.ListSeparator, built.StageNames.Select(n => Lang.T(Schemes.Display(n)))), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12 * Appearance.Scale, 0), TextWrapping = TextWrapping.Wrap });
+            row.Children.Add(B(Lang.T("复制一份再改"), () =>
+            {
+                var prompt = new TextPrompt(Lang.T("复制一份再改"), Lang.T("新方案的名字"), Lang.T(built.Name) + Lang.T(" 副本")) { Owner = this };
+                if (prompt.ShowDialog() != true) return;
+                if (!AddScheme(prompt.Value, built.StageNames)) return;
+                RebuildSchemes();
+            }));
+            schemes.Children.Add(row);
+        }
+        Label(schemes, Lang.T("我自己的方案"), 16);
+        var newScheme = B(Lang.T("新建方案…"), () =>
+        {
+            var prompt = new TextPrompt(Lang.T("新建方案"), Lang.T("新方案的名字"), "") { Owner = this };
+            if (prompt.ShowDialog() != true) return;
+            // 从"标准七步"起手，改起来比对着空列表快。
+            if (!AddScheme(prompt.Value, Schemes.Default.StageNames)) return;
+            RebuildSchemes();
+        });
+        schemes.Children.Add(newScheme);
+        Label(schemes, Lang.T("内置两套不能改名、也不能删；想改就先复制一份。正在被论文使用的方案删不掉，得先给那些论文换一套。"), 11);
+        void RebuildSchemes()
+        {
+            schemeRows.Children.Clear();
+            foreach (var scheme in Result.CustomSchemes.ToList())
+            {
+                var current = scheme;
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2 * Appearance.Scale, 0, 2 * Appearance.Scale) };
+                row.Children.Add(new TextBlock { Text = Lang.T(current.Name) + " · " + string.Join(Lang.ListSeparator, current.StageNames.Select(n => Lang.T(Schemes.Display(n)))), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12 * Appearance.Scale, 0), TextWrapping = TextWrapping.Wrap });
+                row.Children.Add(B(Lang.T("编辑…"), () =>
+                {
+                    var editor = new StageEditorDialog(Lang.T("阶段方案"), Lang.T("改名、加阶段、删阶段、按住拖动排序，都在这里。"), current.Name, current.StageNames, true, name => Result.CustomSchemes.Any(s => s.Name == name && s.Name != current.Name)) { Owner = this };
+                    if (editor.ShowDialog() != true) return;
+                    int at = Result.CustomSchemes.IndexOf(current);
+                    if (at < 0) return;
+                    if (editor.ResultSchemeName != current.Name) SchemeRenames.Add((current.Name, editor.ResultSchemeName));
+                    Result.CustomSchemes[at] = new StageScheme(editor.ResultSchemeName, editor.ResultStages);
+                    RebuildSchemes();
+                }));
+                row.Children.Add(B(Lang.T("删掉"), () =>
+                {
+                    int used = schemeUsage(current.Name);
+                    if (used > 0) { MessageBox.Show(this, Lang.F("还有 {0} 篇论文在用《{1}》，先给它们换一个方案，再删这个方案。", used, Lang.T(current.Name))); return; }
+                    Result.CustomSchemes.Remove(current); RebuildSchemes();
+                }));
+                schemeRows.Children.Add(row);
+            }
+            if (Result.CustomSchemes.Count == 0) schemeRows.Children.Add(new TextBlock { Text = Lang.T("还没有自己的方案。"), Foreground = MainWindow.Brush("#78867F"), FontSize = 11 * scale });
+        }
+        bool AddScheme(string rawName, IReadOnlyList<string> stageNames)
+        {
+            string name = (rawName ?? "").Trim();
+            if (!Schemes.IsValidSchemeName(name)) { MessageBox.Show(this, Storage.Why(SchemeProblem.NameTooWide)); return false; }
+            if (Schemes.IsBuiltIn(name) || Result.CustomSchemes.Any(s => s.Name == name)) { MessageBox.Show(this, Lang.T("已经有同名的方案了。")); return false; }
+            Result.CustomSchemes.Add(new StageScheme(name, stageNames.ToList()));
+            return true;
+        }
+        RebuildSchemes();
+
+        var sync = pages[4];
         Label(sync, Lang.T("论文同步与备份"), 20);
         // 不假定任何人一定在用同步文件夹：用着就显示地址，然后一句 tip 说清它能做什么。
         if (Result.SyncFolder != "") Label(sync, Lang.T("正在使用同步文件夹\n") + Result.SyncFolder, 11);
@@ -353,7 +425,7 @@ public sealed class SettingsWindow : Window
         sync.Children.Add(B(Lang.T("打开程序文件夹"), () => OpenFolder(Shortcuts.ProgramFolder(Result.LauncherPath))));
 
         // ---------- 关于与反馈 ----------
-        var about = pages[4];
+        var about = pages[5];
         Label(about, Product.Name, 20);
         Label(about, Lang.F("版本 {0}", Product.Version), 12);
         Label(about, Lang.T("MIT 许可 · Copyright (c) 2026 Panwang Yuang\n不需要注册账号，论文数据只存在你自己的电脑上。程序只在检查更新时联网，而且只下载、不上传。"), 11);

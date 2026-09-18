@@ -157,7 +157,7 @@ public sealed class MainWindow : Window
         summary.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); top.Children.Add(summary);
         AutomationProperties.SetName(search, Lang.T("搜索论文、学科、期刊")); search.ToolTip = Lang.T("搜索论文、学科、期刊、合作者或备注");
         search.TextChanged += (_, _) => { if (ready) Render(); };
-        filter.ItemsSource = new[] { Lang.T("全部论文"), Lang.T("进行中"), Lang.T("已收录"), Lang.T("已归档") }; filter.SelectedIndex = 0; filter.Margin = new Thickness(7, 0, 0, 0);
+        filter.ItemsSource = new[] { Lang.T("全部论文"), Lang.T("进行中"), Lang.T("已完成"), Lang.T("已归档") }; filter.SelectedIndex = 0; filter.Margin = new Thickness(7, 0, 0, 0);
         filter.SelectionChanged += (_, _) => { if (ready) Render(); };
         // 显示按语言走，值还是原来的规范值，所以下面的索引逻辑一个字都不用改。
         sort.ItemsSource = Lang.Choices(ViewRules.SortModes); sort.DisplayMemberPath = "Label"; sort.SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SortModes, library.Settings.SortMode)); sort.Margin = new Thickness(7, 0, 0, 0);
@@ -331,7 +331,8 @@ public sealed class MainWindow : Window
         pin.Foreground = library.Settings.Topmost ? Brush("#21846B") : Brush("#78867F");
         compact.Content = Lang.T(library.Settings.Compact ? "展开" : "紧凑");
         var active = library.Papers.Where(p => !p.Archived).ToList();
-        summary.Text = Lang.P(active.Count, "{0} 篇论文   ·   {1} 篇推进中   ·   {2} 篇已收录", "{0} paper   ·   {1} in progress   ·   {2} accepted", "{0} papers   ·   {1} in progress   ·   {2} accepted", active.Count, active.Count(p => !p.IsComplete), active.Count(p => p.IsComplete))
+        // 最后那半句跟着方案走：全套用同一套方案就显示它最后一格的名字（已收录 / 已录用），混着用退回"已完成"。
+        summary.Text = Lang.P(active.Count, "{0} 篇论文   ·   {1} 篇推进中   ·   {2} 篇{3}", "{0} paper   ·   {1} in progress   ·   {2} {3}", "{0} papers   ·   {1} in progress   ·   {2} {3}", active.Count, active.Count(p => !p.IsComplete), active.Count(p => p.IsComplete), Lang.T(Schemes.CompletionLabel(active)))
             + (filter.SelectedIndex != 0 || search.Text != "" ? Lang.T("   ·   已筛选") : "");
         var candidates = Candidates();
         // 右上角的临时开关：有被隐藏用标签收起来的论文（或正展开着）时才出现。
@@ -824,10 +825,13 @@ public sealed class MainWindow : Window
     private void EditPaper(Paper original)
     {
         var knownTags = library.Settings.CustomTags.Concat(library.Papers.SelectMany(x => x.Tags)).Distinct(StringComparer.Ordinal).Where(t => t.Length > 0).ToList();
-        var dialog = new PaperEditor(Storage.Clone(original), knownTags) { Owner = this };
+        var dialog = new PaperEditor(Storage.Clone(original), knownTags, library.Settings.CustomSchemes) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             Commit(l => { dialog.Result.Record("更新论文资料"); var before = new Library { Papers = new() { original } }; var after = new Library { Papers = new() { dialog.Result } }; SyncProtocol.ApplyEdits(l, SyncProtocol.Diff(before, after)); });
+            // 论文里另存出来的方案，并进本机方案库（重名在对话框里已经拦过）。
+            if (dialog.SavedScheme is StageScheme added && !library.Settings.CustomSchemes.Any(s => s.Name == added.Name))
+                Commit(l => l.Settings.CustomSchemes.Add(added));
             // 贴上了会隐藏的标签就说一声它去哪了，并给一个"立即显示"。
             var notice = ViewRules.AfterTagChange(dialog.Result, library.Settings);
             if (notice != null) ShowNotice(notice.Text, notice.Action, () => Commit(l => l.Settings.ShowHiddenNow = true));
@@ -841,7 +845,7 @@ public sealed class MainWindow : Window
     private void OpenSettings()
     {
         var original = Storage.CloneLibrary(library).Settings;
-        var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, PreviewAppearance, EstimateVisiblePapers) { Owner = this };
+        var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, PreviewAppearance, EstimateVisiblePapers, name => library.Papers.Count(p => p.SchemeName == name)) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             bool languageChanged = !string.Equals(Lang.Effective(original.Language), Lang.Effective(dialog.Result.Language), StringComparison.Ordinal);
@@ -853,6 +857,14 @@ public sealed class MainWindow : Window
                 foreach (var (from, to) in dialog.TagRenames) map[from] = to;
                 string Resolve(string tag) { var seen = new HashSet<string>(StringComparer.Ordinal); while (map.TryGetValue(tag, out var next) && seen.Add(tag)) tag = next; return tag; }
                 Commit(l => { foreach (var paper in l.Papers) paper.Tags = paper.Tags.Select(Resolve).Distinct(StringComparer.Ordinal).ToList(); });
+            }
+            // 方案改名同理：论文身上记的是方案名，改名要一起跟过去。
+            if (dialog.SchemeRenames.Count > 0)
+            {
+                var map = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var (from, to) in dialog.SchemeRenames) map[from] = to;
+                string ResolveScheme(string tag) { var seen = new HashSet<string>(StringComparer.Ordinal); while (map.TryGetValue(tag, out var next) && seen.Add(tag)) tag = next; return tag; }
+                Commit(l => { foreach (var paper in l.Papers) if (map.ContainsKey(paper.SchemeName)) paper.SchemeName = ResolveScheme(paper.SchemeName); });
             }
             // 语言换了就重启一次：挂件上的按钮、托盘菜单是开窗口时建好的，重启最干净。
             if (languageChanged) { Restart(); return; }

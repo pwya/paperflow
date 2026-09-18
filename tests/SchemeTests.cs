@@ -51,6 +51,33 @@ static class SchemeTests
         check(Schemes.Of(new Paper { Title = "x" }).Name == Schemes.DefaultName, "papers report their scheme name");
         check(Schemes.Of(new Paper { Title = "y", SchemeName = "我的方案" }).Stages.Count == 7, "a paper carries its own stage list");
 
+        // 拖动排序：搬走一项、插到新位置，越界就原样不动，也不改传入的列表。
+        var order = new List<string> { "甲", "乙", "丙" };
+        check(Schemes.Move(order, 0, 2).SequenceEqual(new[] { "乙", "丙", "甲" }), "dragging the first stage to the end reorders it");
+        check(Schemes.Move(order, 2, 0).SequenceEqual(new[] { "丙", "甲", "乙" }), "dragging the last stage to the front reorders it");
+        check(Schemes.Move(order, 9, 0).SequenceEqual(order), "an out of range drag leaves the order alone");
+        check(order.SequenceEqual(new[] { "甲", "乙", "丙" }), "reordering never mutates the input");
+
+        // 这篇论文用的是哪套方案：没动过就是内置那套，改过就是它自己那份。
+        var untouched = new Paper { Title = "resolve sample" };
+        var (resolved, edited) = Schemes.Resolve(untouched, new List<StageScheme>());
+        check(resolved.Name == Schemes.DefaultName && !edited, "an untouched paper resolves to the built-in scheme");
+        untouched.Stages[0].Name = "新的第一步";
+        check(Schemes.Resolve(untouched, new List<StageScheme>()).Changed, "an edited paper resolves to its own stages");
+        var custom = new StageScheme("我的方案", new List<string> { "甲", "乙" });
+        var mine = new Paper { Title = "custom scheme sample", SchemeName = "我的方案" };
+        mine.Stages = Schemes.NewStages(custom.StageNames);
+        var (found, changedAgain) = Schemes.Resolve(mine, new[] { custom });
+        check(found.Name == "我的方案" && !changedAgain, "a paper on a custom scheme resolves to it");
+        check(Schemes.All(new[] { custom }).Count == 3, "the scheme list is the two built-ins plus your own");
+        check(Schemes.Matches(Schemes.Default, Paper.StageNames), "a scheme matches its own stage names");
+
+        // 汇总那半句：全套一个名字就用它，混着用退回中性的"已完成"。
+        check(Schemes.CompletionLabel(new[] { new Paper { Title = "a" }, new Paper { Title = "b" } }) == "收录", "one shared last stage name is used in the summary");
+        var sixStepPaper = new Paper { Title = "c", SchemeName = Schemes.SixStepName };
+        sixStepPaper.Stages = Schemes.NewStages(Schemes.SixStep.StageNames);
+        check(Schemes.CompletionLabel(new[] { new Paper { Title = "a" }, sixStepPaper }) == "已完成", "mixed last stage names fall back to a neutral word");
+
         // 1.13.7 的老文件：完全没有 SchemeName / Tags / CustomSchemes 这些新字段。
         // 载入后七个阶段、勾选、进度一格都不动，方案自动认成"标准七步"。
         var legacy = Storage.Parse("""

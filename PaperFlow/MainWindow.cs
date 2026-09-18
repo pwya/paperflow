@@ -997,7 +997,11 @@ public sealed class MainWindow : Window
         var root = new DockPanel { Margin = new Thickness(22) }; window.Content = root;
         var controls = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) };
         DockPanel.SetDock(controls, Dock.Bottom); root.Children.Add(controls);
-        var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto });
+        var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) };
+        var optionsScroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        // 让内容宽度跟着视口走，否则长句子会被切成一行、还多出一条横向滚动条。
+        body.SetBinding(FrameworkElement.WidthProperty, new System.Windows.Data.Binding("ViewportWidth") { Source = optionsScroll });
+        root.Children.Add(optionsScroll);
         body.Children.Add(Text(Lang.T("搜索与视图"), 20));
         body.Children.Add(Text(Lang.T("搜索论文、期刊、学科或合作者"), 11, "#78867F"));
         search.Margin = new Thickness(0, 9, 0, 12); body.Children.Add(search);

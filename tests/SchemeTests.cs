@@ -192,5 +192,27 @@ static class SchemeTests
         check(carried.Count == 1 && carried[0].Name == "乙方案" && carried[0].StageNames.SequenceEqual(new[] { "准备", "写作" }), "a scheme carried by a paper is picked up even on a machine that never saw it");
         check(Schemes.FromPapers(new[] { p1 }, knownList).Count == 0, "schemes this machine already knows are not duplicated");
         check(!Schemes.Resolve(foreign, Schemes.FromPapers(new[] { foreign }, knownList)).Changed, "a scheme from another machine is recognised instead of being marked hand-edited");
+
+        // 存盘往返：方案、标签、"看过哪些角标"都要原样回来。
+        var roundTrip = new Library();
+        var carriedPaper = new Paper { Title = "round trip", SchemeName = "我的方案" };
+        carriedPaper.Stages = Schemes.NewStages(new[] { "构思", "写作", "投稿" });
+        carriedPaper.Stages[1].Done = true;
+        carriedPaper.Tags = new List<string> { "等老师反馈", "等编辑部意见" };
+        roundTrip.Papers.Add(carriedPaper);
+        roundTrip.Settings.CustomSchemes.Add(new StageScheme("我的方案", new List<string> { "构思", "写作", "投稿" }));
+        roundTrip.Settings.CustomTags.Add("等老师反馈");
+        roundTrip.Settings.CustomTags.Add("等编辑部意见");
+        roundTrip.Settings.TagHidingEnabled = true;
+        roundTrip.Settings.HiddenTags.Add("等老师反馈");
+        roundTrip.Settings.SeenNewFeatures.Add(WhatsNew.Options);
+        var back = Storage.Parse(System.Text.Json.JsonSerializer.Serialize(roundTrip, Storage.JsonOptions));
+        check(back.Papers[0].Stages.Count == 3 && back.Papers[0].Stages[1].Done && back.Papers[0].SchemeName == "我的方案", "stages and the scheme name survive a save and load");
+        check(back.Papers[0].Tags.SequenceEqual(new[] { "等老师反馈", "等编辑部意见" }), "tags survive a save and load");
+        check(back.Settings.CustomSchemes.Count == 1 && back.Settings.CustomSchemes[0].StageNames.SequenceEqual(new[] { "构思", "写作", "投稿" }), "schemes of your own survive a save and load");
+        check(back.Settings.TagHidingEnabled && back.Settings.HiddenTags.SequenceEqual(new[] { "等老师反馈" }), "tag hiding settings survive a save and load");
+        check(back.Settings.SeenNewFeatures.Count == 1 && back.Settings.SeenNewFeatures[0] == WhatsNew.Options, "the seen-badge list survives a save and load");
+        // 极端字号下卡片放不下标签：一个都不放，标题优先。
+        check(Schemes.TagSlots(3, 40, 60, 200) == 0, "a card too narrow for both keeps the title and drops every tag");
     }
 }

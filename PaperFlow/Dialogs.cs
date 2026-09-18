@@ -28,8 +28,10 @@ public sealed class PaperEditor : Window
         var root = new DockPanel { Margin = new Thickness(22) }; Content = root;
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
         DockPanel.SetDock(actions, Dock.Bottom); root.Children.Add(actions);
-        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         root.Children.Add(scroll); var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; scroll.Content = body;
+        // 内容宽度跟着视口走：长句子换行，不会横向溢出（同一个坑在论文选项里踩过一次）。
+        body.SetBinding(FrameworkElement.WidthProperty, new System.Windows.Data.Binding("ViewportWidth") { Source = scroll });
         var headline = MainWindow.Text(Lang.T("让下一步更清楚"), 22); headline.Margin = new Thickness(0, 0, 0, 6); body.Children.Add(headline);
         var caption = MainWindow.Text(Lang.T("阶段在小部件上直接勾选；这里保存论文的完整资料，也可以贴标签。"), 12, "#78867F"); caption.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(caption);
 

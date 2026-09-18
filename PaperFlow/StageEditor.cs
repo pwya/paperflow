@@ -65,6 +65,7 @@ public sealed class StageEditorDialog : Window
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         root.Children.Add(scroll);
         var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; scroll.Content = body;
+        body.SetBinding(FrameworkElement.WidthProperty, new System.Windows.Data.Binding("ViewportWidth") { Source = scroll });
         var title = MainWindow.Text(headline, 22); body.Children.Add(title);
         var hint = MainWindow.Text(caption, 11, "#78867F"); hint.Margin = new Thickness(0, 0, 0, 16); body.Children.Add(hint);
         schemeName = new TextBox { Text = schemeNameValue, Margin = new Thickness(0, 5, 0, 16), MaxLength = 60, Visibility = schemeMode ? Visibility.Visible : Visibility.Collapsed };

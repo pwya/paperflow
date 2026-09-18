@@ -421,6 +421,12 @@ public sealed class SettingsWindow : Window
         var shortcutDesktop = new CheckBox { Content = Lang.T("桌面上放一个入口"), IsChecked = Shortcuts.Exists(Shortcuts.DesktopPath()), Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) };
         var shortcutStart = new CheckBox { Content = Lang.T("开始菜单里放一个入口"), IsChecked = Shortcuts.Exists(Shortcuts.StartMenuPath()), Margin = new Thickness(0, 0, 0, 6 * Appearance.Scale) };
         sync.Children.Add(shortcutDesktop); sync.Children.Add(shortcutStart);
+        if (Product.Portable)
+        {
+            // 试用版不该动正式版在用的开机启动和快捷方式：直接把这两处关掉并说明原因。
+            startup.IsEnabled = false; shortcutDesktop.IsEnabled = false; shortcutStart.IsEnabled = false;
+            Label(sync, Lang.T("试用版不改动开机启动和桌面、开始菜单快捷方式，免得覆盖你正式在用的那套入口。"), 11);
+        }
         Label(sync, Lang.T("勾上表示放好，取消勾选表示移除，保存设置时生效；不勾也不影响程序运行。任务栏图标不能由程序自己钉：右键上面那个快捷方式，选“固定到任务栏”就留在任务栏上了。"), 11);
         sync.Children.Add(B(Lang.T("打开程序文件夹"), () => OpenFolder(Shortcuts.ProgramFolder(Result.LauncherPath))));
 

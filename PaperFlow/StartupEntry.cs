@@ -19,6 +19,7 @@ public static class StartupEntry
     }
     public static void Write(bool enabled, string launcher)
     {
+        if (Product.Portable) throw new IOException(Lang.T("试用模式（指定了资料目录）不会改动开机启动，免得动到你正式在用的那套设置。"));
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);
         if (!enabled) { key.DeleteValue(Name, false); key.DeleteValue(LegacyName, false); return; }
         if (launcher == "" || !File.Exists(launcher)) throw new IOException(Lang.T("启动入口不可用，请从固定的启动器打开后再设置。"));

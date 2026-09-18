@@ -8,7 +8,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>PaperFlow</AssemblyName>
     <RootNamespace>PaperFlow</RootNamespace>
-    <Version>1.13.7</Version>
+    <Version>2.0.0</Version>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <Product>PaperFlow</Product>
     <Description>PaperFlow 离线论文投稿进度桌面小部件</Description>

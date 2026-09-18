@@ -30,6 +30,25 @@ public partial class App : Application
         int promoIndex = Array.IndexOf(e.Args, "--promotional-assets");
         int galleryIndex = Array.IndexOf(e.Args, "--theme-gallery");
         int chimeIndex = Array.IndexOf(e.Args, "--sound-check");
+        // 试用版构建（--demo）：窗口和托盘提示后面挂"（试用）"，方便和正式版区分。
+        if (Array.IndexOf(e.Args, "--demo") >= 0) Product.Demo = true;
+        // 预览"这次改了什么"这一页：只给开发和试用看，不加载正式资料。
+        int notesPreviewIndex = Array.IndexOf(e.Args, "--update-notes");
+        if (notesPreviewIndex >= 0)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                try
+                {
+                    if (notesPreviewIndex + 1 >= e.Args.Length) throw new ArgumentException(Lang.T("请指定更新说明文件。"));
+                    new UpdateNotesDialog(Product.Version, File.ReadAllText(Path.GetFullPath(e.Args[notesPreviewIndex + 1]))).ShowDialog();
+                    Shutdown(0);
+                }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Shutdown(1); }
+            }));
+            return;
+        }
         // 公众号配图：--article-poster <输出目录> --background <图片> [--backdrop] [--name <文件名>] [--scrim <0-95>] [--height <像素>] [--theme <主题名>] [--title/--description/--detail <文案>]
         int articleIndex = Array.IndexOf(e.Args, "--article-poster");
         if (articleIndex >= 0)
@@ -102,7 +121,7 @@ public partial class App : Application
         bool explicitDataDirectory = false;
         string? migrationNotice = null;
         int overrideIndex = Array.IndexOf(e.Args, "--data-dir");
-        if (overrideIndex >= 0 && e.Args.Length > overrideIndex + 1) { dataDirectory = Path.GetFullPath(e.Args[overrideIndex + 1]); explicitDataDirectory = true; }
+        if (overrideIndex >= 0 && e.Args.Length > overrideIndex + 1) { dataDirectory = Path.GetFullPath(e.Args[overrideIndex + 1]); explicitDataDirectory = true; Product.Portable = true; }
         string suffix = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(dataDirectory.ToUpperInvariant())))[..16];
         instance = new Mutex(true, "Local\\PaperFlow-" + suffix, out bool created);
         if (!created)

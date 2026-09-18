@@ -98,7 +98,7 @@ public sealed class MainWindow : Window
     {
         this.demonstration = demonstration;
         store = storage; library = initial; sync = synchronization;
-        Title = "PaperFlow";
+        Title = Product.Demo ? Product.Name + Lang.T("（试用）") : Product.Name;
         Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/app.ico"));
         // A desktop widget lives on the wallpaper, not in the taskbar or Alt+Tab list.
         // It keeps running and stays reachable from the tray icon.
@@ -187,7 +187,7 @@ public sealed class MainWindow : Window
         };
         root.Children.Add(scroller);
 
-        tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = Lang.T("PaperFlow · 双击打开"), Visible = !demonstration };
+        tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = Lang.T("PaperFlow · 双击打开") + (Product.Demo ? Lang.T("（试用）") : ""), Visible = !demonstration };
         var trayMenu = new Forms.ContextMenuStrip();
         trayMenu.Items.Add(Lang.T("显示 PaperFlow"), null, (_, _) => Dispatcher.Invoke(Reveal));
         trayMenu.Items.Add(Lang.T("始终置顶 / 取消置顶"), null, (_, _) => Dispatcher.Invoke(TogglePin));

@@ -78,6 +78,7 @@ public static class Shortcuts
     // 最后把出问题的地方一次性报出来。
     public static void Apply(bool desktop, bool startMenu, string launcherPath)
     {
+        if (Product.Portable) throw new InvalidOperationException(Lang.T("试用模式（指定了资料目录）不会改动桌面快捷方式和开机启动，免得动到你正式在用的那套设置。"));
         var target = ResolveTarget(launcherPath);
         var working = ProgramFolder(launcherPath);
         var problems = new List<string>();

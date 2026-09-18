@@ -13,6 +13,8 @@ namespace PaperFlow;
 public sealed class SettingsWindow : Window
 {
     public Preferences Result { get; }
+    // 用户在这个窗口里改过的标签名字：保存时要把论文上贴着的旧名字一起改掉。
+    public List<(string From, string To)> TagRenames { get; } = new();
     private bool ready;
     // 分类名跟着语言走；用属性而不是静态字段，免得第一次取值时的语言被永久记住。
     private static string[] Categories => new[] { Lang.T("外观"), Lang.T("字体与文字"), Lang.T("视图与分页"), Lang.T("同步与启动"), Lang.T("关于与反馈") };
@@ -240,7 +242,55 @@ public sealed class SettingsWindow : Window
         soundRow.Children.Add(B(Lang.T("试听取消音"), () => Chime.Play(Result, "undo")));
         soundRow.Children.Add(B(Lang.T("试听收录音"), () => Chime.Play(Result, "reward")));
         Label(view, Lang.T("音效默认关闭，只在本机生效、不随同步跑到别的电脑；勾满七个阶段时换成一小段奖励音。"), 11);
-        Label(view, Lang.T("搜索、筛选、排序、紧凑视图、隐藏哪些阶段、翻页方式和显示范围都在挂件右上角的“论文选项”里，那里改的是此刻看到什么。这里只放长期偏好。"), 11);
+        // ---------- 隐藏用标签 ----------
+        Label(view, Lang.T("隐藏用标签"), 16);
+        Label(view, Lang.T("标签是你自己起的短记号，比如“等老师反馈”“等编辑部意见”。给论文贴上标签以后，可以把带某个标签的论文先收起来，需要的时候再展开看一眼。"), 11);
+        var tagSwitch = new CheckBox { Content = Lang.T("打开隐藏用标签"), IsChecked = Result.TagHidingEnabled, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) };
+        tagSwitch.Click += (_, _) => Result.TagHidingEnabled = tagSwitch.IsChecked == true;
+        view.Children.Add(tagSwitch);
+        var tagRows = new StackPanel(); view.Children.Add(tagRows);
+        var tagInput = new TextBox { Width = 170 * scale, MaxLength = 24, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8 * Appearance.Scale, 0) };
+        var tagAdd = B(Lang.T("新建标签"), () => { });
+        var tagAddRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 4 * Appearance.Scale) };
+        tagAddRow.Children.Add(tagInput); tagAddRow.Children.Add(tagAdd); view.Children.Add(tagAddRow);
+        void RebuildTags()
+        {
+            tagRows.Children.Clear();
+            foreach (var tag in Result.CustomTags.ToList())
+            {
+                string original = tag;
+                var box = new TextBox { Text = tag, Width = 170 * scale, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8 * Appearance.Scale, 0) };
+                void Commit()
+                {
+                    string wanted = (box.Text ?? "").Trim();
+                    if (wanted == original) return;
+                    if (!Schemes.IsValidTagName(wanted)) { MessageBox.Show(this, Lang.T("标签名不能为空，也不能超过六个汉字那么宽。")); RebuildTags(); return; }
+                    if (Result.CustomTags.Contains(wanted)) { MessageBox.Show(this, Lang.T("已经有同名的标签了。")); RebuildTags(); return; }
+                    int at = Result.CustomTags.IndexOf(original);
+                    if (at >= 0) Result.CustomTags[at] = wanted;
+                    for (int i = 0; i < Result.HiddenTags.Count; i++) if (Result.HiddenTags[i] == original) Result.HiddenTags[i] = wanted;
+                    TagRenames.Add((original, wanted));
+                    original = wanted; RebuildTags();
+                }
+                box.LostFocus += (_, _) => Commit();
+                box.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) Commit(); };
+                var remove = B(Lang.T("删掉"), () => { Result.CustomTags.Remove(original); Result.HiddenTags.Remove(original); RebuildTags(); });
+                var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2 * Appearance.Scale, 0, 2 * Appearance.Scale) };
+                row.Children.Add(box); row.Children.Add(remove); tagRows.Children.Add(row);
+            }
+            if (Result.CustomTags.Count == 0) tagRows.Children.Add(new TextBlock { Text = Lang.T("还没有标签。"), Foreground = MainWindow.Brush("#78867F"), FontSize = 11 * scale });
+        }
+        tagAdd.Click += (_, _) =>
+        {
+            string wanted = (tagInput.Text ?? "").Trim();
+            if (wanted.Length == 0) return;
+            if (!Schemes.IsValidTagName(wanted)) { MessageBox.Show(this, Lang.T("标签名不能为空，也不能超过六个汉字那么宽。")); return; }
+            if (Result.CustomTags.Contains(wanted)) { MessageBox.Show(this, Lang.T("已经有同名的标签了。")); return; }
+            if (Result.CustomTags.Count >= Schemes.MaxCustomTags) { MessageBox.Show(this, Lang.F("自建标签最多 {0} 个。", Schemes.MaxCustomTags)); return; }
+            Result.CustomTags.Add(wanted); tagInput.Clear(); RebuildTags();
+        };
+        RebuildTags();
+        Label(view, Lang.T("搜索、筛选、排序、紧凑视图、隐藏用标签和显示范围都在挂件右上角的“论文选项”里，那里改的是此刻看到什么。这里只放长期偏好。"), 11);
         Label(view, Lang.T("字号、界面缩放和三档字体在“字体与文字”里。"), 11);
         Label(view, Lang.T("铺满屏幕时界面会不会挤，取决于字号和界面缩放的组合。字号很大时阶段标签会换行、卡片自然变高，一屏能看到的论文会变少，这是正常的。"), 11);
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows;
@@ -11,7 +12,8 @@ namespace PaperFlow;
 public sealed class PaperEditor : Window
 {
     public Paper Result { get; }
-    public PaperEditor(Paper paper)
+    // knownTags：本机自建的标签 + 论文上已经贴过的标签。这里只负责"贴"，造标签在设置里。
+    public PaperEditor(Paper paper, IReadOnlyList<string> knownTags)
     {
         Result = paper;
         Title = Lang.T("论文资料"); Width = Math.Min(660 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40); Height = Math.Min(780 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30); MinHeight = 430 * Appearance.DialogScale; MinWidth = Math.Min(530 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40);
@@ -23,7 +25,26 @@ public sealed class PaperEditor : Window
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
         root.Children.Add(scroll); var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; scroll.Content = body;
         var headline = MainWindow.Text(Lang.T("让下一步更清楚"), 22); headline.Margin = new Thickness(0, 0, 0, 6); body.Children.Add(headline);
-        var caption = MainWindow.Text(Lang.T("七阶段在小部件上直接勾选；这里保存论文的完整资料。"), 12, "#78867F"); caption.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(caption);
+        var caption = MainWindow.Text(Lang.T("阶段在小部件上直接勾选；这里保存论文的完整资料，也可以贴标签。"), 12, "#78867F"); caption.Margin = new Thickness(0, 0, 0, 20); body.Children.Add(caption);
+
+        // 标签：最多三个，点一下贴上、再点一下摘掉。
+        body.Children.Add(MainWindow.Text(Lang.T("标签（最多三个）"), 12, "#62766A"));
+        if (knownTags.Count == 0) body.Children.Add(MainWindow.Text(Lang.T("还没有标签：在 设置 → 视图与分页 → 隐藏用标签 里自己建一个。"), 11, "#78867F"));
+        var tagRow = new System.Windows.Controls.WrapPanel { Margin = new Thickness(0, 5, 0, 12) }; body.Children.Add(tagRow);
+        var tagPicks = new List<CheckBox>();
+        foreach (var value in knownTags)
+        {
+            var pick = new CheckBox { Content = value, IsChecked = paper.Tags.Contains(value), Margin = new Thickness(0, 0, 16, 6) };
+            pick.Click += (_, _) =>
+            {
+                if (tagPicks.Count(x => x.IsChecked == true) > Schemes.MaxTags)
+                {
+                    pick.IsChecked = false;
+                    MessageBox.Show(this, Lang.F("一篇论文最多贴 {0} 个标签。", Schemes.MaxTags));
+                }
+            };
+            tagPicks.Add(pick); tagRow.Children.Add(pick);
+        }
 
         TextBox Field(string label, string value, bool multiline = false)
         {
@@ -53,7 +74,15 @@ public sealed class PaperEditor : Window
         due.DateValidationError += (_, _) => invalidDate = true;
         start.SelectedDateChanged += (_, _) => invalidDate = false;
         due.SelectedDateChanged += (_, _) => invalidDate = false;
-        var skip = new CheckBox { Content = Lang.T("返修不适用（无需返修即录用，按其余六阶段计算）"), IsChecked = paper.Stages[5].Skipped, Margin = new Thickness(0, 0, 0, 14) }; body.Children.Add(skip);
+        // 2.0.0 起任意阶段都能标"不适用"：它从进度分母里去掉，不再只限返修。
+        body.Children.Add(MainWindow.Text(Lang.T("这些阶段不适用（从进度分母里去掉）"), 12, "#62766A"));
+        var skipRow = new System.Windows.Controls.WrapPanel { Margin = new Thickness(0, 5, 0, 14) }; body.Children.Add(skipRow);
+        var skipPicks = new List<CheckBox>();
+        foreach (var stage in paper.Stages)
+        {
+            var pick = new CheckBox { Content = Lang.T(Schemes.Display(stage.Name)), IsChecked = stage.Skipped, Margin = new Thickness(0, 0, 16, 6) };
+            skipPicks.Add(pick); skipRow.Children.Add(pick);
+        }
         var outcome = Field(Lang.T("结局"), paper.Outcome);
         var notes = Field(Lang.T("备注 / 投稿与返修历史"), paper.Notes, true);
         body.Children.Add(MainWindow.Text(Lang.P(paper.ElapsedDays, "已开始 {0} 天   ·   上次编辑 {1:yyyy-MM-dd HH:mm}", "Started {0} day ago   ·   last edited {1:yyyy-MM-dd HH:mm}", "Started {0} days ago   ·   last edited {1:yyyy-MM-dd HH:mm}", paper.ElapsedDays, paper.UpdatedAt), 11, "#78867F"));
@@ -69,9 +98,16 @@ public sealed class PaperEditor : Window
             paper.Priority = (priority.SelectedItem as Choice)?.Value ?? "中";
             paper.Journal = journal.Text.Trim(); paper.Status = (status.SelectedItem as Choice)?.Value ?? "准备中"; paper.NextAction = next.Text.Trim();
             paper.StartDate = start.SelectedDate.Value.Date; paper.DueDate = due.SelectedDate?.Date; paper.Outcome = outcome.Text.Trim(); paper.Notes = notes.Text;
-            bool skipped = skip.IsChecked == true;
-            if (paper.Stages[5].Skipped != skipped) paper.Record(skipped ? "返修设为不适用 · 从进度分母排除" : "返修恢复为适用阶段");
-            paper.Stages[5].Skipped = skipped; if (skipped) paper.Stages[5].Done = false;
+            for (int i = 0; i < skipPicks.Count && i < paper.Stages.Count; i++)
+            {
+                var stage = paper.Stages[i];
+                bool skipped = skipPicks[i].IsChecked == true;
+                if (stage.Skipped == skipped) continue;
+                stage.Skipped = skipped;
+                if (skipped) stage.Done = false;
+                paper.Record((skipped ? "阶段设为不适用 · " : "阶段恢复为适用 · ") + Schemes.Display(stage.Name));
+            }
+            paper.Tags = tagPicks.Where(x => x.IsChecked == true).Select(x => (string)x.Content).Distinct().ToList();
             DialogResult = true;
         }, true); actions.Children.Add(save);
     }

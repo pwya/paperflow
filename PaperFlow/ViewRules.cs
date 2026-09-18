@@ -6,10 +6,11 @@ namespace PaperFlow;
 
 public static class ViewRules
 {
-    // 勾选阶段之后给用户的交代：论文还在眼前、被隐藏、还是被挪到了别的页。
-    public sealed record StageNotice(string Kind, int Page, string Text, string Action);
+    // 贴上一个会隐藏的标签之后给用户的交代。
+    public sealed record HideNotice(string Text, string Action);
 
-    public static readonly string[] PageModes = { "不翻页", "按优先级翻页", "按阶段分组翻页" };
+    // 2.0.0 起没有"按阶段分组翻页"了：翻页只剩不翻页和按优先级。
+    public static readonly string[] PageModes = { "不翻页", "按优先级翻页" };
     public static readonly string[] SortModes = { "手动排序", "最近修改", "截止日期", "进度优先" };
     public static readonly string[] SoundModes = { "关", "只完成时", "完成和取消都响" };
     public static readonly string[] SoundStyles = { "木质", "清脆", "水滴" };
@@ -29,42 +30,29 @@ public static class ViewRules
         if (cardCount <= 0 || cardHeight <= 1 || viewportHeight <= 1) return 0;
         return Math.Clamp((int)Math.Floor(viewportHeight / cardHeight), 0, 999);
     }
-    public static int PageCount(Preferences p) => p.PageMode == PageModes[1] ? 3 : p.PageMode == PageModes[2] ? 2 : 1;
-    public static bool SelectedStage(Paper paper, Preferences p) => p.HiddenStages.Contains(paper.CurrentStageIndex);
+    public static int PageCount(Preferences p) => p.PageMode == PageModes[1] ? 3 : 1;
+    // 收起论文只认"隐藏用标签"：总开关打开，并且这篇论文带着所选的某个标签。
+    public static bool HiddenByTag(Paper paper, Preferences p) =>
+        p.TagHidingEnabled && p.HiddenTags.Count > 0 && paper.Tags.Any(p.HiddenTags.Contains);
+    public static int HiddenCount(IEnumerable<Paper> papers, Preferences p) => papers.Count(x => HiddenByTag(x, p));
     public static List<Paper> Apply(IEnumerable<Paper> source, Preferences p, int? page = null)
     {
         int index = Math.Clamp(page ?? p.PageIndex, 0, PageCount(p) - 1);
         var papers = source.Where(x => p.VisiblePriorities.Contains(x.Priority));
-        if (p.PageMode == PageModes[2]) papers = papers.Where(x => SelectedStage(x, p) == (index == 1));
-        else
-        {
-            // 临时展开（ShowHiddenNow）只影响这一次显示，不改动长期设置。
-            if (p.HideSelectedStages && !p.ShowHiddenNow) papers = papers.Where(x => !SelectedStage(x, p));
-            if (p.PageMode == PageModes[1]) papers = papers.Where(x => x.Priority == Paper.Priorities[index]);
-        }
+        // 临时展开（ShowHiddenNow）只影响这一次显示，不改动长期设置。
+        if (!p.ShowHiddenNow) papers = papers.Where(x => !HiddenByTag(x, p));
+        if (p.PageMode == PageModes[1]) papers = papers.Where(x => x.Priority == Paper.Priorities[index]);
         return papers.ToList();
     }
     public static string PageTitle(Preferences p, int? page = null)
     {
         int index = Math.Clamp(page ?? p.PageIndex, 0, PageCount(p) - 1);
         if (p.PageMode == PageModes[1]) return Lang.F("{0}优先级", Lang.Value(Paper.Priorities[index]));
-        if (p.PageMode == PageModes[2]) return index == 0 ? Lang.T("当前推进") : Lang.T("所选阶段");
         return Lang.T("论文列表");
     }
-    public static StageNotice? AfterStageToggle(Paper paper, Preferences p, IEnumerable<Paper> candidates)
-    {
-        var source = candidates.ToList();
-        int current = Math.Clamp(p.PageIndex, 0, PageCount(p) - 1);
-        if (Apply(source, p, current).Any(x => x.Id == paper.Id)) return null;
-        string label = Lang.Stage(paper.CurrentStageIndex);
-        for (int i = 0; i < PageCount(p); i++)
-        {
-            if (i == current) continue;
-            if (Apply(source, p, i).Any(x => x.Id == paper.Id))
-                return new StageNotice("paged", i, Lang.F("已进入{0} · 它被放到了第 {1} 页", label, i + 1), Lang.F("翻到第 {0} 页", i + 1));
-        }
-        if (p.HideSelectedStages && SelectedStage(paper, p))
-            return new StageNotice("hidden", -1, Lang.F("已进入{0} · 按当前设置，这类论文被隐藏了", label), Lang.T("立即显示"));
-        return null;
-    }
+    // 贴上标签之后：还在眼前就不吭声；被收起来了就说清楚，并给一个"立即显示"。
+    public static HideNotice? AfterTagChange(Paper paper, Preferences p) =>
+        HiddenByTag(paper, p) && !p.ShowHiddenNow
+            ? new HideNotice(Lang.F("已贴上{0} · 按当前设置，带这个标签的论文被收起来了", string.Join(Lang.ListSeparator, paper.Tags.Where(p.HiddenTags.Contains))), Lang.T("立即显示"))
+            : null;
 }

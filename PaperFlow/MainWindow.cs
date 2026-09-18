@@ -331,26 +331,26 @@ public sealed class MainWindow : Window
         pin.Foreground = library.Settings.Topmost ? Brush("#21846B") : Brush("#78867F");
         compact.Content = Lang.T(library.Settings.Compact ? "展开" : "紧凑");
         var active = library.Papers.Where(p => !p.Archived).ToList();
-        summary.Text = Lang.P(active.Count, "{0} 篇论文   ·   {1} 篇推进中   ·   {2} 篇已收录", "{0} paper   ·   {1} in progress   ·   {2} accepted", "{0} papers   ·   {1} in progress   ·   {2} accepted", active.Count, active.Count(p => !p.Stages[6].Done), active.Count(p => p.Stages[6].Done))
+        summary.Text = Lang.P(active.Count, "{0} 篇论文   ·   {1} 篇推进中   ·   {2} 篇已收录", "{0} paper   ·   {1} in progress   ·   {2} accepted", "{0} papers   ·   {1} in progress   ·   {2} accepted", active.Count, active.Count(p => !p.IsComplete), active.Count(p => p.IsComplete))
             + (filter.SelectedIndex != 0 || search.Text != "" ? Lang.T("   ·   已筛选") : "");
         var candidates = Candidates();
-        // 右上角的临时开关：有被隐藏的论文（或正展开着）时才出现，按阶段分组翻页时不需要它。
-        int hiddenCount = candidates.Count(p => ViewRules.SelectedStage(p, library.Settings));
-        hiddenToggle.Visibility = library.Settings.PageMode != ViewRules.PageModes[2] && library.Settings.HideSelectedStages && (hiddenCount > 0 || library.Settings.ShowHiddenNow) ? Visibility.Visible : Visibility.Collapsed;
+        // 右上角的临时开关：有被隐藏用标签收起来的论文（或正展开着）时才出现。
+        int hiddenCount = ViewRules.HiddenCount(candidates, library.Settings);
+        hiddenToggle.Visibility = hiddenCount > 0 || library.Settings.ShowHiddenNow ? Visibility.Visible : Visibility.Collapsed;
         hiddenToggle.Content = Lang.F(library.Settings.ShowHiddenNow ? "收起隐藏 {0} 篇" : "显示隐藏 {0} 篇", hiddenCount);
         hiddenToggle.ToolTip = library.Settings.ShowHiddenNow
-            ? Lang.T("把这些按设置隐藏的论文收回去")
-            : Lang.T("临时看一眼按当前设置被隐藏的论文，它们会显示成灰底，方便区分");
-        AutomationProperties.SetName(hiddenToggle, Lang.T("显示或隐藏按阶段隐藏的论文"));
+            ? Lang.T("把这些贴了隐藏标签的论文收回去")
+            : Lang.T("临时看一眼带隐藏标签的论文，它们会显示成灰底，方便区分");
+        AutomationProperties.SetName(hiddenToggle, Lang.T("显示或隐藏带隐藏标签的论文"));
         var pagePapers = ViewRules.Apply(candidates, library.Settings);
         summary.Text = Lang.P(active.Count, "{0} 篇论文 · 当前显示 {1} 篇", "{0} paper · showing {1}", "{0} papers · showing {1}", active.Count, pagePapers.Count)
-            + (library.Settings.PageMode == ViewRules.PageModes[2] ? Lang.T(" · 阶段分组") : library.Settings.HideSelectedStages ? Lang.F(" · 按阶段隐藏 {0} 篇", candidates.Count(p => ViewRules.SelectedStage(p, library.Settings))) : "")
+            + (hiddenCount > 0 && !library.Settings.ShowHiddenNow ? Lang.F(" · 按标签隐藏 {0} 篇", hiddenCount) : "")
             + (library.Settings.SortMode == ViewRules.SortModes[0] ? "" : Lang.T(" · 排序：") + Lang.Value(library.Settings.SortMode));
         summary.ToolTip = Lang.T("隐藏和翻页仅改变显示，不删除论文。点击论文选项调整。");
         pager.Visibility = ViewRules.PageCount(library.Settings) > 1 ? Visibility.Visible : Visibility.Collapsed;
         pageLabel.Text = $"{ViewRules.PageTitle(library.Settings)} · {library.Settings.PageIndex + 1}/{ViewRules.PageCount(library.Settings)}";
         pageLabel.Foreground = Brush("#24352F");
-        pageLabel.ToolTip = library.Settings.PageMode == ViewRules.PageModes[2] ? Lang.T("所选阶段：") + string.Join(Lang.ListSeparator, library.Settings.HiddenStages.Select(Lang.Stage)) : null;
+        pageLabel.ToolTip = null;
         cards.Children.Clear();
         foreach (var p in pagePapers) cards.Children.Add(BuildCard(p));
         if (cards.Children.Count == 0)
@@ -559,8 +559,8 @@ public sealed class MainWindow : Window
     private List<Paper> Candidates()
     {
         IEnumerable<Paper> visible = library.Papers.Where(p => filter.SelectedIndex == 3 ? p.Archived : !p.Archived);
-        if (filter.SelectedIndex == 1) visible = visible.Where(p => !p.Stages[6].Done);
-        if (filter.SelectedIndex == 2) visible = visible.Where(p => p.Stages[6].Done);
+        if (filter.SelectedIndex == 1) visible = visible.Where(p => !p.IsComplete);
+        if (filter.SelectedIndex == 2) visible = visible.Where(p => p.IsComplete);
         var term = search.Text.Trim();
         if (term != "") visible = visible.Where(p => string.Join(" ", p.Title, p.Subject, p.Language, p.Collaborators, p.Journal, p.Notes, p.Status, p.NextAction).Contains(term, StringComparison.OrdinalIgnoreCase));
         return (sort.SelectedIndex switch { 1 => visible.OrderByDescending(p => p.UpdatedAt), 2 => visible.OrderBy(p => p.DueDate ?? DateTime.MaxValue), 3 => visible.OrderByDescending(p => p.Progress), _ => visible }).ToList();
@@ -571,7 +571,7 @@ public sealed class MainWindow : Window
         bool list = Appearance.Layout == Themes.ListLayout;
         bool small = library.Settings.Compact || list;
         // 临时展开出来的“按设置隐藏”的论文：整体压暗、底色换成主题的柔和色，并挂一个标记。
-        bool dimmed = library.Settings.ShowHiddenNow && ViewRules.SelectedStage(p, library.Settings);
+        bool dimmed = library.Settings.ShowHiddenNow && ViewRules.HiddenByTag(p, library.Settings);
         var card = new Border { Tag = p.Id };
         if (list)
         {
@@ -610,10 +610,34 @@ public sealed class MainWindow : Window
         titleRow.Children.Add(titleArea);
         if (dimmed)
         {
-            var tag = Text(Lang.T("已隐藏 · ") + Lang.Stage(p.CurrentStageIndex), 10.5, "#78867F", -1, "caption");
-            var chip = new Border { Child = tag, Background = Appearance.Paint(Appearance.Current.Card, .85), CornerRadius = new CornerRadius(Math.Min(Appearance.ChipRadius, 8 * Appearance.Scale)), Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), ToolTip = Lang.T("按其当前阶段，这类论文在你的设置里是隐藏的；点右上角可以收回去") };
+            var tag = Text(Lang.T("已隐藏 · ") + string.Join(Lang.ListSeparator, p.Tags), 10.5, "#78867F", -1, "caption");
+            var chip = new Border { Child = tag, Background = Appearance.Paint(Appearance.Current.Card, .85), CornerRadius = new CornerRadius(Math.Min(Appearance.ChipRadius, 8 * Appearance.Scale)), Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), ToolTip = Lang.T("它带着你选择隐藏的标签；点右上角可以收回去") };
             Grid.SetColumn(chip, 1); titleRow.Children.Add(chip);
         }
+        // 标签贴在百分比左边、比正文小一号、最多三个、每个只露出前三个字（悬停看全名）。
+        // 标签优先于标题：标题挤得下就留着，挤不下由标题先省略，实在放不下才少显示标签。
+        var tagRow = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 0, 0) };
+        double tagSize = 10.5 * Appearance.RoleScale("caption") * Appearance.TextScale;
+        // 一个汉字大约一个字号那么宽：标题先留够四个字，剩下的宽度才轮到标签。
+        double titleSize = (small ? 14 : 15) * Appearance.RoleScale("title") * Appearance.TextScale;
+        double tagRoom = (library.Settings.Width - 130) * Appearance.Scale - 4 * titleSize - TextWidth("100%", Appearance.PercentSize);
+        int tagSlots = p.Tags.Count == 0 ? 0 : Math.Clamp((int)(tagRoom / (3 * tagSize + 14)), 0, 3);
+        foreach (var value in p.Tags.Take(tagSlots))
+        {
+            var text = value.Length > 3 ? value[..3] + "…" : value;
+            var chip = new Border
+            {
+                Child = Text(text, 10.5, "#62766A", -1, "caption"),
+                Background = Appearance.Paint(Appearance.Current.Soft, Appearance.Opacity * .9),
+                CornerRadius = new CornerRadius(6 * Appearance.Scale),
+                Padding = new Thickness(6 * Appearance.Scale, 1 * Appearance.Scale, 6 * Appearance.Scale, 1 * Appearance.Scale),
+                Margin = new Thickness(0, 0, 4 * Appearance.Scale, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                ToolTip = value
+            };
+            tagRow.Children.Add(chip);
+        }
+        if (tagRow.Children.Count > 0) { Grid.SetColumn(tagRow, 1); titleRow.Children.Add(tagRow); }
         var pct = Text($"{p.Progress}%", Appearance.PercentSize); pct.FontWeight = FontWeights.SemiBold; pct.VerticalAlignment = VerticalAlignment.Center; pct.Margin = new Thickness(10, 0, 0, 0);
         if (Appearance.RoleColor("body") == "") pct.Foreground = Appearance.PercentAccent ? Appearance.Paint(Appearance.Current.Accent) : Brush("#78867F");
         AutomationProperties.SetName(pct, Lang.F("{0} 进度 {1}%", p.Title, p.Progress));
@@ -623,36 +647,33 @@ public sealed class MainWindow : Window
         var track = new Grid { Height = Appearance.BarHeight * Appearance.Scale, VerticalAlignment = VerticalAlignment.Center };
         track.Children.Add(new Border { Background = Brush("#EBEFE9"), CornerRadius = new CornerRadius(5) });
         var inner = new Grid(); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, p.Progress), GridUnitType.Star) }); inner.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, 100 - p.Progress), GridUnitType.Star) });
-        var fill = new Border { Background = Brush(p.Stages[6].Done ? "#2F8B6D" : p.Status == "待返修" ? "#C69544" : "#4A9E83"), CornerRadius = new CornerRadius(5) }; inner.Children.Add(fill); track.Children.Add(inner);
+        var fill = new Border { Background = Brush(p.IsComplete ? "#2F8B6D" : p.Status == "待返修" ? "#C69544" : "#4A9E83"), CornerRadius = new CornerRadius(5) }; inner.Children.Add(fill); track.Children.Add(inner);
         AutomationProperties.SetName(track, Lang.F("{0} 进度 {1}%", p.Title, p.Progress)); progressRow.Children.Add(track);
         stack.Children.Add(progressRow);
         var checks = new StageFlowPanel();
         for (int i = 0; i < p.Stages.Count; i++)
         {
             int index = i; var stage = p.Stages[i];
-            var cb = new CheckBox { Content = Lang.Stage(i) + (stage.Skipped ? Lang.T("（免）") : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = (small ? 11 : 12) * Appearance.RoleScale("body") * Appearance.TextScale };
+            string stageLabel = Lang.T(Schemes.Display(stage.Name));
+            var cb = new CheckBox { Content = stageLabel + (stage.Skipped ? Lang.T("（免）") : ""), IsChecked = stage.Done, IsEnabled = !stage.Skipped, FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = (small ? 11 : 12) * Appearance.RoleScale("body") * Appearance.TextScale };
             cb.SetResourceReference(StyleProperty, Appearance.ChipStyle switch { "pill" => "StagePill", "tag" => "StageTag", "chip" => "StageCheck", _ => "StageText" });
-            AutomationProperties.SetName(cb, p.Title + " · " + Lang.Stage(i));
+            AutomationProperties.SetName(cb, p.Title + " · " + stageLabel);
             if (Appearance.ChipStyle == "tag") cb.Background = Appearance.Paint(Appearance.Tags.Length == 0 ? Appearance.Current.Accent : Appearance.Tags[i % Appearance.Tags.Length]);
             cb.Padding = new Thickness(small ? 4 : 5, 3, small ? 4 : 5, 3); cb.Margin = new Thickness(0, 0, Appearance.ChipStyle == "text" ? 12 * Appearance.Scale : 4, 3);
-            cb.ToolTip = Lang.T(stage.Skipped ? "返修已设为不适用，可在论文资料中恢复" : i == 4 ? "勾选表示进入在审；继续勾选返修或收录后，移出在审分组。" : "点击切换；进度按适用阶段等权计算");
+            cb.ToolTip = Lang.T(stage.Skipped ? "这一步已设为不适用，可在论文资料中恢复" : "点击切换；进度按适用阶段等权计算");
             // 监听状态变化而不是 Click：键盘、鼠标和自动化切换都走同一条路径。
             void Toggle(bool done)
             {
                 if (!Commit(l => l.Papers.Single(x => x.Id == p.Id).ToggleStage(index, done))) return;
                 var updated = library.Papers.FirstOrDefault(x => x.Id == p.Id);
                 if (updated == null) return;
-                Chime.PlayForToggle(library.Settings, done, updated.Stages[6].Done);
-                var notice = ViewRules.AfterStageToggle(updated, library.Settings, Candidates());
-                if (notice == null) return;
-                if (notice.Kind == "paged") ShowNotice(notice.Text, notice.Action, () => { Commit(l => l.Settings.PageIndex = notice.Page); scroller.ScrollToTop(); });
-                else ShowNotice(notice.Text, notice.Action, () => Commit(l => l.Settings.HiddenStages.Remove(updated.CurrentStageIndex)));
+                Chime.PlayForToggle(library.Settings, done, updated.IsComplete);
             }
             cb.Checked += (_, _) => Toggle(true);
             cb.Unchecked += (_, _) => Toggle(false);
             checks.Children.Add(cb);
         }
-        var due = Text(p.DueDate != null && !p.Stages[6].Done ? p.DeadlineText : Lang.P(p.ElapsedDays, "已开始 {0} 天", "Started {0} day ago", "Started {0} days ago", p.ElapsedDays), 11, p.DueDate?.Date < DateTime.Today && !p.Stages[6].Done ? "#BE624C" : "#8A948C");
+        var due = Text(p.DueDate != null && !p.IsComplete ? p.DeadlineText : Lang.P(p.ElapsedDays, "已开始 {0} 天", "Started {0} day ago", "Started {0} days ago", p.ElapsedDays), 11, p.DueDate?.Date < DateTime.Today && !p.IsComplete ? "#BE624C" : "#8A948C");
         due.Margin = new Thickness(4, 0, 5, 3); due.ToolTip = Lang.P(p.ElapsedDays, "开始日期：{0:yyyy-MM-dd}\n已开始 {1} 天", "Started {0:yyyy-MM-dd}\n{1} day in", "Started {0:yyyy-MM-dd}\n{1} days in", p.StartDate, p.ElapsedDays); checks.Children.Add(due);
         if (!string.IsNullOrWhiteSpace(p.NextAction))
         {
@@ -687,6 +708,13 @@ public sealed class MainWindow : Window
     }
 
     private static DependencyObject? ParentOf(DependencyObject node) => node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+
+    // 卡片上"标签优先于标题"要靠文字实际宽度判断：量一下，够放几个标签就显示几个。
+    private static double TextWidth(string text, double size)
+    {
+        var typeface = new Typeface(new FontFamily(Appearance.FamilyFor("title")), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        return new FormattedText(text, System.Globalization.CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, typeface, Math.Max(1, size), Brushes.Black, 1.0).Width;
+    }
     private static bool IsWithin(DependencyObject? node, DependencyObject ancestor)
     {
         for (var current = node; current != null; current = ParentOf(current)) if (ReferenceEquals(current, ancestor)) return true;
@@ -767,7 +795,7 @@ public sealed class MainWindow : Window
         Item(Lang.T("上移一位"), () => MovePaper(p.Id, -1)); Item(Lang.T("下移一位"), () => MovePaper(p.Id, 1));
         Item(Lang.T("复制为新论文（阶段清零）"), () =>
         {
-            if (Commit(l => { var copy = Storage.Clone(p); copy.Id = Guid.NewGuid().ToString("N"); var suffix = Lang.T("（副本）"); copy.Title = p.Title.Length > 490 - suffix.Length ? p.Title[..(490 - suffix.Length)] + suffix : p.Title + suffix; copy.Stages = Paper.StageNames.Select(n => new Stage { Name = n }).ToList(); copy.History.Clear(); copy.Archived = false; copy.StartDate = DateTime.Today; copy.DueDate = null; copy.Status = "准备中"; copy.NextAction = ""; copy.Outcome = ""; copy.Notes = ""; copy.Record("复制论文资料 · 七阶段清零"); l.Papers.Insert(0, copy); }))
+            if (Commit(l => { var copy = Storage.Clone(p); copy.Id = Guid.NewGuid().ToString("N"); var suffix = Lang.T("（副本）"); copy.Title = p.Title.Length > 490 - suffix.Length ? p.Title[..(490 - suffix.Length)] + suffix : p.Title + suffix; copy.Stages = Schemes.NewStages(copy.Stages.Select(s => s.Name)); copy.Tags.Clear(); copy.History.Clear(); copy.Archived = false; copy.StartDate = DateTime.Today; copy.DueDate = null; copy.Status = "准备中"; copy.NextAction = ""; copy.Outcome = ""; copy.Notes = ""; copy.Record("复制论文资料 · 阶段清零"); l.Papers.Insert(0, copy); }))
                 ShowNotice(Lang.T("已复制为新论文 · 它已经放在列表最上面"));
         });
         Item(Lang.T(p.Archived ? "恢复到论文列表" : "归档（保留资料）"), () =>
@@ -795,8 +823,15 @@ public sealed class MainWindow : Window
     }
     private void EditPaper(Paper original)
     {
-        var dialog = new PaperEditor(Storage.Clone(original)) { Owner = this };
-        if (dialog.ShowDialog() == true) Commit(l => { dialog.Result.Record("更新论文资料"); var before = new Library { Papers = new() { original } }; var after = new Library { Papers = new() { dialog.Result } }; SyncProtocol.ApplyEdits(l, SyncProtocol.Diff(before, after)); });
+        var knownTags = library.Settings.CustomTags.Concat(library.Papers.SelectMany(x => x.Tags)).Distinct(StringComparer.Ordinal).Where(t => t.Length > 0).ToList();
+        var dialog = new PaperEditor(Storage.Clone(original), knownTags) { Owner = this };
+        if (dialog.ShowDialog() == true)
+        {
+            Commit(l => { dialog.Result.Record("更新论文资料"); var before = new Library { Papers = new() { original } }; var after = new Library { Papers = new() { dialog.Result } }; SyncProtocol.ApplyEdits(l, SyncProtocol.Diff(before, after)); });
+            // 贴上了会隐藏的标签就说一声它去哪了，并给一个"立即显示"。
+            var notice = ViewRules.AfterTagChange(dialog.Result, library.Settings);
+            if (notice != null) ShowNotice(notice.Text, notice.Action, () => Commit(l => l.Settings.ShowHiddenNow = true));
+        }
     }
     private void ShowHistory(Paper p)
     {
@@ -811,6 +846,14 @@ public sealed class MainWindow : Window
         {
             bool languageChanged = !string.Equals(Lang.Effective(original.Language), Lang.Effective(dialog.Result.Language), StringComparison.Ordinal);
             if (!Commit(l => l.Settings = dialog.Result)) return;
+            // 标签改名要连论文上贴着的旧名字一起改，否则改名等于把标签拆成两半。
+            if (dialog.TagRenames.Count > 0)
+            {
+                var map = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (var (from, to) in dialog.TagRenames) map[from] = to;
+                string Resolve(string tag) { var seen = new HashSet<string>(StringComparer.Ordinal); while (map.TryGetValue(tag, out var next) && seen.Add(tag)) tag = next; return tag; }
+                Commit(l => { foreach (var paper in l.Papers) paper.Tags = paper.Tags.Select(Resolve).Distinct(StringComparer.Ordinal).ToList(); });
+            }
             // 语言换了就重启一次：挂件上的按钮、托盘菜单是开窗口时建好的，重启最干净。
             if (languageChanged) { Restart(); return; }
             if (Updates.Offered is UpdateManifest found) OfferUpdate(found);
@@ -840,7 +883,7 @@ public sealed class MainWindow : Window
         search.Margin = new Thickness(0, 9, 0, 12); body.Children.Add(search);
         body.Children.Add(Text(Lang.T("显示范围"), 12)); filter.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(filter);
         body.Children.Add(Text(Lang.T("排序方式"), 12)); sort.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(sort);
-        var small = new CheckBox { Content = Lang.T("紧凑视图（保留七阶段）"), IsChecked = library.Settings.Compact }; small.Click += (_, _) => Commit(l => l.Settings.Compact = small.IsChecked == true); body.Children.Add(small);
+        var small = new CheckBox { Content = Lang.T("紧凑视图（阶段标签更小）"), IsChecked = library.Settings.Compact }; small.Click += (_, _) => Commit(l => l.Settings.Compact = small.IsChecked == true); body.Children.Add(small);
         void Label(string text) { var label = Text(text, 13); label.Margin = new Thickness(0, 16, 0, 7); body.Children.Add(label); }
         void ChangeView(Action<Preferences> change) => Commit(l => { change(l.Settings); l.Settings.PageIndex = 0; });
         Label(Lang.T("只显示这些优先级"));
@@ -850,24 +893,26 @@ public sealed class MainWindow : Window
             var check = new CheckBox { Content = Lang.F("{0}优先级", Lang.Value(value)), IsChecked = library.Settings.VisiblePriorities.Contains(value), Margin = new Thickness(0, 0, 18, 5) };
             check.Click += (_, _) => ChangeView(p => { p.VisiblePriorities.Remove(value); if (check.IsChecked == true) p.VisiblePriorities.Add(value); }); priorities.Children.Add(check);
         }
-        Label(Lang.T("暂时隐藏的阶段"));
-        var hide = new CheckBox { Content = Lang.T("隐藏所选阶段的论文"), IsChecked = library.Settings.HideSelectedStages, Margin = new Thickness(0, 0, 0, 8) };
-        hide.Click += (_, _) => ChangeView(p => p.HideSelectedStages = hide.IsChecked == true); body.Children.Add(hide);
-        var stages = new WrapPanel(); body.Children.Add(stages);
-        for (int i = 0; i < Paper.StageLabels.Length; i++)
+        Label(Lang.T("隐藏用标签"));
+        var tagList = library.Settings.CustomTags.Concat(library.Papers.SelectMany(p => p.Tags)).Distinct(StringComparer.Ordinal).Where(t => t.Length > 0).ToList();
+        if (!library.Settings.TagHidingEnabled) body.Children.Add(Text(Lang.T("还没打开隐藏用标签：在 设置 → 视图与分页 里可以打开，并自己建标签。"), 11, "#78867F"));
+        else if (tagList.Count == 0) body.Children.Add(Text(Lang.T("还没有标签：在 设置 → 视图与分页 里先建一个。"), 11, "#78867F"));
+        else
         {
-            int index = i;
-            var check = new CheckBox { Content = Lang.Stage(i), IsChecked = library.Settings.HiddenStages.Contains(i), Margin = new Thickness(0, 0, 14, 7) };
-            check.Click += (_, _) => ChangeView(p => { p.HiddenStages.Remove(index); if (check.IsChecked == true) p.HiddenStages.Add(index); }); stages.Children.Add(check);
+            var tags = new WrapPanel(); body.Children.Add(tags);
+            foreach (var value in tagList)
+            {
+                var check = new CheckBox { Content = value, IsChecked = library.Settings.HiddenTags.Contains(value), Margin = new Thickness(0, 0, 16, 6) };
+                check.Click += (_, _) => ChangeView(p => { p.HiddenTags.Remove(value); if (check.IsChecked == true) p.HiddenTags.Add(value); }); tags.Children.Add(check);
+            }
         }
-        var explanation = Text(Lang.T("按最后一个已勾选阶段归类；未勾选时归入开题。\n例如：在审后进入返修，会重新显示。"), 11, "#78867F"); explanation.TextWrapping = TextWrapping.Wrap; body.Children.Add(explanation);
-        var peek = Text(Lang.T("挂件右上角有个“显示隐藏 N 篇”的临时开关：点一下就能看一眼这些论文，展开时它们显示成灰底并带“已隐藏”标记，这里的设置不受影响。"), 11, "#78867F");
+        var peek = Text(Lang.T("挂件右上角有个“显示隐藏 N 篇”的临时开关：点一下就能看一眼被收起来的论文，它们显示成灰底并带“已隐藏”标记，这里的设置不受影响。"), 11, "#78867F");
         peek.TextWrapping = TextWrapping.Wrap; peek.Margin = new Thickness(0, 6, 0, 0); body.Children.Add(peek);
         Label(Lang.T("翻页方式"));
         var paging = new ComboBox { ItemsSource = Lang.Choices(ViewRules.PageModes), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.PageModes, library.Settings.PageMode)) }; body.Children.Add(paging);
         paging.SelectionChanged += (_, _) => ChangeView(p => p.PageMode = ViewRules.PageModes[Math.Max(0, paging.SelectedIndex)]);
-        var pageHint = Text(Lang.T("优先级：高 → 中 → 低。\n阶段分组：第一页排除所选阶段，第二页只看所选阶段。\n阶段分页会将隐藏项放到第二页；优先级筛选仍生效。"), 11, "#78867F"); pageHint.TextWrapping = TextWrapping.Wrap; pageHint.Margin = new Thickness(0, 8, 0, 0); body.Children.Add(pageHint);
-        controls.Children.Add(ActionButton(Lang.T("显示全部"), () => { search.Clear(); filter.SelectedIndex = 0; sort.SelectedIndex = 0; ChangeView(p => { p.HideSelectedStages = false; p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
+        var pageHint = Text(Lang.T("优先级：高 → 中 → 低。\n隐藏用标签和优先级筛选同时生效。"), 11, "#78867F"); pageHint.TextWrapping = TextWrapping.Wrap; pageHint.Margin = new Thickness(0, 8, 0, 0); body.Children.Add(pageHint);
+        controls.Children.Add(ActionButton(Lang.T("显示全部"), () => { search.Clear(); filter.SelectedIndex = 0; sort.SelectedIndex = 0; ChangeView(p => { p.HiddenTags.Clear(); p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
         controls.Children.Add(ActionButton(Lang.T("完成"), window.Close, true));
         window.Closed += (_, _) => { body.Children.Remove(search); body.Children.Remove(filter); body.Children.Remove(sort); };
         window.Loaded += (_, _) => search.Focus(); window.ShowDialog();

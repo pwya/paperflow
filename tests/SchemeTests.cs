@@ -144,5 +144,27 @@ static class SchemeTests
         canonicalPaper.Stages[2].Done = true;
         var canonicalEdits = SyncProtocol.Diff(new Library { Papers = new List<Paper> { new() { Id = paperId, Title = "canonical sync" } } }, new Library { Papers = new List<Paper> { canonicalPaper } });
         check(canonicalEdits.Any(e => e.Field == "stage:2") && !canonicalEdits.Any(e => e.Field == "stages"), "a canonical paper still sends one edit per stage");
+
+        // 两台电脑同时改结构：按计数器后写者胜，和输入顺序无关。
+        SyncEvent Structure(long counter, params string[] names) => new()
+        {
+            Device = Guid.NewGuid().ToString("N"), Counter = counter,
+            Edits = new List<SyncEdit> { new() { PaperId = paperId, Field = "stages", Value = System.Text.Json.JsonSerializer.SerializeToElement(Schemes.NewStages(names)) } }
+        };
+        var early = Structure(10, "一", "二", "三");
+        var late = Structure(11, "甲", "乙");
+        var later = SyncProtocol.Reduce(new[] { customEvent, early, late }).Papers.Single();
+        var earlier = SyncProtocol.Reduce(new[] { customEvent, late, early }).Papers.Single();
+        check(later.Stages.Select(s => s.Name).SequenceEqual(new[] { "甲", "乙" }), "the later structural edit wins");
+        check(earlier.Stages.Select(s => s.Name).SequenceEqual(new[] { "甲", "乙" }), "structure follows the counter, not the arrival order");
+        var rejected = false;
+        try { SyncProtocol.Inspect(Structure(12, "只有一个")); } catch (InvalidDataException) { rejected = true; }
+        check(rejected, "a structural edit with too few stages is refused loudly");
+
+        // 卡片布局：标签优先于标题，最多三个。
+        check(Schemes.TagSlots(3, 600, 40, 80) == 3, "a wide card shows three tags");
+        check(Schemes.TagSlots(3, 200, 40, 160) == 0, "a narrow card keeps the title and drops the tags");
+        check(Schemes.TagSlots(0, 600, 40, 80) == 0 && Schemes.TagSlots(2, 600, 40, 80) == 2, "no tags means no slots, and fewer tags never invent more");
+        check(Schemes.TagSlots(9, 2000, 40, 80) == Schemes.MaxTags, "a huge card still stops at three tags");
     }
 }

@@ -637,8 +637,8 @@ public sealed class MainWindow : Window
         double tagSize = 10.5 * Appearance.RoleScale("caption") * Appearance.TextScale;
         // 一个汉字大约一个字号那么宽：标题先留够四个字，剩下的宽度才轮到标签。
         double titleSize = (small ? 14 : 15) * Appearance.RoleScale("title") * Appearance.TextScale;
-        double tagRoom = (library.Settings.Width - 130) * Appearance.Scale - 4 * titleSize - TextWidth("100%", Appearance.PercentSize);
-        int tagSlots = p.Tags.Count == 0 ? 0 : Math.Clamp((int)(tagRoom / (3 * tagSize + 14)), 0, 3);
+        double tagRoom = (library.Settings.Width - 130) * Appearance.Scale - TextWidth("100%", Appearance.PercentSize);
+        int tagSlots = Schemes.TagSlots(p.Tags.Count, tagRoom, 3 * tagSize, 4 * titleSize);
         foreach (var value in p.Tags.Take(tagSlots))
         {
             var text = value.Length > 3 ? value[..3] + "…" : value;

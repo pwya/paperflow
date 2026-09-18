@@ -118,6 +118,16 @@ public static class Schemes
         return names.Count == 1 ? names[0] : "已完成";
     }
 
+    // 卡片上放几个标签：标题先留够 titleFloor 的宽度，剩下的宽度按每个标签占 tagWidth 算。
+    // 抽成纯函数是为了能断言"标签优先于标题"这条规矩。
+    public static int TagSlots(int tagCount, double roomWidth, double tagWidth, double titleFloor)
+    {
+        if (tagCount <= 0 || tagWidth <= 0) return 0;
+        double room = roomWidth - titleFloor;
+        if (room <= 0) return 0;
+        return Math.Clamp((int)(room / (tagWidth + 14)), 0, Math.Min(tagCount, MaxTags));
+    }
+
     // 显示名：内置的"投稿"在界面上叫"在审"，自建阶段原样显示。
     public static string Display(string storedName) => storedName == Submission ? UnderReview : storedName;
 

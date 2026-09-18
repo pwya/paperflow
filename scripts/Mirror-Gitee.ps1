@@ -190,7 +190,12 @@ if ($Version) {
   $manifestFolder = Join-Path ([IO.Path]::GetTempPath()) ("gitee-manifest-" + [guid]::NewGuid().ToString('N'))
   [IO.Directory]::CreateDirectory($manifestFolder) | Out-Null
   $giteeManifest = Join-Path $manifestFolder 'update.json'
-  [IO.File]::WriteAllText($giteeManifest, (@{ version = $manifest.version; url = $giteeUrl; sha256 = $manifest.sha256; length = $manifest.length; exeSha256 = $manifest.exeSha256; exeLength = $manifest.exeLength } | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
+  # 从本地清单整份抄过来，只改下载地址。挨个字段重写会让后加的字段（比如 notes，也就是
+  # 程序里"这次改了什么"显示的原文）在镜像上凭空消失。
+  $giteeFields = [ordered]@{}
+  foreach ($property in $manifest.PSObject.Properties) { $giteeFields[$property.Name] = $property.Value }
+  $giteeFields['url'] = $giteeUrl
+  [IO.File]::WriteAllText($giteeManifest, ($giteeFields | ConvertTo-Json), [Text.UTF8Encoding]::new($false))
 
   $release = Get-Release -Tag $tag
   if (-not $release) {

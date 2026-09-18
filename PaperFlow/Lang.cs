@@ -179,6 +179,8 @@ public static class Lang
         ["要继续吗？"] = "Continue?",
         ["换阶段方案"] = "Switch stage scheme",
         ["换成方案 · "] = "Switched scheme · ",
+        ["加入阶段 · "] = "Stage added · ",
+        ["删掉阶段 · "] = "Stage removed · ",
         ["这篇论文的阶段"] = "Stages of this paper",
         ["改的是这一篇论文自己的阶段；想让别的论文也用，就另存为方案。"] = "You are editing this paper's own stages; save them as a scheme to reuse them elsewhere.",
         ["要不要把现在的阶段存成一个方案？起个名字，以后别的论文也能直接用。"] = "Save these stages as a scheme? Give it a name and other papers can pick it later.",

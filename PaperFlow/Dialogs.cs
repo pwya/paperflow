@@ -106,6 +106,9 @@ public sealed class PaperEditor : Window
                 name => paper.Stages.Any(s => s.Name == name && (s.Done || s.Skipped))) { Owner = this };
             if (editor.ShowDialog() != true) return;
             paper.Stages = Schemes.Switch(paper.Stages, editor.ResultStages);
+            // 加/删阶段写进修改记录；单纯拖动排序不写。
+            foreach (var added in editor.ResultStages.Except(before)) paper.Record("加入阶段 · " + Schemes.Display(added));
+            foreach (var removed in before.Except(editor.ResultStages)) paper.Record("删掉阶段 · " + Schemes.Display(removed));
             if (editor.SavedScheme != null) SavedScheme = editor.SavedScheme;
             else if (!editor.ResultStages.SequenceEqual(before)
                 && MessageBox.Show(this, Lang.T("要不要把现在的阶段存成一个方案？起个名字，以后别的论文也能直接用。"), Lang.T("另存为方案"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)

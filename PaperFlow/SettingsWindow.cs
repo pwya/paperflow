@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -19,14 +20,18 @@ public sealed class SettingsWindow : Window
     public List<(string From, string To)> SchemeRenames { get; } = new();
     // 方案改阶段之后，要按作者的选择推给正在用它的论文。
     public List<(string Name, List<string> OldStages, List<string> Stages, bool OnlyUnchanged)> SchemeStageUpdates { get; } = new();
+    // 用户"停留过并离开"的那几页：新功能角标按这个消除（打开就消会让角标来不及被看见）。
+    public List<string> LeavingSeen { get; } = new();
     private bool ready;
     // 分类名跟着语言走；用属性而不是静态字段，免得第一次取值时的语言被永久记住。
     private static string[] Categories => new[] { Lang.T("外观"), Lang.T("字体与文字"), Lang.T("视图与分页"), Lang.T("阶段方案"), Lang.T("同步与启动"), Lang.T("关于与反馈") };
 
-    public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview, Func<int> estimate, Func<string, (int Using, int Edited)>? schemeUsage = null, Func<string, string, bool>? schemeStageChecked = null)
+    public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview, Func<int> estimate, Func<string, (int Using, int Edited)>? schemeUsage = null, Func<string, string, bool>? schemeStageChecked = null, Func<string, bool>? showNew = null, Func<List<(string Name, int Count)>>? tagsOnPapers = null)
     {
         schemeUsage ??= (_ => (0, 0));
         schemeStageChecked ??= ((_, _) => false);
+        showNew ??= (_ => false);
+        tagsOnPapers ??= (() => new());
         Result = JsonSerializer.Deserialize<Preferences>(JsonSerializer.Serialize(settings))!;
         double scale = Appearance.DialogScale;
         // Inside a normal window the text stops at 250%, so the form always fits.
@@ -51,7 +56,16 @@ public sealed class SettingsWindow : Window
         layout.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(138 * scale) });
         layout.ColumnDefinitions.Add(new ColumnDefinition());
         root.Children.Add(layout);
-        var nav = new ListBox { ItemsSource = Categories, SelectedIndex = 0, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Margin = new Thickness(0, 0, 14 * scale, 0), FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = 13 * scale * Appearance.RoleScale("body") };
+        // 分类的稳定 id（跟界面语言无关）；新功能角标按这些 id 记录"看过了"。
+        var pageIds = new[] { "look", "text", "view", WhatsNew.Schemes, "sync", "about" };
+        TextBlock PageLabel(string text, bool badge)
+        {
+            var label = new TextBlock { Text = text, FontFamily = new FontFamily(Appearance.FamilyFor("body")), FontSize = 13 * scale * Appearance.RoleScale("body"), TextWrapping = TextWrapping.NoWrap };
+            if (badge) label.Inlines.Add(new InlineUIContainer(MainWindow.NewBadge()) { BaselineAlignment = BaselineAlignment.Superscript });
+            return label;
+        }
+        var nav = new ListBox { SelectedIndex = 0, BorderThickness = new Thickness(0), Background = Brushes.Transparent, Margin = new Thickness(0, 0, 14 * scale, 0) };
+        for (int i = 0; i < Categories.Length; i++) nav.Items.Add(new ListBoxItem { Content = PageLabel(Categories[i], showNew(pageIds[i])) });
         var pages = new Panel[Categories.Length];
         var host = new Grid();
         for (int i = 0; i < pages.Length; i++) { pages[i] = new StackPanel { Visibility = i == 0 ? Visibility.Visible : Visibility.Collapsed }; host.Children.Add(pages[i]); }
@@ -59,7 +73,20 @@ public sealed class SettingsWindow : Window
         // 让每页宽度跟着视口走，否则横向滚动会让文字永远不换行、长句子被切在窗口外。
         foreach (var page in pages) page.SetBinding(FrameworkElement.WidthProperty, new System.Windows.Data.Binding("ViewportWidth") { Source = scroll });
         Grid.SetColumn(nav, 0); Grid.SetColumn(scroll, 1); layout.Children.Add(nav); layout.Children.Add(scroll);
-        nav.SelectionChanged += (_, _) => { int picked = Math.Max(0, nav.SelectedIndex); for (int i = 0; i < pages.Length; i++) pages[i].Visibility = i == picked ? Visibility.Visible : Visibility.Collapsed; };
+        // 角标的消除时机：离开这一页（切走或关窗口），不是打开（打开时页面还没看清就消掉等于没提示）。
+        int shownPage = 0;
+        void MarkPageLeft(int index)
+        {
+            if (index < 0 || index >= pageIds.Length) return;
+            foreach (var id in WhatsNew.Leaving(pageIds[index])) if (!LeavingSeen.Contains(id)) LeavingSeen.Add(id);
+        }
+        nav.SelectionChanged += (_, _) =>
+        {
+            int picked = Math.Max(0, nav.SelectedIndex);
+            MarkPageLeft(shownPage); shownPage = picked;
+            for (int i = 0; i < pages.Length; i++) pages[i].Visibility = i == picked ? Visibility.Visible : Visibility.Collapsed;
+        };
+        Closed += (_, _) => MarkPageLeft(shownPage);
 
         TextBlock Label(Panel page, string text, double size = 13)
         {
@@ -233,23 +260,9 @@ public sealed class SettingsWindow : Window
         var notices = new CheckBox { Content = Lang.T("操作后在底部显示提示条"), IsChecked = Result.ShowNotices, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; view.Children.Add(notices);
         notices.Click += (_, _) => { Result.ShowNotices = notices.IsChecked == true; Preview(); };
         Label(view, Lang.T("提示条只在这些时候出现：勾选阶段后论文被隐藏或被挪到别的页、归档、复制。正常的勾选不会弹。"), 11);
-        Label(view, Lang.T("音效"), 15);
-        var soundMode = new ComboBox { ItemsSource = Lang.Choices(ViewRules.SoundModes), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SoundModes, Result.SoundMode)) }; view.Children.Add(soundMode);
-        soundMode.SelectionChanged += (_, _) => { Result.SoundMode = ViewRules.SoundModes[Math.Max(0, soundMode.SelectedIndex)]; Preview(); };
-        Label(view, Lang.T("音色"));
-        var soundStyle = new ComboBox { ItemsSource = Lang.Choices(ViewRules.SoundStyles), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SoundStyles, Result.SoundStyle)) }; view.Children.Add(soundStyle);
-        soundStyle.SelectionChanged += (_, _) => { Result.SoundStyle = ViewRules.SoundStyles[Math.Max(0, soundStyle.SelectedIndex)]; Preview(); };
-        var soundLabel = Label(view, Lang.T("音量"));
-        var soundVolume = new Slider { Minimum = 0, Maximum = 100, TickFrequency = 5, IsSnapToTickEnabled = true, Value = Result.SoundVolume * 100, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; view.Children.Add(soundVolume);
-        void VolumeChanged() { Result.SoundVolume = soundVolume.Value / 100; soundLabel.Text = Lang.F("音量 · {0:0}%", soundVolume.Value); Preview(); }
-        soundVolume.ValueChanged += (_, _) => VolumeChanged(); VolumeChanged();
-        var soundRow = new StackPanel { Orientation = Orientation.Horizontal }; view.Children.Add(soundRow);
-        soundRow.Children.Add(B(Lang.T("试听完成音"), () => Chime.Play(Result, "complete")));
-        soundRow.Children.Add(B(Lang.T("试听取消音"), () => Chime.Play(Result, "undo")));
-        soundRow.Children.Add(B(Lang.T("试听收录音"), () => Chime.Play(Result, "reward")));
-        Label(view, Lang.T("音效默认关闭，只在本机生效、不随同步跑到别的电脑；勾满七个阶段时换成一小段奖励音。"), 11);
         // ---------- 隐藏用标签 ----------
-        Label(view, Lang.T("隐藏用标签"), 16);
+        var tagHeading = Label(view, Lang.T("隐藏用标签"), 16);
+        if (showNew(WhatsNew.TagHiding)) tagHeading.Inlines.Add(new InlineUIContainer(MainWindow.NewBadge()) { BaselineAlignment = BaselineAlignment.Superscript });
         Label(view, Lang.T("标签是你自己起的短记号，比如“等老师反馈”“等编辑部意见”。给论文贴上标签以后，可以把带某个标签的论文先收起来，需要的时候再展开看一眼。"), 11);
         var tagSwitch = new CheckBox { Content = Lang.T("打开隐藏用标签"), IsChecked = Result.TagHidingEnabled, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) };
         tagSwitch.Click += (_, _) => Result.TagHidingEnabled = tagSwitch.IsChecked == true;
@@ -262,7 +275,10 @@ public sealed class SettingsWindow : Window
         void RebuildTags()
         {
             tagRows.Children.Clear();
-            foreach (var tag in Result.CustomTags.ToList())
+            // 清单 = 本机自建的 + 论文上带过的（换台电脑、或"设置里没建过"的标签也要看得见）。
+            var carried = tagsOnPapers().ToDictionary(x => x.Name, x => x.Count, StringComparer.Ordinal);
+            var known = Result.CustomTags.Concat(carried.Keys).Distinct(StringComparer.Ordinal).ToList();
+            foreach (var tag in known)
             {
                 string original = tag;
                 var box = new TextBox { Text = tag, Width = 170 * scale, VerticalContentAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8 * Appearance.Scale, 0) };
@@ -280,11 +296,15 @@ public sealed class SettingsWindow : Window
                 }
                 box.LostFocus += (_, _) => Commit();
                 box.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) Commit(); };
-                var remove = B(Lang.T("删掉"), () => { Result.CustomTags.Remove(original); Result.HiddenTags.Remove(original); RebuildTags(); });
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2 * Appearance.Scale, 0, 2 * Appearance.Scale) };
-                row.Children.Add(box); row.Children.Add(remove); tagRows.Children.Add(row);
+                row.Children.Add(box);
+                if (Result.CustomTags.Contains(original))
+                    row.Children.Add(B(Lang.T("删掉"), () => { Result.CustomTags.Remove(original); Result.HiddenTags.Remove(original); RebuildTags(); }));
+                else
+                    row.Children.Add(new TextBlock { Text = Lang.F("还贴在 {0} 篇论文上", carried.TryGetValue(original, out int count) ? count : 0), Foreground = MainWindow.Brush("#78867F"), FontSize = 11 * scale, VerticalAlignment = VerticalAlignment.Center });
+                tagRows.Children.Add(row);
             }
-            if (Result.CustomTags.Count == 0) tagRows.Children.Add(new TextBlock { Text = Lang.T("还没有标签。"), Foreground = MainWindow.Brush("#78867F"), FontSize = 11 * scale });
+            if (known.Count == 0) tagRows.Children.Add(new TextBlock { Text = Lang.T("还没有标签。"), Foreground = MainWindow.Brush("#78867F"), FontSize = 11 * scale });
         }
         tagAdd.Click += (_, _) =>
         {
@@ -296,6 +316,22 @@ public sealed class SettingsWindow : Window
             Result.CustomTags.Add(wanted); tagInput.Clear(); RebuildTags();
         };
         RebuildTags();
+        // 音效跟着排在后面：隐藏用标签是新功能，放在这一页靠上的位置，进来第一屏就能看到。
+        Label(view, Lang.T("音效"), 15);
+        var soundMode = new ComboBox { ItemsSource = Lang.Choices(ViewRules.SoundModes), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SoundModes, Result.SoundMode)) }; view.Children.Add(soundMode);
+        soundMode.SelectionChanged += (_, _) => { Result.SoundMode = ViewRules.SoundModes[Math.Max(0, soundMode.SelectedIndex)]; Preview(); };
+        Label(view, Lang.T("音色"));
+        var soundStyle = new ComboBox { ItemsSource = Lang.Choices(ViewRules.SoundStyles), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SoundStyles, Result.SoundStyle)) }; view.Children.Add(soundStyle);
+        soundStyle.SelectionChanged += (_, _) => { Result.SoundStyle = ViewRules.SoundStyles[Math.Max(0, soundStyle.SelectedIndex)]; Preview(); };
+        var soundLabel = Label(view, Lang.T("音量"));
+        var soundVolume = new Slider { Minimum = 0, Maximum = 100, TickFrequency = 5, IsSnapToTickEnabled = true, Value = Result.SoundVolume * 100, Margin = new Thickness(0, 5 * Appearance.Scale, 0, 7 * Appearance.Scale) }; view.Children.Add(soundVolume);
+        void VolumeChanged() { Result.SoundVolume = soundVolume.Value / 100; soundLabel.Text = Lang.F("音量 · {0:0}%", soundVolume.Value); Preview(); }
+        soundVolume.ValueChanged += (_, _) => VolumeChanged(); VolumeChanged();
+        var soundRow = new StackPanel { Orientation = Orientation.Horizontal }; view.Children.Add(soundRow);
+        soundRow.Children.Add(B(Lang.T("试听完成音"), () => Chime.Play(Result, "complete")));
+        soundRow.Children.Add(B(Lang.T("试听取消音"), () => Chime.Play(Result, "undo")));
+        soundRow.Children.Add(B(Lang.T("试听收录音"), () => Chime.Play(Result, "reward")));
+        Label(view, Lang.T("音效默认关闭，只在本机生效、不随同步跑到别的电脑；勾满七个阶段时换成一小段奖励音。"), 11);
         Label(view, Lang.T("搜索、筛选、排序、紧凑视图、隐藏用标签和显示范围都在挂件右上角的“论文选项”里，那里改的是此刻看到什么。这里只放长期偏好。"), 11);
         Label(view, Lang.T("字号、界面缩放和三档字体在“字体与文字”里。"), 11);
         Label(view, Lang.T("铺满屏幕时界面会不会挤，取决于字号和界面缩放的组合。字号很大时阶段标签会换行、卡片自然变高，一屏能看到的论文会变少，这是正常的。"), 11);

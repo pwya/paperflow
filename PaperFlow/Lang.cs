@@ -257,6 +257,7 @@ public static class Lang
         ["新建标签"] = "New tag",
         ["删掉"] = "Delete",
         ["还没有标签。"] = "No tags yet.",
+        ["还贴在 {0} 篇论文上"] = "Still on {0} papers",
         ["已经有同名的标签了。"] = "That tag name is already taken.",
         ["标签名不能为空，也不能超过六个汉字那么宽。"] = "A tag name cannot be empty or wider than six Chinese characters.",
         ["自建标签最多 {0} 个。"] = "You can keep at most {0} tags of your own.",

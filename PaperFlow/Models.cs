@@ -137,6 +137,8 @@ public sealed class Preferences
     // 刚装完的更新：重启后把这一版改了什么再显示一次。只在本机，不参与同步。
     public string PendingReleaseVersion { get; set; } = "";
     public string PendingReleaseNotes { get; set; } = "";
+    // 已经"看过"的新功能角标（本机记录，不参与同步）：全新安装会一次记满。
+    public List<string> SeenNewFeatures { get; set; } = new();
     public bool Topmost { get; set; } = true;
     public bool Compact { get; set; }
     public int BarHeight { get; set; } = 20;

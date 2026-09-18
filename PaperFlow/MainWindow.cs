@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shell;
@@ -63,6 +64,8 @@ public sealed class MainWindow : Window
     private readonly ScrollViewer scroller;
     private Action? layoutChrome;
     private readonly List<Button> quietChrome = new();
+    // 顶部"设置"按钮要挂新功能角标，所以留一个引用。
+    private Button? settingsButton;
 
     public static SolidColorBrush Brush(string color) => Appearance.Map(color);
     // role 决定用哪一档文字设置：title / body / caption。
@@ -84,6 +87,36 @@ public sealed class MainWindow : Window
         if (primary) button.SetResourceReference(StyleProperty, "PrimaryButton");
         button.Click += (_, _) => action();
         return button;
+    }
+
+    // 顶部按钮的文字，必要时在后面挂一个小小的 NEW。字体、颜色都继承按钮本身，所以主题和字号照旧。
+    private static FrameworkElement ChromeContent(string text, bool badge)
+    {
+        var label = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+        label.Inlines.Add(new Run(text));
+        // 上标要贴着自己那个词（左边留一点、右边多留一点），否则看起来像挂在下一个按钮上。
+        if (badge) label.Inlines.Add(new InlineUIContainer(NewBadge()) { BaselineAlignment = BaselineAlignment.Superscript });
+        return label;
+    }
+
+    // "NEW" 小标记：随界面缩放、用主题强调色。
+    internal static TextBlock NewBadge() => new()
+    {
+        Text = "NEW",
+        FontSize = 9 * Appearance.Scale,
+        Foreground = Appearance.Paint(Appearance.Current.Accent),
+        Margin = new Thickness(2, 0, 6, 0)
+    };
+
+    // "设置"里的三处（阶段方案 / 视图与分页 / 隐藏用标签）还有没看过的吗。
+    private bool SettingsHaveNews() =>
+        new[] { WhatsNew.Schemes, WhatsNew.ViewPage, WhatsNew.TagHiding }.Any(id => WhatsNew.ShouldShow(id, !store.Existed, library.Settings.SeenNewFeatures));
+
+    // 看过就把角标记掉（幂等，已经记过就什么都不做）。
+    private void MarkNewSeen(params string[] ids)
+    {
+        if (ids.All(id => library.Settings.SeenNewFeatures.Contains(id))) return;
+        Commit(l => { foreach (var id in ids) if (!l.Settings.SeenNewFeatures.Contains(id)) l.Settings.SeenNewFeatures.Add(id); });
     }
     private static Grid Watermark(TextBox input, string hint)
     {
@@ -130,9 +163,9 @@ public sealed class MainWindow : Window
         heading.Children.Add(brand);
         var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var add = ActionButton("＋", AddPaper, true); add.ToolTip = Lang.T("新增论文 · Ctrl+N"); add.Padding = new Thickness(10 * Appearance.Scale, 4 * Appearance.Scale, 10 * Appearance.Scale, 4 * Appearance.Scale); add.FontSize = 17 * Appearance.TextScale; AutomationProperties.SetName(add, Lang.T("新增论文")); chrome.Children.Add(add);
-        options.Content = Lang.T("论文选项"); options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options); quietChrome.Add(options);
+        options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options); quietChrome.Add(options);
         pin.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin); quietChrome.Add(pin);
-        var settingsButton = ActionButton(Lang.T("设置"), OpenSettings); chrome.Children.Add(settingsButton); quietChrome.Add(settingsButton);
+        settingsButton = ActionButton(Lang.T("设置"), OpenSettings); chrome.Children.Add(settingsButton); quietChrome.Add(settingsButton);
         hiddenToggle.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale);
         hiddenToggle.Click += (_, _) => Commit(l => l.Settings.ShowHiddenNow = !l.Settings.ShowHiddenNow);
         chrome.Children.Add(hiddenToggle); quietChrome.Add(hiddenToggle);
@@ -152,6 +185,7 @@ public sealed class MainWindow : Window
         };
         heading.SizeChanged += (_, _) => layoutChrome();
         DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
+
 
         var top = new StackPanel { Margin = new Thickness(17, 0, 17, 6), Background = Brushes.Transparent };
         summary.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); top.Children.Add(summary);
@@ -230,6 +264,8 @@ public sealed class MainWindow : Window
             ShowNotice(Lang.F("已更新到 {0} · 查看这次改了什么", installedVersion), Lang.T("查看"),
                 () => new UpdateNotesDialog(installedVersion, installedNotes) { Owner = this }.ShowDialog());
         }
+        // 全新安装：直接把"新功能"记成已见（新用户没有"新"这个概念）；升级上来的才会亮角标。
+        if (!demonstration && !store.Existed) Commit(l => l.Settings.SeenNewFeatures = WhatsNew.SeenAfterFreshInstall(l.Settings.SeenNewFeatures));
         SessionEndingHook();
     }
 
@@ -311,6 +347,12 @@ public sealed class MainWindow : Window
         string chromeStyle = Appearance.HeaderStyle switch { "plain" => "QuietButton", "outline" => "OutlineButton", _ => "SoftButton" };
         foreach (var button in quietChrome) button.SetResourceReference(StyleProperty, chromeStyle);
         foreach (var button in quietChrome) button.Foreground = Appearance.HeaderStyle == "plain" ? Brush("#78867F") : Brush("#24352F");
+        // 新功能角标：升级上来的老用户才看得到；"设置"上的角标在里面的三处都看过之后自然消失。
+        options.Content = ChromeContent(Lang.T("论文选项"), WhatsNew.ShouldShow(WhatsNew.Options, !store.Existed, library.Settings.SeenNewFeatures));
+        if (settingsButton != null) settingsButton.Content = ChromeContent(Lang.T("设置"), SettingsHaveNews());
+        // 角标会改变按钮自动化的名字，这里显式设回原名字（键盘、读屏和自动化都还认得出）。
+        AutomationProperties.SetName(options, Lang.T("论文选项"));
+        if (settingsButton != null) AutomationProperties.SetName(settingsButton, Lang.T("设置"));
         var picture = Appearance.BackgroundImage();
         if (picture == null)
         {
@@ -898,9 +940,13 @@ public sealed class MainWindow : Window
         var original = Storage.CloneLibrary(library).Settings;
         var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, PreviewAppearance, EstimateVisiblePapers,
             name => Schemes.Usage(library.Papers, name, library.Settings.CustomSchemes),
-            (schemeName, stageName) => library.Papers.Any(p => p.SchemeName == schemeName && p.Stages.Any(s => s.Name == stageName && (s.Done || s.Skipped)))) { Owner = this };
+            (schemeName, stageName) => library.Papers.Any(p => p.SchemeName == schemeName && p.Stages.Any(s => s.Name == stageName && (s.Done || s.Skipped))),
+            id => WhatsNew.ShouldShow(id, !store.Existed, library.Settings.SeenNewFeatures),
+            () => library.Papers.SelectMany(p => p.Tags).GroupBy(t => t, StringComparer.Ordinal).Select(g => (Name: g.Key, Count: g.Count())).ToList()) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
+            // "离开过"的那几页记成已看：这是界面状态，跟设置本身保存不保存没关系。
+            foreach (var id in dialog.LeavingSeen) if (!dialog.Result.SeenNewFeatures.Contains(id)) dialog.Result.SeenNewFeatures.Add(id);
             bool languageChanged = !string.Equals(Lang.Effective(original.Language), Lang.Effective(dialog.Result.Language), StringComparison.Ordinal);
             if (!Commit(l => l.Settings = dialog.Result)) return;
             // 标签改名要连论文上贴着的旧名字一起改，否则改名等于把标签拆成两半。
@@ -927,7 +973,13 @@ public sealed class MainWindow : Window
             if (Updates.Offered is UpdateManifest found) OfferUpdate(found);
             else if (Updates.LastFailure is UpdateFailure problem) OfferUpdateProblem(problem);
         }
-        else Commit(l => l.Settings = original);
+        else
+        {
+            // 取消设置：设置回滚，但"哪几页我看过了"要留下，否则角标下次又冒出来。
+            foreach (var id in dialog.LeavingSeen) if (!dialog.Result.SeenNewFeatures.Contains(id)) dialog.Result.SeenNewFeatures.Add(id);
+            var seen = dialog.Result.SeenNewFeatures;
+            Commit(l => { l.Settings = original; l.Settings.SeenNewFeatures = seen; });
+        }
     }
     // 挂件自己不占任务栏，最容易的“弄丢”方式就是找不到入口。托盘菜单里一键把两个入口放好。
     private void CreateShortcuts()
@@ -983,7 +1035,10 @@ public sealed class MainWindow : Window
         controls.Children.Add(ActionButton(Lang.T("显示全部"), () => { search.Clear(); filter.SelectedIndex = 0; sort.SelectedIndex = 0; ChangeView(p => { p.HiddenTags.Clear(); p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
         controls.Children.Add(ActionButton(Lang.T("完成"), window.Close, true));
         window.Closed += (_, _) => { body.Children.Remove(search); body.Children.Remove(filter); body.Children.Remove(sort); };
-        window.Loaded += (_, _) => search.Focus(); window.ShowDialog();
+        window.Loaded += (_, _) => search.Focus();
+        window.ShowDialog();
+        // 关掉这个窗口就算看过了（不是鼠标停上去，也不是一打开就消）。
+        MarkNewSeen(WhatsNew.Options);
     }
     private void AddResizeHandles(Grid surface)
     {

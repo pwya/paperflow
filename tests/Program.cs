@@ -69,6 +69,7 @@ Check(Directory.GetFiles(directory, "papers.damaged-*").Length == 1, "preserve c
 Check(storage.Load().Papers.Count == 1, "recovery repairs active file");
 SyncTests.Run(Check);
 SchemeTests.Run(Check);
+WhatsNewTests.Run(Check);
 PaperOrderTests.Run(Check);
 ViewTests.Run(Check);
 ShortcutTests.Run(Check);

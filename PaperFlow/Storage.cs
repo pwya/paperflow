@@ -15,6 +15,8 @@ public sealed class Storage
     public string BackupPath => Path.Combine(DirectoryPath, "papers.previous.json");
     public string? RecoveryNotice { get; private set; }
     public string? BackupNotice { get; private set; }
+    // 资料文件本来就存在吗？全新安装不该给"新功能"亮角标，靠这个判断。
+    public bool Existed { get; private set; }
     public Storage(string directory) { DirectoryPath = directory; }
 
     // Renaming the product renamed the local runtime root. Copy the previous root once,
@@ -55,6 +57,7 @@ public sealed class Storage
     {
         Directory.CreateDirectory(DirectoryPath);
         if (!File.Exists(FilePath)) return new Library();
+        Existed = true;
         try { return Parse(File.ReadAllText(FilePath, Encoding.UTF8)); }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException)
         {
@@ -140,6 +143,7 @@ public sealed class Storage
         s.LastUpdateError ??= "";
         s.PendingReleaseVersion ??= "";
         s.PendingReleaseNotes ??= "";
+        s.SeenNewFeatures = (s.SeenNewFeatures ?? new()).Select(v => (v ?? "").Trim()).Where(v => v.Length > 0).Distinct(StringComparer.Ordinal).ToList();
         // 更新说明只用来显示一次；长度不对劲就当没有，不让它留在文件里。
         if (s.PendingReleaseNotes.Length > UpdateManifest.MaxNotesLength) { s.PendingReleaseVersion = ""; s.PendingReleaseNotes = ""; }
         s.BackgroundOpacity = double.IsFinite(s.BackgroundOpacity) ? Math.Clamp(s.BackgroundOpacity, 0.05, 1) : 1;

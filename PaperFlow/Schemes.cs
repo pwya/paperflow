@@ -111,6 +111,43 @@ public static class Schemes
         return list;
     }
 
+    // 本机方案库里没有、但论文身上带着的方案：多半来自另一台电脑。
+    // 取第一篇用它的论文的阶段清单当这套方案（同一套方案的论文本来就应该一致）。
+    public static List<StageScheme> FromPapers(IEnumerable<Paper> papers, IEnumerable<StageScheme> known)
+    {
+        var have = All(known).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+        var found = new List<StageScheme>();
+        foreach (var paper in papers)
+        {
+            string name = paper.SchemeName;
+            if (string.IsNullOrWhiteSpace(name) || have.Contains(name) || found.Any(s => s.Name == name)) continue;
+            found.Add(new StageScheme(name, paper.Stages.Select(s => s.Name).ToList()));
+        }
+        return found;
+    }
+
+    // 这套方案现在有多少篇论文在用、其中多少篇已经和方案不一致（单独改过）。
+    public static (int Using, int Edited) Usage(IEnumerable<Paper> papers, string schemeName, IEnumerable<StageScheme> known)
+    {
+        var mine = papers.Where(p => p.SchemeName == schemeName).ToList();
+        var scheme = All(known).FirstOrDefault(s => s.Name == schemeName);
+        return (mine.Count, scheme == null ? 0 : mine.Count(p => !Matches(scheme, p.Stages.Select(s => s.Name))));
+    }
+
+    // 把方案的新阶段推到正在用它的论文上：按名字保留勾选，返回改了几篇。
+    public static int PushToPapers(IEnumerable<Paper> papers, string schemeName, IReadOnlyList<string> stages, bool onlyUnchanged, IEnumerable<StageScheme> known)
+    {
+        var scheme = All(known).FirstOrDefault(s => s.Name == schemeName);
+        int changed = 0;
+        foreach (var paper in papers.Where(p => p.SchemeName == schemeName).ToList())
+        {
+            if (onlyUnchanged && scheme != null && !Matches(scheme, paper.Stages.Select(s => s.Name))) continue;
+            paper.Stages = Switch(paper.Stages, stages);
+            changed++;
+        }
+        return changed;
+    }
+
     // 汇总里"X 篇……"那半句用的名字：所有论文最后一格同名就用它，不然退回到中性的"已完成"。
     public static string CompletionLabel(IEnumerable<Paper> papers)
     {

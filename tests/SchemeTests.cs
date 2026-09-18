@@ -166,5 +166,31 @@ static class SchemeTests
         check(Schemes.TagSlots(3, 200, 40, 160) == 0, "a narrow card keeps the title and drops the tags");
         check(Schemes.TagSlots(0, 600, 40, 80) == 0 && Schemes.TagSlots(2, 600, 40, 80) == 2, "no tags means no slots, and fewer tags never invent more");
         check(Schemes.TagSlots(9, 2000, 40, 80) == Schemes.MaxTags, "a huge card still stops at three tags");
+
+        // 改方案要推给正在用它的论文：按名字保留勾选，可以只更新没单独改过的。
+        var schemeA = new StageScheme("甲方案", new List<string> { "一", "二", "三" });
+        var knownList = new List<StageScheme> { schemeA };
+        var p1 = new Paper { Title = "p1", SchemeName = "甲方案" }; p1.Stages = Schemes.NewStages(schemeA.StageNames); p1.Stages[0].Done = true;
+        var p2 = new Paper { Title = "p2", SchemeName = "甲方案" }; p2.Stages = Schemes.NewStages(new[] { "一", "二", "三", "四" }); p2.Stages[3].Done = true;
+        var p3 = new Paper { Title = "p3" };
+        var (usedBy, editedBy) = Schemes.Usage(new[] { p1, p2, p3 }, "甲方案", knownList);
+        check(usedBy == 2 && editedBy == 1, "usage counts the papers using a scheme and the hand-edited ones");
+        check(Schemes.PushToPapers(new[] { p1, p2, p3 }, "甲方案", new[] { "一", "二", "三", "新的一步" }, false, knownList) == 2, "a scheme change reaches every paper that uses it");
+        check(p1.Stages.Count == 4 && p1.Stages[0].Done && !p1.Stages[3].Done, "matching stages keep their ticks when a scheme grows");
+        check(p3.Stages.Count == 7, "papers on another scheme are left alone");
+        var knownTwo = new List<StageScheme> { new StageScheme("甲方案", new List<string> { "一", "二" }) };
+        var q1 = new Paper { Title = "q1", SchemeName = "甲方案" }; q1.Stages = Schemes.NewStages(new[] { "一", "二" });
+        var q2 = new Paper { Title = "q2", SchemeName = "甲方案" }; q2.Stages = Schemes.NewStages(new[] { "一", "二", "四" });
+        check(Schemes.PushToPapers(new[] { q1, q2 }, "甲方案", new[] { "一", "二", "三" }, true, knownTwo) == 1, "only the untouched papers are updated when asked");
+        check(q1.Stages.Select(s => s.Name).SequenceEqual(new[] { "一", "二", "三" }), "the untouched paper follows the scheme");
+        check(q2.Stages.Select(s => s.Name).SequenceEqual(new[] { "一", "二", "四" }), "the hand-edited paper stays as it was");
+
+        // 换台电脑：论文身上带着的方案要认出来，而不是当成"被单独改过"。
+        var foreign = new Paper { Title = "from another pc", SchemeName = "乙方案" };
+        foreign.Stages = Schemes.NewStages(new[] { "准备", "写作" });
+        var carried = Schemes.FromPapers(new[] { foreign, p3 }, knownList);
+        check(carried.Count == 1 && carried[0].Name == "乙方案" && carried[0].StageNames.SequenceEqual(new[] { "准备", "写作" }), "a scheme carried by a paper is picked up even on a machine that never saw it");
+        check(Schemes.FromPapers(new[] { p1 }, knownList).Count == 0, "schemes this machine already knows are not duplicated");
+        check(!Schemes.Resolve(foreign, Schemes.FromPapers(new[] { foreign }, knownList)).Changed, "a scheme from another machine is recognised instead of being marked hand-edited");
     }
 }

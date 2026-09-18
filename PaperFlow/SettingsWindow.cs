@@ -17,13 +17,16 @@ public sealed class SettingsWindow : Window
     public List<(string From, string To)> TagRenames { get; } = new();
     // 方案改名同理：论文身上记着方案名，改名要一起跟过去。
     public List<(string From, string To)> SchemeRenames { get; } = new();
+    // 方案改阶段之后，要按作者的选择推给正在用它的论文。
+    public List<(string Name, List<string> Stages, bool OnlyUnchanged)> SchemeStageUpdates { get; } = new();
     private bool ready;
     // 分类名跟着语言走；用属性而不是静态字段，免得第一次取值时的语言被永久记住。
     private static string[] Categories => new[] { Lang.T("外观"), Lang.T("字体与文字"), Lang.T("视图与分页"), Lang.T("阶段方案"), Lang.T("同步与启动"), Lang.T("关于与反馈") };
 
-    public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview, Func<int> estimate, Func<string, int>? schemeUsage = null)
+    public SettingsWindow(Preferences settings, string directory, Action export, Action import, Action<Preferences> preview, Func<int> estimate, Func<string, (int Using, int Edited)>? schemeUsage = null, Func<string, string, bool>? schemeStageChecked = null)
     {
-        schemeUsage ??= (_ => 0);
+        schemeUsage ??= (_ => (0, 0));
+        schemeStageChecked ??= ((_, _) => false);
         Result = JsonSerializer.Deserialize<Preferences>(JsonSerializer.Serialize(settings))!;
         double scale = Appearance.DialogScale;
         // Inside a normal window the text stops at 250%, so the form always fits.
@@ -339,17 +342,32 @@ public sealed class SettingsWindow : Window
                 row.Children.Add(new TextBlock { Text = Lang.T(current.Name) + " · " + string.Join(Lang.ListSeparator, current.StageNames.Select(n => Lang.T(Schemes.Display(n)))), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12 * Appearance.Scale, 0), TextWrapping = TextWrapping.Wrap });
                 row.Children.Add(B(Lang.T("编辑…"), () =>
                 {
-                    var editor = new StageEditorDialog(Lang.T("阶段方案"), Lang.T("改名、加阶段、删阶段、按住拖动排序，都在这里。"), current.Name, current.StageNames, true, name => Result.CustomSchemes.Any(s => s.Name == name && s.Name != current.Name)) { Owner = this };
+                    var editor = new StageEditorDialog(Lang.T("阶段方案"), Lang.T("改名、加阶段、删阶段、按住拖动排序，都在这里。"), current.Name, current.StageNames, true,
+                        name => Result.CustomSchemes.Any(s => s.Name == name && s.Name != current.Name),
+                        name => schemeStageChecked(current.Name, name)) { Owner = this };
                     if (editor.ShowDialog() != true) return;
                     int at = Result.CustomSchemes.IndexOf(current);
                     if (at < 0) return;
                     if (editor.ResultSchemeName != current.Name) SchemeRenames.Add((current.Name, editor.ResultSchemeName));
+                    // 阶段改了要问问正在用它的那些论文：一起更新，还是只更新没单独改过的。
+                    if (!current.StageNames.SequenceEqual(editor.ResultStages))
+                    {
+                        var (usingCount, editedCount) = schemeUsage(editor.ResultSchemeName);
+                        if (usingCount > 0)
+                        {
+                            var answer = MessageBox.Show(this,
+                                Lang.F("有 {0} 篇论文在用《{1}》，其中 {2} 篇你单独改过。\n\n“是”：一起更新（单独改过的会被覆盖）\n“否”：只更新没单独改过的\n“取消”：都不动，只改方案库", usingCount, Lang.T(editor.ResultSchemeName), editedCount),
+                                Lang.T("改方案"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
+                            if (answer == MessageBoxResult.Yes) SchemeStageUpdates.Add((editor.ResultSchemeName, editor.ResultStages, false));
+                            else if (answer == MessageBoxResult.No) SchemeStageUpdates.Add((editor.ResultSchemeName, editor.ResultStages, true));
+                        }
+                    }
                     Result.CustomSchemes[at] = new StageScheme(editor.ResultSchemeName, editor.ResultStages);
                     RebuildSchemes();
                 }));
                 row.Children.Add(B(Lang.T("删掉"), () =>
                 {
-                    int used = schemeUsage(current.Name);
+                    int used = schemeUsage(current.Name).Using;
                     if (used > 0) { MessageBox.Show(this, Lang.F("还有 {0} 篇论文在用《{1}》，先给它们换一个方案，再删这个方案。", used, Lang.T(current.Name))); return; }
                     Result.CustomSchemes.Remove(current); RebuildSchemes();
                 }));

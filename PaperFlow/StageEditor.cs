@@ -37,6 +37,7 @@ public sealed class StageEditorDialog : Window
 {
     private readonly bool schemeMode;
     private readonly Func<string, bool> nameTaken;
+    private readonly Func<string, bool> stageIsChecked;
     private readonly StackPanel cardList = new();
     private readonly List<string> stages = new();
     private readonly TextBox schemeName = new();
@@ -45,10 +46,11 @@ public sealed class StageEditorDialog : Window
     // 在论文里编辑时点了"另存为方案"，就带回一套新方案。
     public StageScheme? SavedScheme { get; private set; }
 
-    public StageEditorDialog(string headline, string caption, string schemeNameValue, IReadOnlyList<string> stageNames, bool schemeMode, Func<string, bool>? nameTaken = null)
+    public StageEditorDialog(string headline, string caption, string schemeNameValue, IReadOnlyList<string> stageNames, bool schemeMode, Func<string, bool>? nameTaken = null, Func<string, bool>? stageIsChecked = null)
     {
         this.schemeMode = schemeMode;
         this.nameTaken = nameTaken ?? (_ => false);
+        this.stageIsChecked = stageIsChecked ?? (_ => false);
         stages.AddRange(stageNames);
         ResultSchemeName = schemeNameValue;
         Title = headline;
@@ -132,6 +134,10 @@ public sealed class StageEditorDialog : Window
         var remove = MainWindow.ActionButton("✕", () =>
         {
             if (stages.Count <= Schemes.MinStages) { MessageBox.Show(this, Storage.Why(SchemeProblem.TooFewStages)); return; }
+            // 删掉一个已经打了勾的阶段会让那一步的勾消失：先说清楚，再动手。
+            if (stageIsChecked(stages[slot])
+                && MessageBox.Show(this, Lang.F("『{0}』已经打了勾，删掉之后这一步的勾会消失，其余阶段不动。", Lang.T(Schemes.Display(stages[slot]))) + "\n\n" + Lang.T("要继续吗？"),
+                    Lang.T("删掉这个阶段"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
             stages.RemoveAt(slot); Build();
         });
         remove.ToolTip = Lang.T("删掉这个阶段");

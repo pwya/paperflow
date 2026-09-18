@@ -874,7 +874,9 @@ public sealed class MainWindow : Window
     private void EditPaper(Paper original)
     {
         var knownTags = library.Settings.CustomTags.Concat(library.Papers.SelectMany(x => x.Tags)).Distinct(StringComparer.Ordinal).Where(t => t.Length > 0).ToList();
-        var dialog = new PaperEditor(Storage.Clone(original), knownTags, library.Settings.CustomSchemes) { Owner = this };
+        // 方案列表＝本机自建的 + 论文身上带着的（多半来自另一台电脑，用的方案也要能选、能认出）。
+        var knownSchemes = library.Settings.CustomSchemes.Concat(Schemes.FromPapers(library.Papers, library.Settings.CustomSchemes)).ToList();
+        var dialog = new PaperEditor(Storage.Clone(original), knownTags, knownSchemes) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             Commit(l => { dialog.Result.Record("更新论文资料"); var before = new Library { Papers = new() { original } }; var after = new Library { Papers = new() { dialog.Result } }; SyncProtocol.ApplyEdits(l, SyncProtocol.Diff(before, after)); });
@@ -894,7 +896,9 @@ public sealed class MainWindow : Window
     private void OpenSettings()
     {
         var original = Storage.CloneLibrary(library).Settings;
-        var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, PreviewAppearance, EstimateVisiblePapers, name => library.Papers.Count(p => p.SchemeName == name)) { Owner = this };
+        var dialog = new SettingsWindow(library.Settings, store.DirectoryPath, Export, Import, PreviewAppearance, EstimateVisiblePapers,
+            name => Schemes.Usage(library.Papers, name, library.Settings.CustomSchemes),
+            (schemeName, stageName) => library.Papers.Any(p => p.SchemeName == schemeName && p.Stages.Any(s => s.Name == stageName && (s.Done || s.Skipped)))) { Owner = this };
         if (dialog.ShowDialog() == true)
         {
             bool languageChanged = !string.Equals(Lang.Effective(original.Language), Lang.Effective(dialog.Result.Language), StringComparison.Ordinal);
@@ -915,6 +919,9 @@ public sealed class MainWindow : Window
                 string ResolveScheme(string tag) { var seen = new HashSet<string>(StringComparer.Ordinal); while (map.TryGetValue(tag, out var next) && seen.Add(tag)) tag = next; return tag; }
                 Commit(l => { foreach (var paper in l.Papers) if (map.ContainsKey(paper.SchemeName)) paper.SchemeName = ResolveScheme(paper.SchemeName); });
             }
+            // 方案改过阶段：按作者在设置里的选择，推给正在用它的论文（按名字保留勾选）。
+            if (dialog.SchemeStageUpdates.Count > 0)
+                Commit(l => { foreach (var (schemeName, stages, onlyUnchanged) in dialog.SchemeStageUpdates) Schemes.PushToPapers(l.Papers, schemeName, stages, onlyUnchanged, l.Settings.CustomSchemes); });
             // 语言换了就重启一次：挂件上的按钮、托盘菜单是开窗口时建好的，重启最干净。
             if (languageChanged) { Restart(); return; }
             if (Updates.Offered is UpdateManifest found) OfferUpdate(found);

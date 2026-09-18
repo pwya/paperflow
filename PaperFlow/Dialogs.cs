@@ -102,7 +102,8 @@ public sealed class PaperEditor : Window
         void EditStages()
         {
             var before = paper.Stages.Select(s => s.Name).ToList();
-            var editor = new StageEditorDialog(Lang.T("这篇论文的阶段"), Lang.T("改的是这一篇论文自己的阶段；想让别的论文也用，就另存为方案。"), paper.SchemeName, before, false, null) { Owner = this };
+            var editor = new StageEditorDialog(Lang.T("这篇论文的阶段"), Lang.T("改的是这一篇论文自己的阶段；想让别的论文也用，就另存为方案。"), paper.SchemeName, before, false, null,
+                name => paper.Stages.Any(s => s.Name == name && (s.Done || s.Skipped))) { Owner = this };
             if (editor.ShowDialog() != true) return;
             paper.Stages = Schemes.Switch(paper.Stages, editor.ResultStages);
             if (editor.SavedScheme != null) SavedScheme = editor.SavedScheme;

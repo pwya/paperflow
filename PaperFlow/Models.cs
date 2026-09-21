@@ -139,7 +139,9 @@ public sealed class Preferences
     public string PendingReleaseNotes { get; set; } = "";
     // 已经"看过"的新功能角标（本机记录，不参与同步）：全新安装会一次记满。
     public List<string> SeenNewFeatures { get; set; } = new();
-    public bool Topmost { get; set; } = true;
+    // WindowMode is device-local. A missing field opts an older install into desktop mode.
+    public string WindowMode { get; set; } = "desktop";
+    public bool Topmost { get; set; }
     public bool Compact { get; set; }
     public int BarHeight { get; set; } = 20;
     public double Width { get; set; } = 650;

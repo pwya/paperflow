@@ -117,7 +117,7 @@
             <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
               <Border Background="{DynamicResource Card}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="{DynamicResource InputCorner}">
                 <Grid>
-                  <ContentPresenter Margin="12,0,30,0" VerticalAlignment="Center" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+                  <ContentPresenter Margin="12,0,30,0" VerticalAlignment="Center" TextElement.Foreground="{DynamicResource Ink}" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
                   <Path Data="M0,0 L5,5 L10,0" Stroke="{DynamicResource Muted}" StrokeThickness="1.6" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"/>
                 </Grid>
               </Border>

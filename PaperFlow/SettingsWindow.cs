@@ -254,6 +254,13 @@ public sealed class SettingsWindow : Window
         zoom.ValueChanged += (_, _) => ZoomChanged(); ZoomChanged();
         // ---------- 视图与分页 ----------
         var view = pages[2];
+        Label(view, Lang.T("窗口显示方式"), 20);
+        var modes = new[] { new Choice("desktop", Lang.T("桌面常驻")), new Choice("window", Lang.T("普通窗口")), new Choice("topmost", Lang.T("始终置顶")) };
+        var windowMode = new ComboBox { ItemsSource = modes, SelectedItem = modes.First(m => m.Value == WidgetLayout.NormalizeMode(Result.WindowMode)) };
+        windowMode.SelectionChanged += (_, _) => { if (windowMode.SelectedItem is Choice choice) { Result.WindowMode = choice.Value; Preview(); } };
+        view.Children.Add(windowMode);
+        Label(view, Lang.T("桌面常驻：按 Win+D 后仍显示，可直接操作；其他软件可以盖住它。"), 11);
+        Label(view, Lang.T("拖动窗口边缘可缩到一篇论文大小，其余论文向下滚动查看；分页仍只按优先级。"), 11);
         Label(view, Lang.T("列表怎么显示"), 20);
         var bold = new CheckBox { Content = Lang.T("论文标题加粗"), IsChecked = Result.TitleBold, Margin = new Thickness(0, 6 * Appearance.Scale, 0, 6 * Appearance.Scale) }; view.Children.Add(bold);
         bold.Click += (_, _) => { Result.TitleBold = bold.IsChecked == true; Preview(); };

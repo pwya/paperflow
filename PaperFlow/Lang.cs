@@ -66,6 +66,13 @@ public static class Lang
 
     private static readonly Dictionary<string, string> Table = new(StringComparer.Ordinal)
     {
+        ["窗口显示方式"] = "Window display mode",
+        ["桌面常驻"] = "Stay on desktop",
+        ["普通窗口"] = "Normal window",
+        ["始终置顶"] = "Always on top",
+        ["桌面常驻：按 Win+D 后仍显示，可直接操作；其他软件可以盖住它。"] = "Stay on desktop: visible after Win+D and directly interactive; other apps can cover it.",
+        ["拖动窗口边缘可缩到一篇论文大小，其余论文向下滚动查看；分页仍只按优先级。"] = "Resize the window down to one paper and scroll to see the rest. Pages still group by priority only.",
+        ["桌面常驻暂不可用，可在设置中切换普通窗口。"] = "Desktop placement is unavailable. You can switch to Normal window in Settings.",
         // ---------- 数据值：阶段、优先级、状态 ----------
         ["开题"] = "Proposal",
         ["语料&数据整理"] = "Corpus & data",

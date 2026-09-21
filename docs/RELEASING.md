@@ -24,7 +24,7 @@ $privateInstall = Join-Path $syncRoot 'Apps/PaperFlow'   # $syncRoot 指向你�
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 -PrivateTarget $privateInstall
 ```
 
-脚本会测试、构建、记录提交编号与程序哈希，再生成 `artifacts/release-<版本>/` 下的源码 ZIP、Windows ZIP、单独的程序 exe 与 `update.json`。它们都不读取个人 `data`。部署只加入新版本和更新启动入口/清单。相同版本若已有不同内容则拒绝覆盖，必须升版本。
+脚本会测试、构建、记录提交编号与程序哈希，再生成 `artifacts/release-<版本>/` 下的源码 ZIP、Windows ZIP、`update.json`、`build-info.json` 和供发行页使用的 `release-notes.md`。它们都不读取个人 `data`。部署只加入新版本和更新启动入口/清单。相同版本若已有不同内容则拒绝覆盖，必须升版本。
 
 脚本还会在本地打上 `v<版本>` 标签（已存在且指向别的提交就报错），这样 GitHub 与 Gitee 用的是同一个标签对象。
 
@@ -63,11 +63,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Publish-Release.ps1 
   -MirrorToGitee -GiteeOwner pan-wang-yuang -NotesFile <发布说明.md>
 ```
 
-它调用 `scripts/Mirror-Gitee.ps1`：缺仓库就建、改成公开、推分支与标签、建版本发行版（五个附件）、删除并重建固定的 `latest` 发行版（只放 `update.json`，指向 Gitee 自己的下载地址），最后自检镜像出的清单与本地一致、下载地址可访问。令牌从 `GITEE_TOKEN` 环境变量或 `%USERPROFILE%\.gitee-token.txt` 读，不写进 `.git/config`。跑之前先设好 `HTTPS_PROXY`（脚本内部要 `git fetch --tags` 去 GitHub 取标签）。
+它调用 `scripts/Mirror-Gitee.ps1`：缺仓库就建、改成公开、推分支与标签、建版本发行版（四个附件）、删除并重建固定的 `latest` 发行版（只放 `update.json`，指向 Gitee 自己的下载地址），最后自检镜像出的清单与本地一致、下载地址可访问。令牌从 `GITEE_TOKEN` 环境变量或 `%USERPROFILE%\.gitee-token.txt` 读，不写进 `.git/config`。跑之前先设好 `HTTPS_PROXY`（脚本内部要 `git fetch --tags` 去 GitHub 取标签）。
 
 ## 程序内自动更新
 
-设置里“更新提示”三档（每次都提示 / 每天一次 / 不提示，默认每天一次）。检查是一次普通 GET，只读清单；只有用户点了“下载并安装”才会下载程序 exe，落本机缓存并校验长度与 SHA-256，校验不过就删掉并报错。安装方式与发布脚本一致：写 `versions/<版本>/PaperFlow.exe` 和新的 `channel.json`，旧清单留一份 `channel.json.previous`。装好后提示“重启并生效”，重启时新进程先等旧进程退出（`--wait-for`），避免单实例锁把挂件弄丢。
+设置里“更新提示”三档（每次都提示 / 每天一次 / 不提示，默认每天一次）。自动检查只用普通 GET 读取两份清单；只有用户点了“下载并安装”才会下载 Windows ZIP，校验压缩包及内层程序的长度与 SHA-256，校验不过就删掉临时下载并报错。安装方式与发布脚本一致：写 `versions/<版本>/PaperFlow.exe` 和新的 `channel.json`，旧清单留一份 `channel.json.previous`。装好后提示“重启并生效”，重启时新进程先等旧进程退出（`--wait-for`），避免单实例锁把挂件弄丢。
+
+## 桌面窗口验证
+
+涉及窗口行为、尺寸或主题的改动，可在可交互的 Windows 测试桌面运行：
+
+```powershell
+dotnet run --project tests/PaperFlow.WindowTests.csproj -c Release -- <合成截图输出目录>
+```
+
+此程序只创建虚构论文及独立临时资料，输出断言结果和 WPF 渲染图。它会短暂调用 Windows 的“显示桌面”并恢复窗口，用于验证常驻、普通窗口覆盖、主动隐藏和尺寸保存；不要在锁屏或无桌面的 CI 会话里运行。常规 CI 仍运行不依赖桌面的 `PaperFlow.Tests.csproj`。多屏、不同缩放和第三方桌面软件的组合需要额外实机验收。
 
 开发与自动化验证用 `--update-url <清单地址>` 把清单指到本地服务器，整条下载安装链可以在不联网的情况下端到端跑一遍。
 

@@ -4,6 +4,17 @@ static class ViewTests
 {
     public static void Run(Action<bool, string> check)
     {
+        var desktop = Storage.Parse("{\"Version\":1,\"Settings\":{\"Topmost\":true},\"Papers\":[]}");
+        check(desktop.Settings.WindowMode == "desktop" && !desktop.Settings.Topmost, "older installs start in desktop mode without rewriting papers");
+        desktop.Settings.WindowMode = "topmost"; desktop.Settings.Width = 370; desktop.Settings.Height = 220;
+        var smallReload = Storage.Parse(System.Text.Json.JsonSerializer.Serialize(desktop));
+        check(smallReload.Settings.Topmost && smallReload.Settings.Width == 370 && smallReload.Settings.Height == 220, "small dimensions and explicit pinning survive storage");
+        check(WidgetLayout.NormalizeMode("future") == "desktop" && WidgetLayout.NormalizeMode(null) == "desktop", "unknown display modes fall back to desktop");
+        check(WidgetLayout.NormalizeMode("window") == "window", "normal window remains an explicit fallback");
+        check(WidgetLayout.OneCardHeight(100, 130, 1080) == 234, "one complete card plus window controls defines minimum height");
+        check(WidgetLayout.OneCardHeight(200, 1400, 900) == 900, "large text never demands a window taller than the work area");
+        var settingsOnly = Storage.CloneLibrary(desktop); settingsOnly.Settings.WindowMode = "window"; settingsOnly.Settings.Height = 200;
+        check(SyncProtocol.Diff(desktop, settingsOnly).Count == 0, "display mode and geometry never enter shared paper events");
         var writing = new Paper { Title = "Synthetic writing", Priority = "高" }; writing.Stages[2].Done = true;
         var review = new Paper { Title = "Synthetic review", Priority = "中" }; review.Stages[4].Done = true;
         var revision = new Paper { Title = "Synthetic revision", Priority = "低" }; revision.Stages[4].Done = true; revision.Stages[5].Done = true;

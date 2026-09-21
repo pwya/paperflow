@@ -152,8 +152,10 @@ public sealed class Storage
         s.ImageScrim = double.IsFinite(s.ImageScrim) ? Math.Clamp(s.ImageScrim, 0, 0.95) : 0.35;
         // 0 means “follow the theme”; the rest are explicit overrides.
         s.BarHeight = new[] { 0, 6, 14, 20, 28 }.Contains(s.BarHeight) ? s.BarHeight : 0;
-        s.Width = double.IsFinite(s.Width) ? Math.Clamp(s.Width, 480, 1800) : 650;
-        s.Height = double.IsFinite(s.Height) ? Math.Clamp(s.Height, 400, 1600) : 840;
+        s.WindowMode = WidgetLayout.NormalizeMode(s.WindowMode);
+        s.Topmost = s.WindowMode == "topmost";
+        s.Width = double.IsFinite(s.Width) ? Math.Clamp(s.Width, WidgetLayout.MinimumWidth, 1800) : 650;
+        s.Height = double.IsFinite(s.Height) ? Math.Clamp(s.Height, WidgetLayout.MinimumHeight, 1600) : 840;
         s.Left = double.IsFinite(s.Left) ? s.Left : -1; s.Top = double.IsFinite(s.Top) ? s.Top : -1;
     }
 

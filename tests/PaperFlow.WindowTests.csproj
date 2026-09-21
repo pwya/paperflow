@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <StartupObject>WidgetWindowTests</StartupObject>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../PaperFlow/PaperFlow.csproj"/><Compile Include="WidgetWindowTests.cs"/></ItemGroup>
+</Project>

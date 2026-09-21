@@ -3,4 +3,6 @@
   <ItemGroup><Compile Include="../PaperFlow/Models.cs" Link="Models.cs"/><Compile Include="../PaperFlow/Schemes.cs" Link="Schemes.cs"/><Compile Include="../PaperFlow/WhatsNew.cs" Link="WhatsNew.cs"/><Compile Include="../PaperFlow/Storage.cs" Link="Storage.cs"/><Compile Include="../PaperFlow/SyncEngine.cs" Link="SyncEngine.cs"/><Compile Include="../PaperFlow/PaperOrder.cs" Link="PaperOrder.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../PaperFlow/ViewRules.cs" Link="ViewRules.cs"/><Compile Include="../PaperFlow/Themes.cs" Link="Themes.cs"/><Compile Include="../PaperFlow/Shortcuts.cs" Link="Shortcuts.cs"/></ItemGroup>
   <ItemGroup><Compile Include="../PaperFlow/Lang.cs" Link="Lang.cs"/><Compile Include="../PaperFlow/Update.cs" Link="Update.cs"/><Compile Include="../PaperFlow/Product.cs" Link="Product.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="../PaperFlow/WidgetLayout.cs" Link="WidgetLayout.cs"/></ItemGroup>
+  <ItemGroup><Compile Remove="WidgetWindowTests.cs"/></ItemGroup>
 </Project>

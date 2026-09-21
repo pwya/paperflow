@@ -66,6 +66,7 @@ public sealed class MainWindow : Window
     private readonly List<Button> quietChrome = new();
     // 顶部"设置"按钮要挂新功能角标，所以留一个引用。
     private Button? settingsButton;
+    private DesktopPlacement? desktopPlacement;
 
     public static SolidColorBrush Brush(string color) => Appearance.Map(color);
     // role 决定用哪一档文字设置：title / body / caption。
@@ -132,18 +133,18 @@ public sealed class MainWindow : Window
         this.demonstration = demonstration;
         store = storage; library = initial; sync = synchronization;
         Title = Product.Demo ? Product.Name + Lang.T("（试用）") : Product.Name;
-        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/app.ico"));
+        Icon = BitmapFrame.Create(new Uri("pack://application:,,,/PaperFlow;component/Assets/app.ico"));
         // A desktop widget lives on the wallpaper, not in the taskbar or Alt+Tab list.
         // It keeps running and stays reachable from the tray icon.
         ShowInTaskbar = false;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResizeWithGrip; AllowsTransparency = true; Background = Brushes.Transparent;
         FontFamily = new FontFamily(library.Settings.FontName); FontSize = Appearance.EffectiveTextSize;
-        MinWidth = 480; MinHeight = 400;
+        MinWidth = WidgetLayout.MinimumWidth; MinHeight = WidgetLayout.MinimumHeight;
         var area = SystemParameters.WorkArea;
         Width = Math.Min(library.Settings.Width, area.Width); Height = Math.Min(library.Settings.Height, area.Height);
         Left = library.Settings.Left < 0 ? Math.Max(area.Left, area.Right - Width - 24) : Math.Clamp(library.Settings.Left, area.Left, Math.Max(area.Left, area.Right - Width));
         Top = library.Settings.Top < 0 ? area.Top + Math.Max(0, (area.Height - Height) / 2) : Math.Clamp(library.Settings.Top, area.Top, Math.Max(area.Top, area.Bottom - Height));
-        Topmost = library.Settings.Topmost;
+        Topmost = library.Settings.WindowMode == "topmost";
         frame.CornerRadius = new CornerRadius(12); frame.BorderThickness = new Thickness(1);
         var surface = new Grid(); surface.Children.Add(frame); Content = surface;
         AddResizeHandles(surface);
@@ -160,8 +161,9 @@ public sealed class MainWindow : Window
         var brand = new StackPanel { Orientation = Orientation.Horizontal };
         brand.Children.Add(brandIcon);
         var brandTitle = Text("PaperFlow", 18, "#24352F", -1, "title"); brandTitle.FontWeight = FontWeights.SemiBold; brand.Children.Add(brandTitle);
+        brandTitle.SetResourceReference(TextBlock.ForegroundProperty, "Ink");
         heading.Children.Add(brand);
-        var chrome = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        var chrome = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         var add = ActionButton("＋", AddPaper, true); add.ToolTip = Lang.T("新增论文 · Ctrl+N"); add.Padding = new Thickness(10 * Appearance.Scale, 4 * Appearance.Scale, 10 * Appearance.Scale, 4 * Appearance.Scale); add.FontSize = 17 * Appearance.TextScale; AutomationProperties.SetName(add, Lang.T("新增论文")); chrome.Children.Add(add);
         options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options); quietChrome.Add(options);
         pin.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin); quietChrome.Add(pin);
@@ -178,8 +180,10 @@ public sealed class MainWindow : Window
         layoutChrome = () =>
         {
             if (heading.ActualWidth <= 0) return;
+            chrome.MaxWidth = heading.ActualWidth;
             bool stacked = brand.DesiredSize.Width + chrome.DesiredSize.Width + 12 > heading.ActualWidth;
             Grid.SetRow(chrome, stacked ? 1 : 0); Grid.SetColumn(chrome, stacked ? 0 : 1);
+            Grid.SetColumnSpan(chrome, stacked ? 2 : 1);
             chrome.HorizontalAlignment = stacked ? HorizontalAlignment.Right : HorizontalAlignment.Left;
             chrome.Margin = stacked ? new Thickness(0, 5, 0, 0) : new Thickness(0);
         };
@@ -188,7 +192,7 @@ public sealed class MainWindow : Window
 
 
         var top = new StackPanel { Margin = new Thickness(17, 0, 17, 6), Background = Brushes.Transparent };
-        summary.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); top.Children.Add(summary);
+        summary.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); summary.TextTrimming = TextTrimming.CharacterEllipsis; top.Children.Add(summary);
         AutomationProperties.SetName(search, Lang.T("搜索论文、学科、期刊")); search.ToolTip = Lang.T("搜索论文、学科、期刊、合作者或备注");
         search.TextChanged += (_, _) => { if (ready) Render(); };
         filter.ItemsSource = new[] { Lang.T("全部论文"), Lang.T("进行中"), Lang.T("已完成"), Lang.T("已归档") }; filter.SelectedIndex = 0; filter.Margin = new Thickness(7, 0, 0, 0);
@@ -220,6 +224,7 @@ public sealed class MainWindow : Window
             nextDragScroll = DateTime.UtcNow.AddMilliseconds(80);
         };
         root.Children.Add(scroller);
+        LayoutUpdated += (_, _) => UpdateMinimumHeight();
 
         tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = Lang.T("PaperFlow · 双击打开") + (Product.Demo ? Lang.T("（试用）") : ""), Visible = !demonstration };
         var trayMenu = new Forms.ContextMenuStrip();
@@ -230,7 +235,7 @@ public sealed class MainWindow : Window
         tray.ContextMenuStrip = trayMenu;
         tray.DoubleClick += (_, _) => Dispatcher.Invoke(Reveal);
         Closing += (_, e) => { if (!quitting) { e.Cancel = true; SaveWindow(); Hide(); } };
-        Closed += (_, _) => { timer.Stop(); tray.Dispose(); };
+        Closed += (_, _) => { timer.Stop(); desktopPlacement?.Dispose(); tray.Dispose(); };
         PreviewKeyDown += (_, e) =>
         {
             if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.N) { AddPaper(); e.Handled = true; }
@@ -271,7 +276,7 @@ public sealed class MainWindow : Window
 
     private static System.Drawing.Icon CreateTrayIcon()
     {
-        using var stream = Application.GetResourceStream(new Uri("pack://application:,,,/Assets/app.ico")).Stream;
+        using var stream = Application.GetResourceStream(new Uri("pack://application:,,,/PaperFlow;component/Assets/app.ico")).Stream;
         using var source = new System.Drawing.Icon(stream, 32, 32); return (System.Drawing.Icon)source.Clone();
     }
     [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr handle);
@@ -292,7 +297,24 @@ public sealed class MainWindow : Window
     }
     private void ExitApplication() { if (!SaveWindow()) return; quitting = true; Close(); }
     internal void CloseDemonstration() { if (!demonstration) throw new InvalidOperationException(Lang.T("仅供演示导出。")); quitting = true; Close(); }
-    protected override void OnSourceInitialized(EventArgs e) { base.OnSourceInitialized(e); HideFromAltTab(); }
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e); HideFromAltTab();
+        if (!demonstration)
+        {
+            desktopPlacement = new DesktopPlacement(this, error => ShowNotice(Lang.T("桌面常驻暂不可用，可在设置中切换普通窗口。") + " " + error));
+            desktopPlacement.Apply(library.Settings.WindowMode);
+        }
+    }
+
+    private void UpdateMinimumHeight()
+    {
+        if (!IsVisible || scroller.ActualHeight <= 0 || ActualHeight <= 0) return;
+        var visibleCards = cards.Children.OfType<Border>().Where(b => b.Tag is string && b.ActualHeight > 0).ToList();
+        double card = visibleCards.Count == 0 ? 100 : visibleCards.Max(b => b.ActualHeight + b.Margin.Top + b.Margin.Bottom);
+        double minimum = WidgetLayout.OneCardHeight(ActualHeight - scroller.ActualHeight, card, SystemParameters.WorkArea.Height);
+        if (Math.Abs(MinHeight - minimum) > 1) MinHeight = minimum;
+    }
 
     // Write a complete candidate snapshot before adopting it, so failed writes do not appear saved.
     private bool Commit(Action<Library> edit, string? notice = null)
@@ -316,7 +338,7 @@ public sealed class MainWindow : Window
     {
         if (WindowState == WindowState.Normal) { l.Settings.Width = Width; l.Settings.Height = Height; l.Settings.Left = Left; l.Settings.Top = Top; }
     });
-    private void TogglePin() { if (Commit(l => l.Settings.Topmost = !l.Settings.Topmost)) Topmost = library.Settings.Topmost; }
+    private void TogglePin() => Commit(l => l.Settings.WindowMode = l.Settings.WindowMode == "topmost" ? "desktop" : "topmost");
     private void ToggleCompact() => Commit(l => l.Settings.Compact = !l.Settings.Compact);
     private void TurnPage(int delta)
     {
@@ -337,6 +359,7 @@ public sealed class MainWindow : Window
         // A nested OLE drag loop still runs the synchronization timer. Defer rebuilding
         // controls until drop/cancel, while continuing to receive and save remote data.
         if (draggingPaper) return;
+        desktopPlacement?.Apply(library.Settings.WindowMode);
         Appearance.Apply(library.Settings);
         brandIcon.Source = Appearance.CreateHeaderIcon();
         FontFamily = new FontFamily(Appearance.FamilyFor("body")); FontSize = 13 * Appearance.RoleScale("body") * Appearance.TextScale;
@@ -377,8 +400,8 @@ public sealed class MainWindow : Window
         updateText.Foreground = Appearance.Paint(Appearance.Current.Ink);
         updateAction.Foreground = Appearance.Paint(Appearance.Current.Accent);
         updateClose.Foreground = Appearance.Paint(Appearance.Current.Muted);
-        pin.Content = Lang.T(library.Settings.Topmost ? "已置顶" : "置顶"); pin.ToolTip = Lang.T("F12 切换置顶");
-        pin.Foreground = library.Settings.Topmost ? Brush("#21846B") : Brush("#78867F");
+        pin.Content = Lang.T(library.Settings.WindowMode == "topmost" ? "已置顶" : "置顶"); pin.ToolTip = Lang.T("F12 切换置顶");
+        pin.Foreground = library.Settings.WindowMode == "topmost" ? Brush("#21846B") : Brush("#78867F");
         compact.Content = Lang.T(library.Settings.Compact ? "展开" : "紧凑");
         var active = library.Papers.Where(p => !p.Archived).ToList();
         // 最后那半句跟着方案走：全套用同一套方案就显示它最后一格的名字（已收录 / 已录用），混着用退回"已完成"。

@@ -97,6 +97,47 @@ public static class PromotionExporter
         File.WriteAllLines(Path.Combine(directory, "素材说明.md"), descriptions, new System.Text.UTF8Encoding(false));
         File.WriteAllText(Path.Combine(directory, "export-complete.json"), System.Text.Json.JsonSerializer.Serialize(new { Version = Product.Version, SyntheticOnly = true, Scenes = scenes.Length, Images = scenes.Length * 2 }));
     }
+    // Two plain interface captures for a compact-mode announcement. These are
+    // rendered from synthetic data only, using the same views as the application.
+    public static async Task GenerateMinimal(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        var work = Path.Combine(Path.GetTempPath(), "PaperFlow-minimal-assets-" + Guid.NewGuid().ToString("N"));
+        var library = CreateSample();
+        library.Settings = new Preferences { Width = 600, Height = 420, DisplayMode = "minimal", WindowMode = "window", Theme = "纸感 · 竹青", TextSize = 15, BarHeight = 6, Language = "zh", UpdateMode = "never" };
+        var storage = new Storage(work); var sync = new SyncEngine(work, "", library);
+        var widget = new MainWindow(storage, library, sync, true) { ShowInTaskbar = false, ShowActivated = false, Left = -20000, Top = -20000 };
+        PaperEditor? editor = null;
+        try
+        {
+            widget.Show();
+            await Capture(widget, "01-极简模式.png");
+            editor = new PaperEditor(Storage.Clone(library.Papers[0]), Array.Empty<string>(), Array.Empty<StageScheme>())
+            {
+                ShowInTaskbar = false, ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual,
+                Left = -20000, Top = -20000, Width = 660, Height = 780
+            };
+            editor.Show(); await Capture(editor, "02-论文资料-阶段勾选.png");
+        }
+        finally { editor?.Close(); widget.CloseDemonstration(); }
+
+        async Task Capture(Window window, string name)
+        {
+            await window.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); window.UpdateLayout();
+            var content = (FrameworkElement)window.Content;
+            var margin = content.Margin;
+            double width = content.ActualWidth + margin.Left + margin.Right, height = content.ActualHeight + margin.Top + margin.Bottom;
+            var visual = new DrawingVisual();
+            using (var canvas = visual.RenderOpen())
+            {
+                canvas.DrawRectangle(window.Background, null, new Rect(0, 0, width, height));
+                canvas.DrawRectangle(new VisualBrush(content) { Stretch = Stretch.Fill }, null, new Rect(margin.Left, margin.Top, content.ActualWidth, content.ActualHeight));
+            }
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(width * 2), (int)Math.Ceiling(height * 2), 192, 192, PixelFormats.Pbgra32);
+            bitmap.Render(visual); Save(bitmap, Path.Combine(directory, name));
+        }
+    }
+
     private static void Save(BitmapSource bitmap, string path)
     {
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var file = File.Create(path); encoder.Save(file);

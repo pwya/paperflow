@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -15,8 +16,8 @@ internal static class WidgetWindowTests
     [STAThread]
     public static int Main(string[] args)
     {
-        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] != "--paper-details-only")) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only."); return 2; }
-        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Length == 2 };
+        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only or --minimal-only."); return 2; }
+        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only") };
         var source = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PaperFlow", "App.xaml"));
         System.Xml.Linq.XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         var resources = new System.Xml.Linq.XElement(wpf + "ResourceDictionary",
@@ -30,6 +31,7 @@ internal static class WidgetWindowTests
     {
         public string Output = "";
         public bool PaperDetailsOnly;
+        public bool MinimalOnly;
         private int checks;
         private readonly List<string> observations = new();
         private void Check(bool ok, string label)
@@ -62,6 +64,7 @@ internal static class WidgetWindowTests
                 widget.Show(); widget.Activate();
                 await Task.Delay(700);
                 var cards = Field<StackPanel>(widget, "cards");
+                if (MinimalOnly) { await CheckMinimal(widget, storage, cards); Finish(widget); return; }
                 if (PaperDetailsOnly)
                 {
                     Descendants<CheckBox>(cards).First().IsChecked = true;
@@ -114,6 +117,7 @@ internal static class WidgetWindowTests
                 Invoke(widget, "Render"); await Task.Delay(250); widget.Height = widget.MinHeight; await Task.Delay(150);
                 Check(cards.Children.Count == 3 && ViewRules.PageCount(current.Settings) == 3, "priority paging is unchanged in the small window");
                 Snapshot(widget, "05-priority");
+                current.Settings.DisplayMode = "minimal";
                 current.Settings.WindowMode = "desktop"; Invoke(widget, "Render");
                 await Task.Delay(300);
                 var handle = new WindowInteropHelper(widget).Handle;
@@ -147,9 +151,11 @@ internal static class WidgetWindowTests
                 Check((GetWindowLong(handle, -20) & 8) == 0, "opening an ordinary window removes temporary desktop topmost state");
                 Check(Behind(handle, new WindowInteropHelper(ordinary).Handle), "ordinary windows cover the desktop widget");
                 ordinary.Close();
+                current.Settings.DisplayMode = "full"; Invoke(widget, "Render"); await Task.Delay(150);
                 Descendants<CheckBox>(cards).First().IsChecked = true; await Task.Delay(150);
                 Check(storage.Load().Papers[0].Stages[0].Done, "direct stage interaction saves from the small desktop widget");
                 CheckPaperDetails(widget, storage, cards);
+                await CheckMinimal(widget, storage, cards);
                 current = Field<Library>(widget, "library");
                 current.Settings.WindowMode = "topmost"; Invoke(widget, "Render");
                 Check(widget.Topmost, "explicit pinning still works");
@@ -171,6 +177,83 @@ internal static class WidgetWindowTests
                 Shutdown(1);
             }
         }
+        private async Task CheckMinimal(MainWindow widget, Storage storage, StackPanel cards)
+        {
+            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+            widget.UpdateLayout();
+            var baseline = Storage.CloneLibrary(Field<Library>(widget, "library"));
+            var fullHeight = ((FrameworkElement)cards.Children[0]).ActualHeight;
+            foreach (bool save in new[] { false, true })
+            {
+                Exception? failure = null;
+                _ = Dispatcher.BeginInvoke(new Action(async () =>
+                {
+                    SettingsWindow? dialog = null;
+                    try
+                    {
+                        dialog = Windows.OfType<SettingsWindow>().Single();
+                        var picker = Descendants<ComboBox>(dialog).First(b => b.Items.OfType<Choice>().Any(c => c.Value == "minimal"));
+                        picker.SelectedIndex = 1; await Task.Delay(150);
+                        Check(!Descendants<CheckBox>(cards).Any() && Field<Button>(widget, "minimalMenu").IsVisible, "settings preview applies minimal mode: " + save);
+                        Snapshot(dialog, "12-minimal-settings");
+                        Descendants<Button>(dialog).Single(b => Equals(b.Content, Lang.T(save ? "保存设置" : "取消"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    }
+                    catch (Exception ex) { failure = ex; if (dialog != null) dialog.DialogResult = false; }
+                }));
+                Invoke(widget, "OpenSettings");
+                if (failure != null) throw failure;
+                Check(storage.Load().Settings.DisplayMode == (save ? "minimal" : "full"), "minimal preference respects save or cancel: " + save);
+            }
+            Check(SyncProtocol.Diff(baseline, Field<Library>(widget, "library")).Count == 0, "changing display mode leaves paper data and shared events untouched");
+            Check(!Descendants<CheckBox>(cards).Any() && !Descendants<Button>(cards).Any(), "minimal rows contain no stage checkboxes or settings buttons");
+            Check(((FrameworkElement)cards.Children[0]).ActualHeight < fullHeight, "minimal paper rows take less height than full cards");
+            var scroll = Field<ScrollViewer>(widget, "scroller");
+            widget.Height = widget.MinHeight; await Task.Delay(200);
+            var row = (FrameworkElement)cards.Children[0];
+            Check(scroll.ViewportHeight + 1 >= row.ActualHeight && scroll.ViewportHeight < row.ActualHeight * 2, "minimal window shrinks to one whole paper row");
+            scroll.ScrollToBottom(); await Task.Delay(100);
+            Check(scroll.VerticalOffset > 0, "minimal view scrolls to all remaining papers");
+            scroll.ScrollToTop(); Snapshot(widget, "13-minimal-small");
+            foreach (var scene in new[] { ("夜航 · 霜蓝", Themes.CardLayout, "14-minimal-dark"), ("极简 · 白", Themes.ListLayout, "15-minimal-list") })
+            {
+                var prefs = Storage.CloneLibrary(Field<Library>(widget, "library")).Settings;
+                prefs.Theme = scene.Item1; prefs.ListLayout = scene.Item2;
+                Invoke(widget, "PreviewAppearance", prefs); await Task.Delay(150);
+                Check(!Descendants<CheckBox>(cards).Any(), "theme changes preserve minimal mode: " + scene.Item3);
+                Snapshot(widget, scene.Item3);
+            }
+            var current = Field<Library>(widget, "library");
+            current.Settings.PageMode = ViewRules.PageModes[1]; current.Settings.PageIndex = 0;
+            Invoke(widget, "Render"); await Task.Delay(150);
+            Check(cards.Children.Count == 3 && Field<StackPanel>(widget, "pager").IsVisible, "minimal view retains priority paging");
+            Exception? editFailure = null;
+            var target = current.Papers.First(p => p.Priority == "高");
+            bool nextDone = !target.Stages[1].Done;
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+            {
+                PaperEditor? editor = null;
+                try
+                {
+                    editor = Windows.OfType<PaperEditor>().Single();
+                    Field<System.Windows.Controls.WrapPanel>(editor, "doneRow").Children.OfType<CheckBox>().Skip(1).First().IsChecked = nextDone;
+                    Descendants<Button>(editor).Single(b => Equals(b.Content, Lang.T("保存资料"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                }
+                catch (Exception ex) { editFailure = ex; if (editor != null) editor.DialogResult = false; }
+            }));
+            ((UIElement)cards.Children[0]).RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(widget), 0, Key.Enter) { RoutedEvent = Keyboard.KeyDownEvent });
+            if (editFailure != null) throw editFailure;
+            var saved = storage.Load();
+            Check(saved.Papers.Single(p => p.Id == target.Id).Stages[1].Done == nextDone && saved.Settings.DisplayMode == "minimal", "minimal row opens details and saves stage changes without leaving minimal mode");
+            Check(Descendants<TextBlock>(cards).Any(t => t.Text == saved.Papers.Single(p => p.Id == target.Id).Progress + "%"), "minimal percentage refreshes after editing paper details");
+            Invoke(widget, "SaveWindow");
+            Check(storage.Load().Settings.Height == widget.Height, "minimal small geometry survives saving");
+            Field<Button>(widget, "minimalMenu").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var menu = Field<Button>(widget, "minimalMenu").ContextMenu;
+            var restore = menu.Items.OfType<MenuItem>().Single(i => Equals(i.Header, Lang.T("切回完整模式")));
+            menu.IsOpen = false; restore.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(150);
+            Check(storage.Load().Settings.DisplayMode == "full" && Descendants<CheckBox>(cards).Any(), "minimal menu restores full mode and stage controls");
+        }
+
         private void Finish(MainWindow widget)
         {
             Console.WriteLine("PASS: " + checks + " window checks.");

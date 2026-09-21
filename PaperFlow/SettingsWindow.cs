@@ -106,6 +106,12 @@ public sealed class SettingsWindow : Window
         languagePicker.SelectionChanged += (_, _) => Result.Language = languages[Math.Clamp(languagePicker.SelectedIndex, 0, 2)].Value;
         look.Children.Add(languagePicker);
         Label(look, Lang.T("跟随系统就是看 Windows 的显示语言；保存后挂件会自动重启一次换成新语言，你的资料一个字都不动。"), 11);
+        Label(look, Lang.T("显示模式"));
+        var displayModes = new[] { new Choice("full", Lang.T("完整模式")), new Choice("minimal", Lang.T("极简模式")) };
+        var displayPicker = new ComboBox { ItemsSource = displayModes, DisplayMemberPath = "Label", SelectedIndex = Result.DisplayMode == "minimal" ? 1 : 0 };
+        look.Children.Add(displayPicker);
+        displayPicker.SelectionChanged += (_, _) => { Result.DisplayMode = displayModes[Math.Max(0, displayPicker.SelectedIndex)].Value; Preview(); };
+        Label(look, Lang.T("极简模式只显示论文标题和进度，双击标题可编辑资料；完整模式保留阶段勾选。"), 11);
         Label(look, Lang.T("布局"));
         var layoutPicker = new ComboBox { ItemsSource = Lang.Choices(Themes.Layouts), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(Themes.Layouts, Result.ListLayout)) }; look.Children.Add(layoutPicker);
         layoutPicker.SelectionChanged += (_, _) => { Result.ListLayout = Themes.Layouts[Math.Max(0, layoutPicker.SelectedIndex)]; Preview(); };

@@ -15,6 +15,13 @@ static class ViewTests
         check(WidgetLayout.OneCardHeight(200, 1400, 900) == 900, "large text never demands a window taller than the work area");
         var settingsOnly = Storage.CloneLibrary(desktop); settingsOnly.Settings.WindowMode = "window"; settingsOnly.Settings.Height = 200;
         check(SyncProtocol.Diff(desktop, settingsOnly).Count == 0, "display mode and geometry never enter shared paper events");
+        check(new Preferences().DisplayMode == "full" && desktop.Settings.DisplayMode == "full", "new and old installations retain full mode by default");
+        check(WidgetLayout.NormalizeDisplayMode(null) == "full" && WidgetLayout.NormalizeDisplayMode("future") == "full", "unknown minimal-view preference falls back to full mode");
+        settingsOnly.Settings.DisplayMode = "minimal"; settingsOnly.Settings.Height = 140;
+        var minimalReload = Storage.Parse(System.Text.Json.JsonSerializer.Serialize(settingsOnly));
+        check(minimalReload.Settings.DisplayMode == "minimal" && minimalReload.Settings.Height == 140, "minimal mode and its smaller window survive storage");
+        check(SyncProtocol.Diff(desktop, settingsOnly).Count == 0, "minimal-view preference never changes shared paper events");
+        check(WidgetLayout.OneCardHeight(70, 50, 1080, true) == 124, "minimal view can shrink to one short paper row");
         var writing = new Paper { Title = "Synthetic writing", Priority = "高" }; writing.Stages[2].Done = true;
         var review = new Paper { Title = "Synthetic review", Priority = "中" }; review.Stages[4].Done = true;
         var revision = new Paper { Title = "Synthetic revision", Priority = "低" }; revision.Stages[4].Done = true; revision.Stages[5].Done = true;

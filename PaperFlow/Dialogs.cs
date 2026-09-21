@@ -37,7 +37,7 @@ public sealed class PaperEditor : Window
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 15, 0, 0) };
         DockPanel.SetDock(actions, Dock.Bottom); root.Children.Add(actions);
         var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
-        root.Children.Add(scroll); var body = new StackPanel { Margin = new Thickness(0, 0, 12, 0) }; scroll.Content = body;
+        root.Children.Add(scroll); var body = new StackPanel(); scroll.Content = body;
         // 内容宽度跟着视口走：长句子换行，不会横向溢出（同一个坑在论文选项里踩过一次）。
         body.SetBinding(FrameworkElement.WidthProperty, new System.Windows.Data.Binding("ViewportWidth") { Source = scroll });
         var headline = Label(Lang.T("让下一步更清楚"), 22, true); headline.Margin = new Thickness(0, 0, 0, 6); body.Children.Add(headline);

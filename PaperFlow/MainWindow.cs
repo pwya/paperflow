@@ -50,6 +50,8 @@ public sealed class MainWindow : Window
     private readonly ComboBox sort = new();
     private readonly Button pin = new();
     private readonly Button compact = new();
+    private readonly WrapPanel chrome = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+    private readonly Button minimalMenu = new() { Content = "⋯", Visibility = Visibility.Collapsed, Padding = new Thickness(10, 2, 10, 2), FontSize = 20 };
     private readonly Button hiddenToggle = new();
     private readonly Image brandIcon = new() { Width = 26, Height = 26, Margin = new Thickness(0, 0, 9, 0) };
     private bool draggingPaper;
@@ -139,7 +141,7 @@ public sealed class MainWindow : Window
         ShowInTaskbar = false;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.CanResizeWithGrip; AllowsTransparency = true; Background = Brushes.Transparent;
         FontFamily = new FontFamily(library.Settings.FontName); FontSize = Appearance.EffectiveTextSize;
-        MinWidth = WidgetLayout.MinimumWidth; MinHeight = WidgetLayout.MinimumHeight;
+        MinWidth = WidgetLayout.MinimumWidth; MinHeight = library.Settings.DisplayMode == "minimal" ? WidgetLayout.MinimalHeight : WidgetLayout.MinimumHeight;
         var area = SystemParameters.WorkArea;
         Width = Math.Min(library.Settings.Width, area.Width); Height = Math.Min(library.Settings.Height, area.Height);
         Left = library.Settings.Left < 0 ? Math.Max(area.Left, area.Right - Width - 24) : Math.Clamp(library.Settings.Left, area.Left, Math.Max(area.Left, area.Right - Width));
@@ -163,7 +165,10 @@ public sealed class MainWindow : Window
         var brandTitle = Text("PaperFlow", 18, "#24352F", -1, "title"); brandTitle.FontWeight = FontWeights.SemiBold; brand.Children.Add(brandTitle);
         brandTitle.SetResourceReference(TextBlock.ForegroundProperty, "Ink");
         heading.Children.Add(brand);
-        var chrome = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        minimalMenu.Click += (_, _) => OpenMinimalMenu();
+        minimalMenu.ToolTip = Lang.T("菜单 · 双击论文标题可编辑资料");
+        AutomationProperties.SetName(minimalMenu, Lang.T("极简模式菜单"));
+        Grid.SetColumn(minimalMenu, 1); heading.Children.Add(minimalMenu); quietChrome.Add(minimalMenu);
         var add = ActionButton("＋", AddPaper, true); add.ToolTip = Lang.T("新增论文 · Ctrl+N"); add.Padding = new Thickness(10 * Appearance.Scale, 4 * Appearance.Scale, 10 * Appearance.Scale, 4 * Appearance.Scale); add.FontSize = 17 * Appearance.TextScale; AutomationProperties.SetName(add, Lang.T("新增论文")); chrome.Children.Add(add);
         options.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); options.Margin = new Thickness(4, 0, 0, 0); options.Click += (_, _) => OpenOptions(); chrome.Children.Add(options); quietChrome.Add(options);
         pin.Padding = new Thickness(8 * Appearance.Scale, 6 * Appearance.Scale, 8 * Appearance.Scale, 6 * Appearance.Scale); pin.Click += (_, _) => TogglePin(); chrome.Children.Add(pin); quietChrome.Add(pin);
@@ -312,7 +317,7 @@ public sealed class MainWindow : Window
         if (!IsVisible || scroller.ActualHeight <= 0 || ActualHeight <= 0) return;
         var visibleCards = cards.Children.OfType<Border>().Where(b => b.Tag is string && b.ActualHeight > 0).ToList();
         double card = visibleCards.Count == 0 ? 100 : visibleCards.Max(b => b.ActualHeight + b.Margin.Top + b.Margin.Bottom);
-        double minimum = WidgetLayout.OneCardHeight(ActualHeight - scroller.ActualHeight, card, SystemParameters.WorkArea.Height);
+        double minimum = WidgetLayout.OneCardHeight(ActualHeight - scroller.ActualHeight, card, SystemParameters.WorkArea.Height, library.Settings.DisplayMode == "minimal");
         if (Math.Abs(MinHeight - minimum) > 1) MinHeight = minimum;
     }
 
@@ -361,6 +366,10 @@ public sealed class MainWindow : Window
         if (draggingPaper) return;
         desktopPlacement?.Apply(library.Settings.WindowMode);
         Appearance.Apply(library.Settings);
+        bool minimal = library.Settings.DisplayMode == "minimal";
+        chrome.Visibility = minimal ? Visibility.Collapsed : Visibility.Visible;
+        minimalMenu.Visibility = minimal ? Visibility.Visible : Visibility.Collapsed;
+        summary.Visibility = minimal ? Visibility.Collapsed : Visibility.Visible;
         brandIcon.Source = Appearance.CreateHeaderIcon();
         FontFamily = new FontFamily(Appearance.FamilyFor("body")); FontSize = 13 * Appearance.RoleScale("body") * Appearance.TextScale;
         summary.FontFamily = new FontFamily(Appearance.FamilyFor("caption")); summary.FontSize = 11 * Appearance.RoleScale("caption") * Appearance.TextScale;
@@ -648,7 +657,8 @@ public sealed class MainWindow : Window
 
     private Border BuildCard(Paper p)
     {
-        bool list = Appearance.Layout == Themes.ListLayout;
+        bool minimal = library.Settings.DisplayMode == "minimal";
+        bool list = minimal || Appearance.Layout == Themes.ListLayout;
         bool small = library.Settings.Compact || list;
         // 临时展开出来的“按设置隐藏”的论文：整体压暗、底色换成主题的柔和色，并挂一个标记。
         bool dimmed = library.Settings.ShowHiddenNow && ViewRules.HiddenByTag(p, library.Settings);
@@ -681,16 +691,16 @@ public sealed class MainWindow : Window
         var stack = new StackPanel(); card.Child = stack;
         var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Margin = new Thickness(0, 0, 0, 1) };
         var dots = PriorityDots(p);
-        titleArea.Children.Add(dots);
+        if (!minimal) titleArea.Children.Add(dots);
         var name = ScrollingTitle(p.Title, library.Settings.TitleBold, small ? 14 : 15);
         name.VerticalAlignment = VerticalAlignment.Center;
-        name.ToolTip = p.Title + Lang.T("\n按住拖动调整优先顺序；标题太长时，鼠标停在这里会滚动显示全名");
+        name.ToolTip = p.Title + Lang.T(minimal ? "\n双击编辑论文资料；右键打开论文菜单" : "\n按住拖动调整优先顺序；标题太长时，鼠标停在这里会滚动显示全名");
         titleArea.Children.Add(name);
         // 百分比放在标题行右侧，不跟进度条挤在一起，也不再抢戏。
         var titleRow = new Grid();
         titleRow.ColumnDefinitions.Add(new ColumnDefinition()); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); titleRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         titleRow.Children.Add(titleArea);
-        if (dimmed)
+        if (dimmed && !minimal)
         {
             var tag = Text(Lang.T("已隐藏 · ") + string.Join(Lang.ListSeparator, p.Tags), 10.5, "#78867F", -1, "caption");
             var chip = new Border { Child = tag, Background = Appearance.Paint(Appearance.Current.Card, .85), CornerRadius = new CornerRadius(Math.Min(Appearance.ChipRadius, 8 * Appearance.Scale)), Padding = new Thickness(7 * Appearance.Scale, 2 * Appearance.Scale, 7 * Appearance.Scale, 2 * Appearance.Scale), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0), ToolTip = Lang.T("它带着你选择隐藏的标签；点右上角可以收回去") };
@@ -720,7 +730,7 @@ public sealed class MainWindow : Window
             tagRow.Children.Add(chip);
         }
         // 被临时展开时，右边那个"已隐藏 · 标签名"的角标已经把标签写出来了，不再重复一遍。
-        if (tagRow.Children.Count > 0 && !dimmed) { Grid.SetColumn(tagRow, 1); titleRow.Children.Add(tagRow); }
+        if (tagRow.Children.Count > 0 && !dimmed && !minimal) { Grid.SetColumn(tagRow, 1); titleRow.Children.Add(tagRow); }
         var pct = Text($"{p.Progress}%", Appearance.PercentSize); pct.FontWeight = FontWeights.SemiBold; pct.VerticalAlignment = VerticalAlignment.Center; pct.Margin = new Thickness(10, 0, 0, 0);
         if (Appearance.RoleColor("body") == "") pct.Foreground = Appearance.PercentAccent ? Appearance.Paint(Appearance.Current.Accent) : Brush("#78867F");
         AutomationProperties.SetName(pct, Lang.F("{0} 进度 {1}%", p.Title, p.Progress));
@@ -733,6 +743,16 @@ public sealed class MainWindow : Window
         var fill = new Border { Background = Brush(p.IsComplete ? "#2F8B6D" : p.Status == "待返修" ? "#C69544" : "#4A9E83"), CornerRadius = new CornerRadius(5) }; inner.Children.Add(fill); track.Children.Add(inner);
         AutomationProperties.SetName(track, Lang.F("{0} 进度 {1}%", p.Title, p.Progress)); progressRow.Children.Add(track);
         stack.Children.Add(progressRow);
+        if (minimal)
+        {
+            titleArea.Cursor = Cursors.Hand;
+            card.Focusable = true;
+            AutomationProperties.SetName(card, Lang.F("{0} 进度 {1}%", p.Title, p.Progress));
+            card.MouseLeftButtonDown += (_, e) => { e.Handled = true; card.Focus(); if (e.ClickCount == 2) EditPaper(p); };
+            card.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; EditPaper(p); } };
+            card.MouseRightButtonUp += (_, e) => { e.Handled = true; PaperMenu(p, card); };
+            return card;
+        }
         var checks = new StageFlowPanel();
         for (int i = 0; i < p.Stages.Count; i++)
         {
@@ -1014,6 +1034,22 @@ public sealed class MainWindow : Window
         }
         catch (Exception ex) { MessageBox.Show(this, Lang.T("快捷方式未能创建。\n") + ex.Message, Product.Name, MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
+    private void OpenMinimalMenu()
+    {
+        var menu = new ContextMenu();
+        void Item(string text, Action action) { var item = new MenuItem { Header = text }; item.Click += (_, _) => action(); menu.Items.Add(item); }
+        Item(Lang.T("切回完整模式"), () => Commit(l => l.Settings.DisplayMode = "full"));
+        Item(Lang.T("新增论文"), AddPaper);
+        Item(Lang.T("论文选项"), OpenOptions);
+        Item(Lang.T("设置"), OpenSettings);
+        Item(Lang.T(library.Settings.WindowMode == "topmost" ? "取消置顶" : "置顶"), TogglePin);
+        if (hiddenToggle.Visibility == Visibility.Visible)
+            Item(hiddenToggle.Content?.ToString() ?? "", () => Commit(l => l.Settings.ShowHiddenNow = !l.Settings.ShowHiddenNow));
+        menu.Items.Add(new Separator());
+        Item(Lang.T("收起到系统托盘，双击托盘图标恢复"), Close);
+        minimalMenu.ContextMenu = menu; menu.PlacementTarget = minimalMenu; menu.IsOpen = true;
+    }
+
     private void OpenOptions()
     {
         var window = new Window { Title = Lang.T("论文选项"), Width = Math.Min(490 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40), Height = Math.Min(760 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30), Owner = this, ResizeMode = ResizeMode.CanResize, ShowInTaskbar = true, WindowStartupLocation = WindowStartupLocation.CenterOwner };
@@ -1030,6 +1066,8 @@ public sealed class MainWindow : Window
         search.Margin = new Thickness(0, 9, 0, 12); body.Children.Add(search);
         body.Children.Add(Text(Lang.T("显示范围"), 12)); filter.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(filter);
         body.Children.Add(Text(Lang.T("排序方式"), 12)); sort.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(sort);
+        var minimal = new CheckBox { Content = Lang.T("极简模式（只显示标题和进度）"), IsChecked = library.Settings.DisplayMode == "minimal" };
+        minimal.Click += (_, _) => Commit(l => l.Settings.DisplayMode = minimal.IsChecked == true ? "minimal" : "full"); body.Children.Add(minimal);
         var small = new CheckBox { Content = Lang.T("紧凑视图（阶段标签更小）"), IsChecked = library.Settings.Compact }; small.Click += (_, _) => Commit(l => l.Settings.Compact = small.IsChecked == true); body.Children.Add(small);
         void Label(string text) { var label = Text(text, 13); label.Margin = new Thickness(0, 16, 0, 7); body.Children.Add(label); }
         void ChangeView(Action<Preferences> change) => Commit(l => { change(l.Settings); l.Settings.PageIndex = 0; });

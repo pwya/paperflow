@@ -66,6 +66,16 @@ public static class Lang
 
     private static readonly Dictionary<string, string> Table = new(StringComparer.Ordinal)
     {
+        ["显示模式"] = "Display mode",
+        ["完整模式"] = "Full mode",
+        ["极简模式"] = "Minimal mode",
+        ["切回完整模式"] = "Switch to full mode",
+        ["取消置顶"] = "Unpin",
+        ["极简模式（只显示标题和进度）"] = "Minimal mode (title and progress only)",
+        ["极简模式只显示论文标题和进度，双击标题可编辑资料；完整模式保留阶段勾选。"] = "Minimal mode shows only paper titles and progress. Double-click a title to edit details; Full mode keeps the stage checkboxes.",
+        ["菜单 · 双击论文标题可编辑资料"] = "Menu · double-click a paper title to edit details",
+        ["极简模式菜单"] = "Minimal mode menu",
+        ["\n双击编辑论文资料；右键打开论文菜单"] = "\nDouble-click to edit paper details; right-click for the paper menu",
         ["窗口显示方式"] = "Window display mode",
         ["桌面常驻"] = "Stay on desktop",
         ["普通窗口"] = "Normal window",

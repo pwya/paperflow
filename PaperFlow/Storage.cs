@@ -123,6 +123,7 @@ public sealed class Storage
         s.PageIndex = Math.Clamp(s.PageIndex, 0, ViewRules.PageCount(s) - 1);
         s.Theme = Themes.IsKnown(s.Theme ?? "") ? Themes.Migrate(s.Theme!) : Themes.Default;
         if (!Themes.Layouts.Contains(s.ListLayout)) s.ListLayout = Themes.CardLayout;
+        s.DisplayMode = WidgetLayout.NormalizeDisplayMode(s.DisplayMode);
         s.AccentColor ??= ""; s.BackgroundColor ??= ""; s.FontName ??= "Microsoft YaHei UI";
         s.TitleFont = string.IsNullOrWhiteSpace(s.TitleFont) ? "" : s.TitleFont.Trim();
         s.BodyFont = string.IsNullOrWhiteSpace(s.BodyFont) ? "" : s.BodyFont.Trim();
@@ -155,7 +156,7 @@ public sealed class Storage
         s.WindowMode = WidgetLayout.NormalizeMode(s.WindowMode);
         s.Topmost = s.WindowMode == "topmost";
         s.Width = double.IsFinite(s.Width) ? Math.Clamp(s.Width, WidgetLayout.MinimumWidth, 1800) : 650;
-        s.Height = double.IsFinite(s.Height) ? Math.Clamp(s.Height, WidgetLayout.MinimumHeight, 1600) : 840;
+        s.Height = double.IsFinite(s.Height) ? Math.Clamp(s.Height, s.DisplayMode == "minimal" ? WidgetLayout.MinimalHeight : WidgetLayout.MinimumHeight, 1600) : 840;
         s.Left = double.IsFinite(s.Left) ? s.Left : -1; s.Top = double.IsFinite(s.Top) ? s.Top : -1;
     }
 

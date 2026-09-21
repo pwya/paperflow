@@ -97,6 +97,7 @@ public sealed class Preferences
     public int PageIndex { get; set; }
     public string Theme { get; set; } = Themes.Default;
     public string ListLayout { get; set; } = Themes.CardLayout;
+    public string DisplayMode { get; set; } = "full";
     public bool FollowSystemTheme { get; set; }
     public string AccentColor { get; set; } = "";
     public string BackgroundColor { get; set; } = "";

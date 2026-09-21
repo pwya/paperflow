@@ -28,6 +28,22 @@ public partial class App : Application
             if (Uri.TryCreate(e.Args[updateUrlIndex + 1], UriKind.Absolute, out var url) && (url.Scheme == Uri.UriSchemeHttp || url.Scheme == Uri.UriSchemeHttps)) Updates.SingleManifestUrl = url.ToString();
         }
         int promoIndex = Array.IndexOf(e.Args, "--promotional-assets");
+        int minimalAssets = Array.IndexOf(e.Args, "--minimal-assets");
+        if (minimalAssets >= 0)
+        {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                try
+                {
+                    if (minimalAssets + 1 >= e.Args.Length) throw new ArgumentException(Lang.T("请指定宣传图输出目录。"));
+                    await PromotionExporter.GenerateMinimal(Path.GetFullPath(e.Args[minimalAssets + 1]));
+                    Shutdown(0);
+                }
+                catch (Exception ex) { Console.Error.WriteLine(ex); Shutdown(1); }
+            }));
+            return; // Synthetic export never opens the user's data or synchronization root.
+        }
         int galleryIndex = Array.IndexOf(e.Args, "--theme-gallery");
         int chimeIndex = Array.IndexOf(e.Args, "--sound-check");
         // 试用版构建（--demo）：窗口和托盘提示后面挂"（试用）"，方便和正式版区分。

@@ -15,8 +15,8 @@ internal static class WidgetWindowTests
     [STAThread]
     public static int Main(string[] args)
     {
-        if (args.Length != 1) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots."); return 2; }
-        var app = new CheckApp { Output = Path.GetFullPath(args[0]) };
+        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] != "--paper-details-only")) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only."); return 2; }
+        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Length == 2 };
         var source = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PaperFlow", "App.xaml"));
         System.Xml.Linq.XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         var resources = new System.Xml.Linq.XElement(wpf + "ResourceDictionary",
@@ -29,6 +29,7 @@ internal static class WidgetWindowTests
     private sealed class CheckApp : Application
     {
         public string Output = "";
+        public bool PaperDetailsOnly;
         private int checks;
         private readonly List<string> observations = new();
         private void Check(bool ok, string label)
@@ -61,6 +62,12 @@ internal static class WidgetWindowTests
                 widget.Show(); widget.Activate();
                 await Task.Delay(700);
                 var cards = Field<StackPanel>(widget, "cards");
+                if (PaperDetailsOnly)
+                {
+                    Descendants<CheckBox>(cards).First().IsChecked = true;
+                    CheckPaperDetails(widget, storage, cards);
+                    Finish(widget); return;
+                }
                 var scroll = Field<ScrollViewer>(widget, "scroller");
                 widget.Height = widget.MinHeight;
                 await Task.Delay(350);
@@ -142,6 +149,7 @@ internal static class WidgetWindowTests
                 ordinary.Close();
                 Descendants<CheckBox>(cards).First().IsChecked = true; await Task.Delay(150);
                 Check(storage.Load().Papers[0].Stages[0].Done, "direct stage interaction saves from the small desktop widget");
+                CheckPaperDetails(widget, storage, cards);
                 current = Field<Library>(widget, "library");
                 current.Settings.WindowMode = "topmost"; Invoke(widget, "Render");
                 Check(widget.Topmost, "explicit pinning still works");
@@ -152,9 +160,7 @@ internal static class WidgetWindowTests
                 Invoke(widget, "SaveWindow");
                 var saved = storage.Load();
                 Check(saved.Settings.Width == widget.Width && saved.Settings.Height < 400, "small window geometry survives save and reload");
-                Console.WriteLine("PASS: " + checks + " window checks.");
-                File.WriteAllLines(Path.Combine(Output, "checks.txt"), observations);
-                Invoke(widget, "ExitApplication"); Shutdown(0);
+                Finish(widget);
             }
             catch (Exception ex)
             {
@@ -165,6 +171,89 @@ internal static class WidgetWindowTests
                 Shutdown(1);
             }
         }
+        private void Finish(MainWindow widget)
+        {
+            Console.WriteLine("PASS: " + checks + " window checks.");
+            File.WriteAllLines(Path.Combine(Output, "checks.txt"), observations);
+            Invoke(widget, "ExitApplication"); Shutdown(0);
+        }
+
+        private void CheckPaperDetails(MainWindow widget, Storage storage, StackPanel cards)
+        {
+            var current = Field<Library>(widget, "library");
+            var paperId = current.Papers[0].Id;
+            current.Settings.CustomSchemes.Add(new StageScheme("Synthetic scheme", current.Papers[0].Stages.Select(s => s.Name).Append("Synthetic step").ToList()));
+            foreach (string action in new[] { "save", "cancel", "english", "uncheck" })
+            {
+                Exception? failure = null;
+                var original = Field<Library>(widget, "library").Papers.Single(p => p.Id == paperId);
+                var before = Storage.Clone(original);
+                if (action == "english") Lang.Apply("en");
+                Dispatcher.BeginInvoke(new Action(async () =>
+                {
+                    PaperEditor? editor = null;
+                    try
+                    {
+                        editor = Windows.OfType<PaperEditor>().Single();
+                        await Task.Delay(150);
+                        var done = Field<System.Windows.Controls.WrapPanel>(editor, "doneRow").Children.OfType<CheckBox>().ToArray();
+                        var skipped = Field<System.Windows.Controls.WrapPanel>(editor, "skipRow").Children.OfType<CheckBox>().ToArray();
+                        Check(done[0].IsChecked == original.Stages[0].Done, "paper details read the widget stage state: " + action);
+                        if (action == "save")
+                        {
+                            done[1].IsChecked = true;
+                            Check(!original.Stages[1].Done && !storage.Load().Papers.Single(p => p.Id == paperId).Stages[1].Done, "editing stages does not save before confirmation");
+                            skipped[1].IsChecked = true;
+                            Check(!editor.Result.Stages[1].Done && done[1].IsChecked == false && !done[1].IsEnabled, "not-applicable clears and disables completion");
+                            skipped[1].IsChecked = false;
+                            Check(done[1].IsEnabled && done[1].IsChecked == false, "restoring applicability allows an explicit completion choice");
+                            done[1].IsChecked = true; skipped[2].IsChecked = true;
+                            var picker = Descendants<ComboBox>(editor).First(b => b.Items.OfType<Choice>().Any(c => c.Value == "Synthetic scheme"));
+                            picker.SelectedItem = picker.Items.OfType<Choice>().Single(c => c.Value == "Synthetic scheme");
+                            Check(editor.Result.Stages.Count == 8 && editor.Result.Stages[1].Done && editor.Result.Stages[2].Skipped, "changing schemes keeps unsaved completion and applicability by stage name");
+                            await Task.Delay(150); Snapshot(editor, "09-paper-details-light");
+                            var dark = Storage.CloneLibrary(current).Settings; dark.Theme = "夜航 · 霜蓝";
+                            Appearance.Apply(dark); await Task.Delay(100); Snapshot(editor, "10-paper-details-dark");
+                            Check(((SolidColorBrush)editor.Background).Color == (Color)ColorConverter.ConvertFromString(Appearance.Current.Window), "paper details background follows the dark theme");
+                            var headline = Descendants<TextBlock>(editor).Single(t => t.Text == Lang.T("让下一步更清楚"));
+                            Check(((SolidColorBrush)headline.Foreground).Color == (Color)ColorConverter.ConvertFromString(Appearance.Current.Ink), "paper details heading follows the dark theme");
+                            var activeCheck = Field<System.Windows.Controls.WrapPanel>(editor, "doneRow").Children.OfType<CheckBox>().First();
+                            Check(((SolidColorBrush)activeCheck.Foreground).Color == (Color)ColorConverter.ConvertFromString(Appearance.Current.Ink), "paper detail stage text follows the dark theme");
+                            Descendants<Button>(editor).Single(b => Equals(b.Content, Lang.T("保存资料"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        }
+                        else if (action == "uncheck")
+                        {
+                            done[0].IsChecked = false;
+                            Descendants<Button>(editor).Single(b => Equals(b.Content, Lang.T("保存资料"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        }
+                        else
+                        {
+                            done[0].IsChecked = false; skipped[1].IsChecked = true;
+                            if (action == "english")
+                            {
+                                Check(Equals(done[0].Content, "Proposal"), "paper detail stage labels follow the English interface");
+                                Snapshot(editor, "11-paper-details-english");
+                            }
+                            Descendants<Button>(editor).Single(b => Equals(b.Content, Lang.T("取消"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        }
+                    }
+                    catch (Exception ex) { failure = ex; if (editor != null) editor.DialogResult = false; }
+                }));
+                Invoke(widget, "EditPaper", original);
+                Lang.Apply("zh"); Appearance.Apply(Field<Library>(widget, "library").Settings);
+                if (failure != null) throw failure;
+                var saved = storage.Load().Papers.Single(p => p.Id == paperId);
+                if (action == "save")
+                {
+                    Check(saved.Stages[1].Done && saved.Stages[2].Skipped && saved.Stages.Count == 8, "paper detail stage choices persist through the real save path");
+                    Check(Descendants<CheckBox>(cards).Skip(1).First().IsChecked == true, "saving paper details refreshes the widget stage checks");
+                    Check(saved.History.Any(h => h.Description == "完成 · " + Schemes.Display(saved.Stages[1].Name)), "details use the same completion history as widget edits");
+                }
+                else if (action == "uncheck") Check(!saved.Stages[0].Done && Descendants<CheckBox>(cards).First().IsChecked == false, "unchecking in details saves and clears the widget check");
+                else Check(saved.Stages[0].Done == before.Stages[0].Done && saved.Stages[1].Skipped == before.Stages[1].Skipped && saved.History.Count == before.History.Count, "cancel discards stage edits and history: " + action);
+            }
+        }
+
         private void Snapshot(Window window, string name)
         {
             window.UpdateLayout();

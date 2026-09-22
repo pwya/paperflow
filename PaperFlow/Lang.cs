@@ -523,7 +523,7 @@ public static class Lang
         ["上次检查：{0:yyyy-MM-dd HH:mm}"] = "Last checked: {0:yyyy-MM-dd HH:mm}",
         ["还没检查过"] = "Not checked yet",
         ["已经是最新版（{0}）。"] = "You are on the newest version ({0}).",
-        ["发现新版本 {0}：切回挂件就能下载。"] = "Version {0} is available: switch back to the widget to download it.",
+        ["发现新版本 {0}：关闭设置后，可在挂件底部下载，无需保存设置。"] = "Version {0} is available: close Settings to download it at the bottom of the widget. Saving settings is not required.",
         ["这次检查没成功：{0}"] = "The check did not go through: {0}",
         ["检查更新没成功：{0}"] = "The update check did not go through: {0}",
         ["现在再试一次"] = "Try again now",

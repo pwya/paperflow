@@ -14,6 +14,8 @@ namespace PaperFlow;
 public sealed class SettingsWindow : Window
 {
     public Preferences Result { get; }
+    // Checking for updates is an action, independent of saving preferences.
+    public event Action<UpdateManifest?, UpdateFailure?>? UpdateCheckCompleted;
     // 用户在这个窗口里改过的标签名字：保存时要把论文上贴着的旧名字一起改掉。
     public List<(string From, string To)> TagRenames { get; } = new();
     // 方案改名同理：论文身上记着方案名，改名要一起跟过去。
@@ -460,25 +462,27 @@ public sealed class SettingsWindow : Window
         checkNow.Click += async (_, _) =>
         {
             checkNow.IsEnabled = false; updateStatus.Text = Lang.T("正在检查…");
+            UpdateManifest? manifest = null;
+            UpdateFailure? failure = null;
             try
             {
                 using var client = Updates.Client();
-                var manifest = await Updates.FetchAsync(client, System.Threading.CancellationToken.None);
+                manifest = await Updates.FetchAsync(client, System.Threading.CancellationToken.None);
                 Result.LastUpdateCheckUtc = DateTime.UtcNow; Result.LastUpdateError = "";
-                Updates.Offered = manifest;
                 Updates.LastFailure = null;
-                updateStatus.Text = manifest == null ? Lang.F("已经是最新版（{0}）。", Product.Version) : Lang.F("发现新版本 {0}：切回挂件就能下载。", manifest.Version);
+                updateStatus.Text = manifest == null ? Lang.F("已经是最新版（{0}）。", Product.Version) : Lang.F("发现新版本 {0}：关闭设置后，可在挂件底部下载，无需保存设置。", manifest.Version);
             }
             catch (Exception ex)
             {
-                var failure = Updates.Describe(ex);
+                failure = Updates.Describe(ex);
                 Result.LastUpdateCheckUtc = DateTime.UtcNow; Result.LastUpdateError = failure.Message;
-                Updates.Offered = null; Updates.LastFailure = failure;
+                Updates.LastFailure = failure;
                 updateStatus.Text = failure.Network
                     ? Lang.F("这次没连上更新服务器（{0}）", failure.Message)
                     : Lang.F("这次检查没成功：{0}", failure.Message);
             }
             finally { checkNow.IsEnabled = true; }
+            UpdateCheckCompleted?.Invoke(manifest, failure);
         };
         sync.Children.Add(checkNow);
         Label(sync, Lang.T("检查更新只读一份静态清单（国内镜像 Gitee 优先，其次是 GitHub），只下载、不上传，论文数据不会被发送出去。选“不提示”就一次网络请求都不发，那时也可以随时按这个按钮手动检查。"), 11);

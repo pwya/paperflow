@@ -1,5 +1,9 @@
 using PaperFlow;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -16,8 +20,8 @@ internal static class WidgetWindowTests
     [STAThread]
     public static int Main(string[] args)
     {
-        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only or --paper-management-only."); return 2; }
-        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only") };
+        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only" or "--updates-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only, --paper-management-only or --updates-only."); return 2; }
+        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only"), UpdatesOnly = args.Contains("--updates-only") };
         var source = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PaperFlow", "App.xaml"));
         System.Xml.Linq.XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         var resources = new System.Xml.Linq.XElement(wpf + "ResourceDictionary",
@@ -33,6 +37,7 @@ internal static class WidgetWindowTests
         public bool PaperDetailsOnly;
         public bool MinimalOnly;
         public bool ManagementOnly;
+        public bool UpdatesOnly;
         private int checks;
         private readonly List<string> observations = new();
         private void Check(bool ok, string label)
@@ -50,6 +55,7 @@ internal static class WidgetWindowTests
             try
             {
                 Product.Demo = true;
+                Product.Portable = true;
                 Lang.Apply("zh");
                 var root = Path.Combine(Path.GetTempPath(), "PaperFlow-window-tests-" + Guid.NewGuid().ToString("N"));
                 var library = new Library();
@@ -65,6 +71,7 @@ internal static class WidgetWindowTests
                 widget.Show(); widget.Activate();
                 await Task.Delay(700);
                 var cards = Field<StackPanel>(widget, "cards");
+                if (UpdatesOnly) { await CheckManualUpdates(widget, storage); Finish(widget); return; }
                 if (ManagementOnly) { await CheckManagement(widget, storage, cards); Finish(widget); return; }
                 if (MinimalOnly) { await CheckMinimal(widget, storage, cards); Finish(widget); return; }
                 if (PaperDetailsOnly)
@@ -162,6 +169,7 @@ internal static class WidgetWindowTests
                 CheckPaperDetails(widget, storage, cards);
                 await CheckMinimal(widget, storage, cards);
                 await CheckManagement(widget, storage, cards);
+                await CheckManualUpdates(widget, storage);
                 current = Field<Library>(widget, "library");
                 current.Settings.WindowMode = "topmost"; Invoke(widget, "Render");
                 Check(widget.Topmost, "explicit pinning still works");
@@ -183,6 +191,93 @@ internal static class WidgetWindowTests
                 Shutdown(1);
             }
         }
+        private async Task CheckManualUpdates(MainWindow widget, Storage storage)
+        {
+            var baseline = Storage.CloneLibrary(Field<Library>(widget, "library"));
+            var previousUrl = Updates.SingleManifestUrl;
+            try
+            {
+                foreach (var mode in new[] { "full", "minimal" })
+                foreach (var action in new[] { "save", "cancel", "close", "late", "failure" })
+                {
+                    var prefs = Field<Library>(widget, "library").Settings;
+                    prefs.DisplayMode = mode; prefs.UpdateMode = "never";
+                    Invoke(widget, "Render");
+                    Field<Border>(widget, "updateBar").Visibility = Visibility.Collapsed;
+                    using var listener = new TcpListener(IPAddress.Loopback, 0);
+                    listener.Start();
+                    int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                    Updates.SingleManifestUrl = $"http://127.0.0.1:{port}/update.json";
+                    var requested = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var respond = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var completed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    var server = Task.Run(async () =>
+                    {
+                        using var client = await listener.AcceptTcpClientAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                        using var stream = client.GetStream();
+                        using var reader = new StreamReader(stream, Encoding.ASCII, false, 1024, true);
+                        var request = await reader.ReadLineAsync();
+                        if (request != "GET /update.json HTTP/1.1") throw new InvalidOperationException("Unexpected update request: " + request);
+                        while (!string.IsNullOrEmpty(await reader.ReadLineAsync())) { }
+                        requested.SetResult();
+                        await respond.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                        string json = action == "failure" ? "invalid manifest" : JsonSerializer.Serialize(new
+                        {
+                            version = "99.0.0", url = $"http://127.0.0.1:{port}/synthetic.zip",
+                            sha256 = new string('a', 64), length = 123, exeSha256 = new string('b', 64), exeLength = 456
+                        });
+                        byte[] body = Encoding.UTF8.GetBytes(json);
+                        byte[] header = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n");
+                        await stream.WriteAsync(header); await stream.WriteAsync(body);
+                    });
+                    _ = Dispatcher.BeginInvoke(new Action(async () =>
+                    {
+                        SettingsWindow? dialog = null;
+                        try
+                        {
+                            dialog = Windows.OfType<SettingsWindow>().Single();
+                            Descendants<ListBox>(dialog).First(b => b.Items.Count == 6).SelectedIndex = 4;
+                            dialog.UpdateLayout();
+                            dialog.Result.UpdateMode = "always";
+                            var checkNow = Descendants<Button>(dialog).Single(b => Equals(b.Content, Lang.T("现在检查一次")));
+                            checkNow.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                            await requested.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                            if (action == "late") dialog.Close();
+                            respond.SetResult();
+                            var deadline = DateTime.UtcNow.AddSeconds(10);
+                            while (!checkNow.IsEnabled && DateTime.UtcNow < deadline) await Task.Delay(20);
+                            Check(checkNow.IsEnabled, "manual check finishes: " + mode + "/" + action);
+                            if (action != "late")
+                            {
+                                if (action == "close") dialog.Close();
+                                else Descendants<Button>(dialog).Single(b => Equals(b.Content, Lang.T(action == "save" ? "保存设置" : "取消"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                            }
+                            completed.SetResult();
+                        }
+                        catch (Exception ex)
+                        {
+                            respond.TrySetResult();
+                            if (dialog?.IsVisible == true) dialog.Close();
+                            completed.SetException(ex);
+                        }
+                    }));
+                    Invoke(widget, "OpenSettings");
+                    await completed.Task.WaitAsync(TimeSpan.FromSeconds(15));
+                    await server;
+                    widget.UpdateLayout();
+                    var bar = Field<Border>(widget, "updateBar");
+                    var button = Field<Button>(widget, "updateAction");
+                    Check(bar.IsVisible && button.IsVisible && button.IsEnabled, "update action visible after " + mode + "/" + action);
+                    Check(Equals(button.Content, Lang.T(action == "failure" ? "现在再试一次" : "下载并安装")), "correct update action after " + mode + "/" + action);
+                    Check(storage.Load().Settings.UpdateMode == (action == "save" ? "always" : "never"), "update result does not save cancelled preferences: " + mode + "/" + action);
+                    Check(!listener.Pending() && !Field<bool>(widget, "updating"), "checking never starts a download: " + mode + "/" + action);
+                    if (action == "close") Snapshot(widget, "update-after-close-" + mode);
+                }
+                Check(SyncProtocol.Diff(baseline, Field<Library>(widget, "library")).Count == 0, "manual update checks leave paper data untouched");
+            }
+            finally { Updates.SingleManifestUrl = previousUrl; }
+        }
+
         private async Task CheckMinimal(MainWindow widget, Storage storage, StackPanel cards)
         {
             await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);

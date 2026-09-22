@@ -1021,6 +1021,13 @@ public sealed class MainWindow : Window
             (schemeName, stageName) => library.Papers.Any(p => p.SchemeName == schemeName && p.Stages.Any(s => s.Name == stageName && (s.Done || s.Skipped))),
             id => WhatsNew.ShouldShow(id, !store.Existed, library.Settings.SeenNewFeatures),
             () => library.Papers.SelectMany(p => p.Tags).GroupBy(t => t, StringComparer.Ordinal).Select(g => (Name: g.Key, Count: g.Count())).ToList()) { Owner = this };
+        dialog.UpdateCheckCompleted += (manifest, failure) =>
+        {
+            // Also receive a check that finishes after the settings window closes.
+            if (quitting) return;
+            if (manifest != null) OfferUpdate(manifest);
+            else if (failure != null) OfferUpdateProblem(failure);
+        };
         if (dialog.ShowDialog() == true)
         {
             // "离开过"的那几页记成已看：这是界面状态，跟设置本身保存不保存没关系。
@@ -1048,8 +1055,6 @@ public sealed class MainWindow : Window
                 Commit(l => { foreach (var (schemeName, oldStages, stages, onlyUnchanged) in dialog.SchemeStageUpdates) Schemes.PushToPapers(l.Papers, schemeName, oldStages, stages, onlyUnchanged); });
             // 语言换了就重启一次：挂件上的按钮、托盘菜单是开窗口时建好的，重启最干净。
             if (languageChanged) { Restart(); return; }
-            if (Updates.Offered is UpdateManifest found) OfferUpdate(found);
-            else if (Updates.LastFailure is UpdateFailure problem) OfferUpdateProblem(problem);
         }
         else
         {

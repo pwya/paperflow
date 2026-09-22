@@ -70,8 +70,6 @@ public static class Updates
     public static string? SingleManifestUrl { get; set; }
     public static bool UsingOverride => SingleManifestUrl != null;
     public static IReadOnlyList<string> Candidates() => SingleManifestUrl is string only ? new[] { only } : ManifestUrls.ToArray();
-    // 设置窗口手动检查到的版本，交给挂件去显示提示条和下载按钮。
-    public static UpdateManifest? Offered { get; set; }
     // 最近一次检查为什么失败（成功时清空）。挂件和设置页都靠它说话。
     public static UpdateFailure? LastFailure { get; set; }
 

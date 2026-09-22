@@ -19,7 +19,7 @@ public sealed class PaperEditor : Window
     private readonly System.Windows.Controls.WrapPanel skipRow = new() { Margin = new Thickness(0, 5, 0, 14) };
     // knownTags：本机自建的标签 + 论文上已经贴过的标签。这里只负责"贴"，造标签在设置里。
     // knownSchemes：本机自建的方案（内置两套在 Schemes 里）。这里能换方案、能编辑这一篇的阶段。
-    public PaperEditor(Paper paper, IReadOnlyList<string> knownTags, IReadOnlyList<StageScheme> knownSchemes)
+    public PaperEditor(Paper paper, IReadOnlyList<string> knownTags, IReadOnlyList<StageScheme> knownSchemes, Func<Window, bool>? deletePaper = null)
     {
         Result = paper;
         Title = Lang.T("论文资料"); Width = Math.Min(660 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40); Height = Math.Min(780 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30); MinHeight = 430 * Appearance.DialogScale; MinWidth = Math.Min(530 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40);
@@ -175,6 +175,11 @@ public sealed class PaperEditor : Window
         body.Children.Add(Label(Lang.P(paper.ElapsedDays, "已开始 {0} 天   ·   上次编辑 {1:yyyy-MM-dd HH:mm}", "Started {0} day ago   ·   last edited {1:yyyy-MM-dd HH:mm}", "Started {0} days ago   ·   last edited {1:yyyy-MM-dd HH:mm}", paper.ElapsedDays, paper.UpdatedAt), 11));
         var progressHint = Label(Lang.T("进度表示适用阶段的完成比例。勾选“收录”后，小部件显示已录用；若你用“收录”表示数据库收录，可在结局中另记录用时间。"), 11);
         progressHint.TextWrapping = TextWrapping.Wrap; progressHint.Margin = new Thickness(0, 10, 0, 0); body.Children.Add(progressHint);
+        if (deletePaper != null)
+        {
+            var delete = MainWindow.ActionButton(Lang.T("删除论文"), () => { if (deletePaper(this)) DialogResult = false; });
+            delete.Margin = new Thickness(0, 0, 20, 0); actions.Children.Add(delete);
+        }
         var cancel = MainWindow.ActionButton(Lang.T("取消"), () => DialogResult = false); cancel.IsCancel = true; actions.Children.Add(cancel);
         var save = MainWindow.ActionButton(Lang.T("保存资料"), () =>
         {

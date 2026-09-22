@@ -66,6 +66,21 @@ public static class Lang
 
     private static readonly Dictionary<string, string> Table = new(StringComparer.Ordinal)
     {
+        ["删除论文"] = "Delete paper",
+        ["删除后不可恢复，确定执行删除吗？"] = "Deletion cannot be undone. Are you sure you want to delete this paper?",
+        ["删除记录无效。"] = "Invalid deletion record.",
+        ["论文已删除"] = "Paper deleted",
+        ["这篇论文已被删除。"] = "This paper has been deleted.",
+        ["查看全部归档论文"] = "View all archived papers",
+        ["已归档论文"] = "Archived papers",
+        ["关闭"] = "Close",
+        ["已归档 · 可在“归档论文”窗口中查看"] = "Archived · view it in Archived papers",
+        ["这里显示全部归档论文，不受挂件的隐藏、筛选和分页影响。"] = "All archived papers appear here, regardless of the widget's hidden tags, filters or pages.",
+        ["搜索归档论文标题"] = "Search archived paper titles",
+        ["已归档 {0} 篇 · 当前显示 {1} 篇"] = "Archived: {0} · Showing: {1}",
+        ["还没有归档论文。"] = "No archived papers yet.",
+        ["没有匹配的归档论文。"] = "No matching archived papers.",
+        ["进度 {0}% · {1}优先级"] = "Progress {0}% · {1} priority",
         ["显示模式"] = "Display mode",
         ["完整模式"] = "Full mode",
         ["极简模式"] = "Minimal mode",

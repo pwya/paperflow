@@ -53,6 +53,7 @@ public sealed class MainWindow : Window
     private readonly WrapPanel chrome = new() { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
     private readonly Button minimalMenu = new() { Content = "⋯", Visibility = Visibility.Collapsed, Padding = new Thickness(10, 2, 10, 2), FontSize = 20 };
     private readonly Button hiddenToggle = new();
+    private ArchivedPapersWindow? archivedWindow;
     private readonly Image brandIcon = new() { Width = 26, Height = 26, Margin = new Thickness(0, 0, 9, 0) };
     private bool draggingPaper;
     private string? draggedPaperId;
@@ -366,6 +367,7 @@ public sealed class MainWindow : Window
         if (draggingPaper) return;
         desktopPlacement?.Apply(library.Settings.WindowMode);
         Appearance.Apply(library.Settings);
+        archivedWindow?.Refresh();
         bool minimal = library.Settings.DisplayMode == "minimal";
         chrome.Visibility = minimal ? Visibility.Collapsed : Visibility.Visible;
         minimalMenu.Visibility = minimal ? Visibility.Visible : Visibility.Collapsed;
@@ -936,8 +938,12 @@ public sealed class MainWindow : Window
         Item(Lang.T(p.Archived ? "恢复到论文列表" : "归档（保留资料）"), () =>
         {
             if (!Commit(l => { var paper = l.Papers.Single(x => x.Id == p.Id); paper.Archived = !paper.Archived; paper.Record(paper.Archived ? "归档论文" : "恢复论文"); })) return;
-            ShowNotice(Lang.T(p.Archived ? "已恢复到论文列表" : "已归档 · 在论文选项的显示范围里选“已归档”可以再找到它"));
+            ShowNotice(Lang.T(p.Archived ? "已恢复到论文列表" : "已归档 · 可在“归档论文”窗口中查看"));
         });
+        Item(Lang.T("查看全部归档论文"), () => OpenArchive(this));
+        menu.Items.Add(new Separator());
+        Item(Lang.T("删除论文"), () => DeletePaper(p.Id, this));
+        anchor.ContextMenu = menu;
         menu.IsOpen = true;
     }
     private void PriorityMenu(Paper p, FrameworkElement anchor)
@@ -957,13 +963,42 @@ public sealed class MainWindow : Window
         Commit(l => { int index = l.Papers.FindIndex(p => p.Id == id); int next = index + delta; if (next >= 0 && next < l.Papers.Count) (l.Papers[index], l.Papers[next]) = (l.Papers[next], l.Papers[index]); });
     }
     private void EditPaper(Paper original)
+        => EditPaperInWindow(original, this);
+
+    private bool DeletePaper(string id, Window owner)
     {
+        var paper = library.Papers.SingleOrDefault(p => p.Id == id);
+        if (paper == null) { ShowNotice(Lang.T("这篇论文已被删除。")); return false; }
+        if (new DeletePaperDialog(paper.Title) { Owner = owner }.ShowDialog() != true) return false;
+        if (!Commit(l => l.Papers.RemoveAll(p => p.Id == id), Lang.T("论文已删除"))) return false;
+        ShowNotice(Lang.T("论文已删除")); return true;
+    }
+
+    private bool RestorePaper(Paper paper)
+    {
+        if (!library.Papers.Any(p => p.Id == paper.Id)) { ShowNotice(Lang.T("这篇论文已被删除。")); return false; }
+        if (!Commit(l => { var restored = l.Papers.Single(p => p.Id == paper.Id); restored.Archived = false; restored.Record("恢复论文"); })) return false;
+        ShowNotice(Lang.T("已恢复到论文列表")); return true;
+    }
+
+    private void OpenArchive(Window owner)
+    {
+        if (archivedWindow != null) { archivedWindow.Activate(); return; }
+        archivedWindow = new ArchivedPapersWindow(() => library.Papers, EditPaperInWindow, RestorePaper, (p, window) => DeletePaper(p.Id, window)) { Owner = owner };
+        try { archivedWindow.ShowDialog(); }
+        finally { archivedWindow = null; }
+    }
+
+    private void EditPaperInWindow(Paper original, Window owner)
+    {
+        if (!library.Papers.Any(p => p.Id == original.Id)) { ShowNotice(Lang.T("这篇论文已被删除。")); return; }
         var knownTags = library.Settings.CustomTags.Concat(library.Papers.SelectMany(x => x.Tags)).Distinct(StringComparer.Ordinal).Where(t => t.Length > 0).ToList();
         // 方案列表＝本机自建的 + 论文身上带着的（多半来自另一台电脑，用的方案也要能选、能认出）。
         var knownSchemes = library.Settings.CustomSchemes.Concat(Schemes.FromPapers(library.Papers, library.Settings.CustomSchemes)).ToList();
-        var dialog = new PaperEditor(Storage.Clone(original), knownTags, knownSchemes) { Owner = this };
+        var dialog = new PaperEditor(Storage.Clone(original), knownTags, knownSchemes, window => DeletePaper(original.Id, window)) { Owner = owner };
         if (dialog.ShowDialog() == true)
         {
+            if (!library.Papers.Any(p => p.Id == original.Id)) { ShowNotice(Lang.T("这篇论文已被删除。")); return; }
             Commit(l => { dialog.Result.Record("更新论文资料"); var before = new Library { Papers = new() { original } }; var after = new Library { Papers = new() { dialog.Result } }; SyncProtocol.ApplyEdits(l, SyncProtocol.Diff(before, after)); });
             // 论文里另存出来的方案，并进本机方案库（重名在对话框里已经拦过）。
             if (dialog.SavedScheme is StageScheme added && !library.Settings.CustomSchemes.Any(s => s.Name == added.Name))
@@ -1041,6 +1076,7 @@ public sealed class MainWindow : Window
         Item(Lang.T("切回完整模式"), () => Commit(l => l.Settings.DisplayMode = "full"));
         Item(Lang.T("新增论文"), AddPaper);
         Item(Lang.T("论文选项"), OpenOptions);
+        Item(Lang.T("查看全部归档论文"), () => OpenArchive(this));
         Item(Lang.T("设置"), OpenSettings);
         Item(Lang.T(library.Settings.WindowMode == "topmost" ? "取消置顶" : "置顶"), TogglePin);
         if (hiddenToggle.Visibility == Visibility.Visible)
@@ -1065,6 +1101,7 @@ public sealed class MainWindow : Window
         body.Children.Add(Text(Lang.T("搜索论文、期刊、学科或合作者"), 11, "#78867F"));
         search.Margin = new Thickness(0, 9, 0, 12); body.Children.Add(search);
         body.Children.Add(Text(Lang.T("显示范围"), 12)); filter.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(filter);
+        body.Children.Add(ActionButton(Lang.T("查看全部归档论文"), () => OpenArchive(window)));
         body.Children.Add(Text(Lang.T("排序方式"), 12)); sort.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(sort);
         var minimal = new CheckBox { Content = Lang.T("极简模式（只显示标题和进度）"), IsChecked = library.Settings.DisplayMode == "minimal" };
         minimal.Click += (_, _) => Commit(l => l.Settings.DisplayMode = minimal.IsChecked == true ? "minimal" : "full"); body.Children.Add(minimal);
@@ -1138,6 +1175,8 @@ public sealed class MainWindow : Window
         {
             if (new FileInfo(dialog.FileName).Length > 30_000_000) throw new InvalidDataException(Lang.T("文件超过 30 MB。"));
             var incoming = Storage.Parse(File.ReadAllText(dialog.FileName, System.Text.Encoding.UTF8));
+            var deleted = sync.DeletedPaperIds;
+            incoming.Papers.RemoveAll(p => deleted.Contains(p.Id));
             var merged = Storage.Merge(library, incoming); int added = merged.Papers.Count - library.Papers.Count;
             if (Commit(l => l.Papers = merged.Papers, Lang.F("导入了 {0} 篇新论文", added)))
                 MessageBox.Show(this, Lang.F("新增 {0} 篇，已有编号的记录保持原样。\n导入前资料已自动备份。", added), Lang.T("导入完成"));

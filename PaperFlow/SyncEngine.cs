@@ -42,6 +42,14 @@ public static class SyncProtocol
         Storage.Validate(after);
         var edits = new List<SyncEdit>();
         var old = before.Papers.ToDictionary(p => p.Id);
+        var remaining = after.Papers.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var removed in before.Papers.Where(p => !remaining.Contains(p.Id)))
+        {
+            // Older readers retain the record as archived; new readers keep the
+            // permanent deletion marker even if later edits arrive from an old device.
+            edits.Add(new SyncEdit { PaperId = removed.Id, Field = "Archived", Value = Json(true) });
+            edits.Add(new SyncEdit { PaperId = removed.Id, Field = "deleted", Value = Json(true) });
+        }
         foreach (var p in after.Papers)
         {
             old.TryGetValue(p.Id, out var previous);
@@ -114,6 +122,7 @@ public static class SyncProtocol
                 if (Schemes.InspectStages(stages.Select(s => s.Name).ToList()) != SchemeProblem.None || stages.Any(s => s.Done && s.Skipped))
                     throw new InvalidDataException(Lang.T("阶段无效。"));
             }
+            else if (edit.Field == "deleted") { if (edit.Value.ValueKind != JsonValueKind.True) throw new InvalidDataException(Lang.T("删除记录无效。")); }
             else if (edit.Field == "position") { if (!edit.Value.TryGetInt32(out int position) || position < 0) throw new InvalidDataException(Lang.T("排序无效。")); }
             else if (edit.Field == "history")
             {
@@ -126,12 +135,15 @@ public static class SyncProtocol
     public static Library Reduce(IEnumerable<SyncEvent> source)
     {
         var papers = new Dictionary<string, Paper>(); var positions = new Dictionary<string, int>();
+        var deleted = new HashSet<string>(StringComparer.Ordinal);
         foreach (var ev in source.Where(e => !e.Unsupported).GroupBy(e => e.Id).Select(g => g.First()).OrderBy(e => e.Counter).ThenBy(e => e.Device, StringComparer.Ordinal).ThenBy(e => e.Id, StringComparer.Ordinal))
         {
             Inspect(ev);
             foreach (var edit in ev.Edits)
             {
                 if (edit.Unknown) continue;
+                if (edit.Field == "deleted") { deleted.Add(edit.PaperId); papers.Remove(edit.PaperId); continue; }
+                if (deleted.Contains(edit.PaperId)) continue;
                 if (!papers.TryGetValue(edit.PaperId, out var p)) { p = new Paper { Id = edit.PaperId }; papers.Add(p.Id, p); }
                 if (Scalars.TryGetValue(edit.Field, out var property)) property.SetValue(p, edit.Value.Deserialize(property.PropertyType));
                 else if (edit.Field == "stages") p.Stages = edit.Value.Deserialize<List<Stage>>()!;
@@ -155,7 +167,9 @@ public static class SyncProtocol
         foreach (var edit in edits)
         {
             if (edit.Unknown) continue;
-            var p = target.Papers.Single(x => x.Id == edit.PaperId);
+            if (edit.Field == "deleted") { target.Papers.RemoveAll(p => p.Id == edit.PaperId); continue; }
+            var p = target.Papers.SingleOrDefault(x => x.Id == edit.PaperId);
+            if (p == null) continue; // A remotely deleted paper must not be recreated by a stale dialog.
             if (Scalars.TryGetValue(edit.Field, out var property)) property.SetValue(p, edit.Value.Deserialize(property.PropertyType));
             else if (edit.Field == "stages") p.Stages = edit.Value.Deserialize<List<Stage>>()!;
             else if (edit.Field.StartsWith("stage:", StringComparison.Ordinal))
@@ -176,6 +190,10 @@ public sealed class SyncEngine
     public string Folder { get; }
     public string Status { get { lock (gate) return status.Length == 0 ? Lang.T("本机自动保存") : status; } }
     public int Revision { get { lock (gate) return events.Count; } }
+    public IReadOnlySet<string> DeletedPaperIds
+    {
+        get { lock (gate) return events.Values.Where(e => !e.Unsupported).SelectMany(e => e.Edits).Where(e => !e.Unknown && e.Field == "deleted").Select(e => e.PaperId).ToHashSet(StringComparer.Ordinal); }
+    }
     // 有几条记录带着本机不认识的内容（多半来自更新版本）。升级后会自动补上。
     public int Held { get { lock (gate) return events.Values.Count(e => e.Unsupported || e.Unknown > 0); } }
     public SyncEngine(string localDirectory, string sharedDirectory, Library legacy)

@@ -116,5 +116,62 @@ static class SyncTests
         check(holder.Held == 1 && holder.Status.Contains("更新版本"), "held records are reported, not hidden");
         var journalText = string.Join("", Directory.GetFiles(Path.Combine(Local("holder"), "journal")).Select(File.ReadAllText));
         check(journalText.Contains("FutureField"), "the original record survives on disk for the next upgrade");
+        DeletionChecks(check);
+    }
+
+    private static void DeletionChecks(Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "PaperFlow-deletion-tests-" + Guid.NewGuid().ToString("N"));
+        var seed = new Library { Papers = new() { new Paper { Title = "Synthetic delete target" }, new Paper { Title = "Synthetic retained paper" } } };
+        var id = seed.Papers[0].Id; var retained = seed.Papers[1].Id;
+        var shared = Path.Combine(root, "shared");
+        var aRoot = Path.Combine(root, "a");
+        var a = new SyncEngine(aRoot, shared, seed); a.Poll();
+        var b = new SyncEngine(Path.Combine(root, "b"), shared, new Library()); b.Poll();
+        var stale = b.Snapshot();
+        var before = a.Snapshot(); var after = Storage.CloneLibrary(before); after.Papers.RemoveAll(p => p.Id == id);
+        var deletionEdits = SyncProtocol.Diff(before, after);
+        check(deletionEdits.Any(e => e.PaperId == id && e.Field == "deleted" && e.Value.GetBoolean()), "removing a paper writes a permanent deletion event");
+        check(deletionEdits.Any(e => e.PaperId == id && e.Field == "Archived" && e.Value.GetBoolean()), "deletion archives the same paper for older clients");
+        a.Commit(before, after);
+        check(a.Snapshot().Papers.All(p => p.Id != id) && a.DeletedPaperIds.Contains(id), "deleted paper disappears and its identity remains marked");
+        check(new SyncEngine(aRoot, shared, seed).Snapshot().Papers.All(p => p.Id != id), "offline deletion survives restart and a stale local snapshot");
+        var staleEdit = Storage.CloneLibrary(stale); staleEdit.Papers[0].Title = "Synthetic stale edit"; staleEdit.Papers[0].ToggleStage(2, true);
+        staleEdit.Papers.Single(p => p.Id == retained).Notes = "Independent surviving edit";
+        b.Commit(stale, staleEdit); a.Poll(); b.Poll(); a.Poll();
+        check(a.Snapshot().Papers.Count == 1 && b.Snapshot().Papers.Count == 1, "concurrent edit and deletion converge on both devices");
+        check(a.Snapshot().Papers.Single().Notes == "Independent surviving edit", "deletion preserves concurrent edits to other papers");
+        var events = Directory.GetFiles(Path.Combine(shared, "events-v1"), "*.json").Select(f => SyncProtocol.Parse(File.ReadAllText(f))).ToList();
+        check(JsonSerializer.Serialize(SyncProtocol.Reduce(events)) == JsonSerializer.Serialize(SyncProtocol.Reduce(events.AsEnumerable().Reverse().Concat(events))), "deletion is independent of delivery order and duplicate delivery");
+        var deletion = events.Single(e => e.Edits.Any(x => x.Field == "deleted"));
+        var late = new SyncEvent { Device = Guid.NewGuid().ToString("N"), Counter = events.Max(e => e.Counter) + 50, Edits = SyncProtocol.Diff(new Library(), new Library { Papers = new() { Storage.Clone(seed.Papers[0]) } }) };
+        check(SyncProtocol.Reduce(events.Append(late)).Papers.All(p => p.Id != id), "later creation or imported old data cannot resurrect a deleted identity");
+        var earlyDeletion = SyncProtocol.Parse(JsonSerializer.Serialize(deletion)); earlyDeletion.Counter = 1;
+        check(SyncProtocol.Reduce(new[] { earlyDeletion, late }).Papers.Count == 0, "deletion arriving before creation still prevents resurrection");
+        var current = a.Snapshot(); SyncProtocol.ApplyEdits(current, SyncProtocol.Diff(stale, staleEdit));
+        check(current.Papers.Count == 1 && current.Papers[0].Id == retained, "saving a stale editor safely ignores a remotely deleted paper");
+        var compat = SyncProtocol.Parse(JsonSerializer.Serialize(deletion));
+        compat.Edits.Single(e => e.Field == "deleted").Field = "FutureDeletion";
+        check(SyncProtocol.Reduce(events.Where(e => e.Id != deletion.Id).Append(compat)).Papers.Single(p => p.Id == id).Archived, "reader without deletion support can keep the paper archived");
+        foreach (var value in new[] { "false", "null", "\"true\"" })
+        {
+            var invalid = SyncProtocol.Parse(JsonSerializer.Serialize(deletion));
+            invalid.Edits.Single(e => e.Field == "deleted").Value = JsonDocument.Parse(value).RootElement.Clone();
+            bool rejected = false; try { SyncProtocol.Validate(invalid); } catch (InvalidDataException) { rejected = true; }
+            check(rejected, "invalid deletion marker is rejected: " + value);
+        }
+        var archive = Storage.CloneLibrary(seed); archive.Papers[0].Archived = true;
+        check(SyncProtocol.Diff(seed, archive).All(e => e.Field != "deleted"), "archiving stays reversible and never creates a deletion marker");
+        before = a.Snapshot(); after = Storage.CloneLibrary(before); after.Papers.Clear();
+        var journal = Path.Combine(aRoot, "journal"); var savedJournal = journal + "-saved";
+        Directory.Move(journal, savedJournal); File.WriteAllText(journal, "Synthetic blocked append");
+        try
+        {
+            bool rejected = false; try { a.Commit(before, after); } catch (IOException) { rejected = true; }
+            check(rejected && a.Snapshot().Papers.Count == 1 && !a.DeletedPaperIds.Contains(retained), "failed deletion append leaves the paper intact");
+        }
+        finally { File.Delete(journal); Directory.Move(savedJournal, journal); }
+        var fresh = new SyncEngine(Path.Combine(root, "fresh"), shared, seed); fresh.Poll();
+        check(fresh.Snapshot().Papers.All(p => p.Id != id), "new device replay removes deleted papers from an imported old snapshot");
     }
 }

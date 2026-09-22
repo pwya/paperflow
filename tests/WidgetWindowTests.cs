@@ -16,8 +16,8 @@ internal static class WidgetWindowTests
     [STAThread]
     public static int Main(string[] args)
     {
-        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only or --minimal-only."); return 2; }
-        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only") };
+        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only or --paper-management-only."); return 2; }
+        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only") };
         var source = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PaperFlow", "App.xaml"));
         System.Xml.Linq.XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         var resources = new System.Xml.Linq.XElement(wpf + "ResourceDictionary",
@@ -32,6 +32,7 @@ internal static class WidgetWindowTests
         public string Output = "";
         public bool PaperDetailsOnly;
         public bool MinimalOnly;
+        public bool ManagementOnly;
         private int checks;
         private readonly List<string> observations = new();
         private void Check(bool ok, string label)
@@ -64,6 +65,7 @@ internal static class WidgetWindowTests
                 widget.Show(); widget.Activate();
                 await Task.Delay(700);
                 var cards = Field<StackPanel>(widget, "cards");
+                if (ManagementOnly) { await CheckManagement(widget, storage, cards); Finish(widget); return; }
                 if (MinimalOnly) { await CheckMinimal(widget, storage, cards); Finish(widget); return; }
                 if (PaperDetailsOnly)
                 {
@@ -147,7 +149,10 @@ internal static class WidgetWindowTests
                 finally { shell.ToggleDesktop(); shell.UndoMinimizeALL(); Marshal.FinalReleaseComObject(shell); }
                 await Task.Delay(500);
                 var ordinary = new Window { Title = "Synthetic foreground app", Width = 300, Height = 220, Left = widget.Left, Top = widget.Top, Content = "Synthetic foreground window" };
-                ordinary.Show(); ordinary.Activate(); await Task.Delay(350);
+                ordinary.Show(); bool activated = ordinary.Activate();
+                for (int attempt = 0; attempt < 20 && (GetWindowLong(handle, -20) & 8) != 0; attempt++) await Task.Delay(100);
+                observations.Add("Ordinary test window activated=" + activated + "; foreground is test window=" + (GetForegroundWindow() == new WindowInteropHelper(ordinary).Handle));
+                Check(activated && GetForegroundWindow() == new WindowInteropHelper(ordinary).Handle, "interactive desktop must allow the ordinary test window to gain focus");
                 Check((GetWindowLong(handle, -20) & 8) == 0, "opening an ordinary window removes temporary desktop topmost state");
                 Check(Behind(handle, new WindowInteropHelper(ordinary).Handle), "ordinary windows cover the desktop widget");
                 ordinary.Close();
@@ -156,6 +161,7 @@ internal static class WidgetWindowTests
                 Check(storage.Load().Papers[0].Stages[0].Done, "direct stage interaction saves from the small desktop widget");
                 CheckPaperDetails(widget, storage, cards);
                 await CheckMinimal(widget, storage, cards);
+                await CheckManagement(widget, storage, cards);
                 current = Field<Library>(widget, "library");
                 current.Settings.WindowMode = "topmost"; Invoke(widget, "Render");
                 Check(widget.Topmost, "explicit pinning still works");
@@ -253,6 +259,131 @@ internal static class WidgetWindowTests
             menu.IsOpen = false; restore.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); await Task.Delay(150);
             Check(storage.Load().Settings.DisplayMode == "full" && Descendants<CheckBox>(cards).Any(), "minimal menu restores full mode and stage controls");
         }
+
+        private async Task CheckManagement(MainWindow widget, Storage storage, StackPanel cards)
+        {
+            var papers = Field<Library>(widget, "library").Papers;
+            // Use six fresh synthetic papers for a standalone or combined run.
+            Invoke(widget, "Commit", new Action<Library>(l =>
+            {
+                l.Papers = Enumerable.Range(1, 6).Select(i => new Paper { Title = "Synthetic management " + i }).ToList();
+                l.Settings.DisplayMode = "full"; l.Settings.PageMode = ViewRules.PageModes[0]; l.Settings.VisiblePriorities = Paper.Priorities.ToList();
+            }), "Synthetic setup");
+            Field<ComboBox>(widget, "filter").SelectedIndex = 0;
+            Field<TextBox>(widget, "search").Clear(); await Task.Delay(150);
+            papers = Field<Library>(widget, "library").Papers;
+            Exception? confirmationFailure = null;
+            void ScheduleConfirmation(bool accept)
+            {
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    DeletePaperDialog? confirmation = null;
+                    try
+                    {
+                        confirmation = Windows.OfType<DeletePaperDialog>().Single();
+                        Check(Descendants<TextBlock>(confirmation).Any(t => t.Text == Lang.T("删除后不可恢复，确定执行删除吗？")), "deletion uses the requested warning");
+                        Check(Descendants<Button>(confirmation).Single(b => b.IsDefault).Content.Equals(Lang.T("取消")), "deletion defaults to cancel");
+                        Check(((SolidColorBrush)Descendants<TextBlock>(confirmation).First().Foreground).Color == (Color)ColorConverter.ConvertFromString(Appearance.Current.Ink), "confirmation text follows the current theme");
+                        Snapshot(confirmation, "17-delete-confirmation");
+                        Click(confirmation, accept ? "删除论文" : "取消");
+                    }
+                    catch (Exception ex) { confirmationFailure = ex; if (confirmation != null) confirmation.DialogResult = false; }
+                }));
+            }
+            var firstId = papers[0].Id;
+            foreach (bool accept in new[] { false, true })
+            {
+                var gear = Descendants<Button>(cards).Single(b => System.Windows.Automation.AutomationProperties.GetName(b) == Lang.F("{0} 的论文设置", papers[0].Title));
+                gear.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var menu = gear.ContextMenu;
+                Check(menu.Items.OfType<MenuItem>().Any(i => Equals(i.Header, Lang.T("查看全部归档论文"))), "paper settings exposes the archive window");
+                var delete = menu.Items.OfType<MenuItem>().Single(i => Equals(i.Header, Lang.T("删除论文")));
+                menu.IsOpen = false; ScheduleConfirmation(accept); delete.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                if (confirmationFailure != null) throw confirmationFailure;
+                Check(storage.Load().Papers.Any(p => p.Id == firstId) != accept, "paper menu respects deletion confirmation: " + accept);
+                await Task.Delay(100);
+            }
+            foreach (bool accept in new[] { false, true })
+            {
+                var paper = Field<Library>(widget, "library").Papers[0]; Exception? failure = null;
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    PaperEditor? editor = null;
+                    try
+                    {
+                        editor = Windows.OfType<PaperEditor>().Single();
+                        Field<WrapPanel>(editor, "doneRow").Children.OfType<CheckBox>().First().IsChecked = true;
+                        ScheduleConfirmation(accept); Click(editor, "删除论文");
+                        if (!accept)
+                        {
+                            Check(editor.IsVisible && !storage.Load().Papers.Single(p => p.Id == paper.Id).Stages[0].Done, "cancelled deletion keeps the draft open and unsaved");
+                            Click(editor, "取消");
+                        }
+                    }
+                    catch (Exception ex) { failure = ex; if (editor != null && editor.IsVisible) editor.DialogResult = false; }
+                }));
+                Invoke(widget, "EditPaper", paper);
+                if (failure != null) throw failure;
+                if (confirmationFailure != null) throw confirmationFailure;
+                Check(storage.Load().Papers.Any(p => p.Id == paper.Id) != accept, "paper editor deletes only after confirmation: " + accept);
+            }
+            Invoke(widget, "Commit", new Action<Library>(l =>
+            {
+                foreach (var p in l.Papers.Take(3)) { p.Archived = true; p.Tags.Add("藏"); }
+                l.Settings.TagHidingEnabled = true; l.Settings.HiddenTags = new() { "藏" };
+                l.Settings.PageMode = ViewRules.PageModes[1]; l.Settings.PageIndex = 2; l.Settings.VisiblePriorities = new() { "低" };
+            }), "Synthetic archive setup");
+            Field<TextBox>(widget, "search").Text = "No synthetic match";
+            Field<ComboBox>(widget, "filter").SelectedIndex = 2;
+            var beforeSettings = System.Text.Json.JsonSerializer.Serialize(Field<Library>(widget, "library").Settings);
+            Exception? archiveFailure = null;
+            _ = Dispatcher.BeginInvoke(new Action(async () =>
+            {
+                ArchivedPapersWindow? archive = null;
+                try
+                {
+                    archive = Windows.OfType<ArchivedPapersWindow>().Single(); await Task.Delay(150);
+                    var rows = Field<StackPanel>(archive, "rows"); var search = Field<TextBox>(archive, "search");
+                    Check(rows.Children.Count == 3, "archive window lists all archived papers regardless of widget filters");
+                    Snapshot(archive, "18-archive-light");
+                    var title = Field<Library>(widget, "library").Papers.First(p => p.Archived).Title;
+                    search.Text = title; Check(rows.Children.Count == 1, "archive search finds a title");
+                    search.Text = "No matching title"; Check(Descendants<TextBlock>(rows).Any(t => t.Text == Lang.T("没有匹配的归档论文。")), "archive search has an empty state"); search.Clear();
+                    var dark = Storage.CloneLibrary(Field<Library>(widget, "library")).Settings; dark.Theme = "夜航 · 霜蓝";
+                    Appearance.Apply(dark); await Task.Delay(100); Snapshot(archive, "19-archive-dark");
+                    Check(((SolidColorBrush)archive.Background).Color == (Color)ColorConverter.ConvertFromString(Appearance.Current.Window), "archive window supports dark themes");
+                    Check(((SolidColorBrush)Descendants<TextBlock>(rows).First().Foreground).Color == (Color)ColorConverter.ConvertFromString(Appearance.Current.Ink), "archive paper titles remain legible after a dark theme switch");
+                    ScheduleConfirmation(false); Click((DependencyObject)rows.Children[0], "删除论文");
+                    Appearance.Apply(Field<Library>(widget, "library").Settings);
+                    Click((DependencyObject)rows.Children[0], "恢复到论文列表");
+                    Check(storage.Load().Papers.Count(p => p.Archived) == 2 && rows.Children.Count == 2, "restore updates the archive list immediately");
+                    var editId = (string)((FrameworkElement)rows.Children[0]).Tag;
+                    _ = Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        var editor = Windows.OfType<PaperEditor>().Single();
+                        Field<WrapPanel>(editor, "doneRow").Children.OfType<CheckBox>().First().IsChecked = true;
+                        Click(editor, "保存资料");
+                    }));
+                    Click((DependencyObject)rows.Children[0], "编辑论文资料");
+                    Check(storage.Load().Papers.Single(p => p.Id == editId).Stages[0].Done && rows.Children.Count == 2, "archived paper details remain editable without restoring the paper");
+                    ScheduleConfirmation(false); Click((DependencyObject)rows.Children[0], "删除论文");
+                    Check(rows.Children.Count == 2, "archive delete cancellation leaves papers intact");
+                    ScheduleConfirmation(true); Click((DependencyObject)rows.Children[0], "删除论文");
+                    Check(rows.Children.Count == 1 && storage.Load().Papers.Count(p => p.Archived) == 1, "archive deletion removes the selected paper");
+                    Click((DependencyObject)rows.Children[0], "恢复到论文列表");
+                    Check(Descendants<TextBlock>(rows).Any(t => t.Text == Lang.T("还没有归档论文。")), "archive window has a no-papers state after restoring the last paper");
+                    Check(Field<TextBox>(widget, "search").Text == "No synthetic match" && Field<ComboBox>(widget, "filter").SelectedIndex == 2, "archive actions do not change widget search or filter");
+                    Check(System.Text.Json.JsonSerializer.Serialize(Field<Library>(widget, "library").Settings) == beforeSettings, "archive actions preserve all widget display preferences");
+                    archive.Close();
+                }
+                catch (Exception ex) { archiveFailure = ex; archive?.Close(); }
+            }));
+            Invoke(widget, "OpenArchive", widget);
+            if (archiveFailure != null) throw archiveFailure;
+            if (confirmationFailure != null) throw confirmationFailure;
+        }
+
+        private static void Click(DependencyObject root, string text) => Descendants<Button>(root).Single(b => Equals(b.Content, Lang.T(text))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 
         private void Finish(MainWindow widget)
         {

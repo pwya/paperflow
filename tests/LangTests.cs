@@ -63,7 +63,7 @@ static class LangTests
         if (!Directory.Exists(folder)) throw new InvalidDataException("找不到界面源码目录：" + Path.GetFullPath(folder));
         var files = new[] { "MainWindow.cs", "SettingsWindow.cs", "Dialogs.cs", "NewPaperDialog.cs", "App.xaml.cs", "Appearance.cs", "Models.cs", "ViewRules.cs", "SyncEngine.cs", "Storage.cs", "Shortcuts.cs", "StartupEntry.cs", "Update.cs", "Chime.cs", "Themes.cs", "Schemes.cs" };
         var missing = new List<string>();
-        foreach (var file in files.Append("ArchivedPapersWindow.cs"))
+        foreach (var file in files.Concat(new[] { "ArchivedPapersWindow.cs", "StageEditor.cs", "ThemeMessageBox.cs" }))
         {
             foreach (var line in File.ReadAllLines(Path.Combine(folder, file)))
             {

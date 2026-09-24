@@ -20,8 +20,8 @@ internal static class WidgetWindowTests
     [STAThread]
     public static int Main(string[] args)
     {
-        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only" or "--updates-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only, --paper-management-only or --updates-only."); return 2; }
-        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only"), UpdatesOnly = args.Contains("--updates-only") };
+        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only" or "--updates-only" or "--themes-order-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only, --paper-management-only, --updates-only or --themes-order-only."); return 2; }
+        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only"), UpdatesOnly = args.Contains("--updates-only"), ThemesOrderOnly = args.Contains("--themes-order-only") };
         var source = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PaperFlow", "App.xaml"));
         System.Xml.Linq.XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         var resources = new System.Xml.Linq.XElement(wpf + "ResourceDictionary",
@@ -38,6 +38,7 @@ internal static class WidgetWindowTests
         public bool MinimalOnly;
         public bool ManagementOnly;
         public bool UpdatesOnly;
+        public bool ThemesOrderOnly;
         private int checks;
         private readonly List<string> observations = new();
         private void Check(bool ok, string label)
@@ -71,6 +72,7 @@ internal static class WidgetWindowTests
                 widget.Show(); widget.Activate();
                 await Task.Delay(700);
                 var cards = Field<StackPanel>(widget, "cards");
+                if (ThemesOrderOnly) { await CheckThemesAndOrder(widget, storage, cards); Finish(widget); return; }
                 if (UpdatesOnly) { await CheckManualUpdates(widget, storage); Finish(widget); return; }
                 if (ManagementOnly) { await CheckManagement(widget, storage, cards); Finish(widget); return; }
                 if (MinimalOnly) { await CheckMinimal(widget, storage, cards); Finish(widget); return; }
@@ -170,6 +172,7 @@ internal static class WidgetWindowTests
                 await CheckMinimal(widget, storage, cards);
                 await CheckManagement(widget, storage, cards);
                 await CheckManualUpdates(widget, storage);
+                await CheckThemesAndOrder(widget, storage, cards);
                 current = Field<Library>(widget, "library");
                 current.Settings.WindowMode = "topmost"; Invoke(widget, "Render");
                 Check(widget.Topmost, "explicit pinning still works");
@@ -563,7 +566,129 @@ internal static class WidgetWindowTests
             }
         }
 
-        private void Snapshot(Window window, string name)
+        private async Task CheckThemesAndOrder(MainWindow widget, Storage storage, StackPanel cards)
+        {
+            bool ColorIs(Brush brush, string color) => brush is SolidColorBrush solid && solid.Color == (Color)ColorConverter.ConvertFromString(color);
+            Field<ComboBox>(widget, "filter").SelectedIndex = 0; Field<TextBox>(widget, "search").Clear();
+            Invoke(widget, "Commit", (Action<Library>)(l =>
+            {
+                l.Papers = Enumerable.Range(1, 6).Select(i => new Paper { Title = "Synthetic paper " + i, Priority = i < 4 ? "高" : "中" }).ToList();
+                l.Settings.VisiblePriorities = Paper.Priorities.ToList(); l.Settings.TagHidingEnabled = false;
+            }), null!);
+            foreach (string mode in new[] { "full", "minimal" })
+            foreach (int sortIndex in new[] { 0, 1, 2, 3 })
+            {
+                Invoke(widget, "Commit", (Action<Library>)(l =>
+                {
+                    l.Settings.DisplayMode = mode;
+                    l.Settings.PageMode = ViewRules.PageModes[1]; l.Settings.PageIndex = 0;
+                }), null!);
+                Field<ComboBox>(widget, "sort").SelectedIndex = sortIndex;
+                var visible = cards.Children.OfType<Border>().Select(c => (string)c.Tag).ToArray();
+                var before = storage.Load();
+                // The sorted first case also needs to persist the order before switching modes.
+                string id = visible[sortIndex == 1 ? 0 : ^1];
+                var paper = Field<Library>(widget, "library").Papers.Single(p => p.Id == id);
+                var anchor = (FrameworkElement)cards.Children.OfType<Border>().Single(c => Equals(c.Tag, id));
+                Invoke(widget, "PaperMenu", paper, anchor);
+                var menu = anchor.ContextMenu;
+                var move = menu.Items.OfType<MenuItem>().Single(i => Equals(i.Header, Lang.T("移到最前面")));
+                menu.IsOpen = false; move.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                await Task.Delay(100);
+                var after = storage.Load();
+                Check(Equals(((Border)cards.Children[0]).Tag, id), "move-to-front menu works in " + mode + " sort " + sortIndex);
+                Check(after.Settings.SortMode == ViewRules.SortModes[0] && Field<ComboBox>(widget, "sort").SelectedIndex == 0, "move switches and saves manual order");
+                Check(after.Papers.Where(p => visible.Contains(p.Id)).Select(p => p.Id).SequenceEqual(new[] { id }.Concat(visible.Where(x => x != id))), "rest of visible order survives");
+                Check(before.Papers.Select((p, i) => visible.Contains(p.Id) || after.Papers[i].Id == p.Id).All(x => x), "other priority-page slots are untouched");
+                Check(after.Papers.All(p => before.Papers.Single(b => b.Id == p.Id).Priority == p.Priority), "move does not change priorities");
+            }
+            var current = Field<Library>(widget, "library");
+            var prefs = Storage.CloneLibrary(current).Settings;
+            var sample = Storage.Clone(current.Papers[0]);
+            var editor = new PaperEditor(sample, Array.Empty<string>(), Array.Empty<StageScheme>()) { Owner = widget };
+            var dialogs = new Window[]
+            {
+                editor, new NewPaperDialog(), new TextPrompt("Synthetic scheme", "Synthetic hint", ""),
+                new StageEditorDialog("Synthetic stages", "Synthetic hint", sample.SchemeName, sample.Stages.Select(s => s.Name).ToList(), false),
+                new DeletePaperDialog("Synthetic paper"), new UpdateNotesDialog("0.0.0", "Synthetic notes"),
+                new ThemeMessageBox("Synthetic confirmation", "Synthetic title", MessageBoxButton.OKCancel, MessageBoxImage.Question)
+            };
+            foreach (var dialog in dialogs) { dialog.Owner = widget; dialog.Show(); }
+            foreach (var scene in new[] { (Themes.Default, "light"), ("夜航 · 霜蓝", "dark"), ("柔光 · 藕荷", "color") })
+            {
+                prefs.Theme = scene.Item1; Appearance.Apply(prefs); await Task.Delay(100);
+                foreach (var dialog in dialogs)
+                    Check(ColorIs(dialog.Background, Appearance.Current.Window) && ColorIs(dialog.Foreground, Appearance.Current.Ink), dialog.GetType().Name + " follows live " + scene.Item2 + " theme");
+                var anchor = (FrameworkElement)cards.Children[0];
+                Invoke(widget, "PaperMenu", sample, anchor); await Task.Delay(100);
+                var menu = anchor.ContextMenu;
+                Check(ColorIs(menu.Background, Appearance.Current.Card), "paper menu background follows " + scene.Item2);
+                Check(menu.Items.OfType<MenuItem>().All(i => ColorIs(i.Foreground, Appearance.Current.Ink)), "paper menu text follows " + scene.Item2);
+                Snapshot(menu, "theme-menu-" + scene.Item2); menu.IsOpen = false;
+                Invoke(widget, "PriorityMenu", sample, anchor); await Task.Delay(50);
+                menu = anchor.ContextMenu;
+                var selected = menu.Items.OfType<MenuItem>().Single(i => i.IsChecked);
+                Check(ColorIs(menu.Background, Appearance.Current.Card) && ((System.Windows.Shapes.Path)selected.Template.FindName("Tick", selected)).Visibility == Visibility.Visible, "priority menu retains its themed checkmark");
+                Snapshot(menu, "theme-priority-" + scene.Item2); menu.IsOpen = false;
+                var tip = new ToolTip { Content = "Synthetic tooltip", PlacementTarget = anchor, IsOpen = true }; await Task.Delay(50);
+                Check(ColorIs(tip.Background, Appearance.Current.Card) && ColorIs(tip.Foreground, Appearance.Current.Ink), "tooltip follows " + scene.Item2); tip.IsOpen = false;
+                var input = Descendants<TextBox>(editor).First(t => t.Text == sample.Title);
+                var editMenu = input.ContextMenu; editMenu.PlacementTarget = input; editMenu.IsOpen = true;
+                await Task.Delay(50);
+                var selectAll = editMenu.Items.OfType<MenuItem>().Single(i => i.Command == ApplicationCommands.SelectAll);
+                Check(ColorIs(editMenu.Background, Appearance.Current.Card) && selectAll.CommandTarget == input, "input menu is themed and targets the correct field");
+                editMenu.IsOpen = false; ApplicationCommands.SelectAll.Execute(null, selectAll.CommandTarget);
+                Check(input.SelectedText == input.Text, "input menu commands still work");
+                dynamic tray = Field<object>(widget, "tray");
+                object trayMenu = tray.ContextMenuStrip;
+                Invoke(trayMenu, "OnOpening", new System.ComponentModel.CancelEventArgs());
+                Check(((dynamic)trayMenu).BackColor.ToArgb() == System.Drawing.ColorTranslator.FromHtml(Appearance.Current.Card).ToArgb(), "tray menu uses the current theme");
+                var date = Descendants<DatePicker>(editor).First();
+                date.IsDropDownOpen = true; await Task.Delay(100);
+                var popup = (System.Windows.Controls.Primitives.Popup)date.Template.FindName("PART_Popup", date);
+                var calendar = (Calendar)popup.Child;
+                var item = Descendants<System.Windows.Controls.Primitives.CalendarItem>(calendar).Single();
+                Check(ColorIs(item.Background, Appearance.Current.Card) && ColorIs(item.Foreground, Appearance.Current.Ink), "calendar follows " + scene.Item2);
+                Check(Descendants<System.Windows.Controls.Primitives.CalendarDayButton>(calendar).Count() == 42, "calendar displays all day cells");
+                var original = date.SelectedDate;
+                calendar.SelectedDate = original!.Value.AddDays(1);
+                Check(date.SelectedDate == original.Value.AddDays(1), "calendar selection still updates date input");
+                date.IsDropDownOpen = true; await Task.Delay(50);
+                Snapshot(calendar, "theme-calendar-" + scene.Item2);
+                calendar.DisplayMode = CalendarMode.Year; await Task.Delay(50);
+                Check(Descendants<System.Windows.Controls.Primitives.CalendarButton>(calendar).Count(b => b.IsVisible) == 12, "month navigation stays available");
+                calendar.DisplayMode = CalendarMode.Decade; await Task.Delay(50);
+                Check(Descendants<System.Windows.Controls.Primitives.CalendarButton>(calendar).Count(b => b.IsVisible) == 12, "year navigation stays available");
+                calendar.DisplayMode = CalendarMode.Month; date.IsDropDownOpen = false;
+                date.Text = original.Value.ToShortDateString();
+                Check(date.SelectedDate == original, "typing a date still commits through the themed input");
+                Snapshot(editor, "theme-editor-" + scene.Item2);
+                Snapshot(dialogs[^1], "theme-confirm-" + scene.Item2);
+            }
+            foreach (var dialog in dialogs) dialog.Close();
+            foreach (var buttons in new[] { MessageBoxButton.OK, MessageBoxButton.OKCancel, MessageBoxButton.YesNoCancel })
+            foreach (var action in new[] { "close", "accept" })
+            {
+                Exception? failure = null;
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    var dialog = Windows.OfType<ThemeMessageBox>().Single();
+                    try
+                    {
+                        Check(Descendants<Button>(dialog).Single(b => b.IsDefault).Content.Equals(buttons == MessageBoxButton.OK ? Lang.T("好") : Lang.T("取消")), "message defaults to a safe answer");
+                        if (action == "accept") Click(dialog, buttons == MessageBoxButton.YesNoCancel ? "是" : "好");
+                        else dialog.Close();
+                    }
+                    catch (Exception ex) { failure = ex; dialog.Close(); }
+                }));
+                var result = ThemeMessageBox.Show(widget, "Synthetic message", "Synthetic title", buttons);
+                if (failure != null) throw failure;
+                var expected = action == "accept" ? (buttons == MessageBoxButton.YesNoCancel ? MessageBoxResult.Yes : MessageBoxResult.OK) : buttons == MessageBoxButton.OK ? MessageBoxResult.OK : MessageBoxResult.Cancel;
+                Check(result == expected, "message preserves result for " + buttons + " " + action);
+            }
+        }
+
+        private void Snapshot(FrameworkElement window, string name)
         {
             window.UpdateLayout();
             var bitmap = new RenderTargetBitmap((int)Math.Ceiling(window.ActualWidth), (int)Math.Ceiling(window.ActualHeight), 96, 96, PixelFormats.Pbgra32);

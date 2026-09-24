@@ -16,6 +16,7 @@ public sealed class TextPrompt : Window
     public TextPrompt(string headline, string hint, string initial)
     {
         Title = headline; Width = Math.Min(420 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40); SizeToContent = SizeToContent.Height;
+        SetResourceReference(BackgroundProperty, "WindowBackground"); SetResourceReference(ForegroundProperty, "Ink");
         WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false; ResizeMode = ResizeMode.NoResize;
         var body = new StackPanel { Margin = new Thickness(20) };
         var label = MainWindow.Text(hint, 12, "#62766A"); body.Children.Add(label);
@@ -76,22 +77,22 @@ public sealed class StageEditorDialog : Window
         var stageLabel = MainWindow.Text(Lang.T("阶段（按住左边的点拖动排序）"), 12, "#62766A"); body.Children.Add(stageLabel);
         cardList.Margin = new Thickness(0, 8, 0, 8); body.Children.Add(cardList);
         var row = new StackPanel { Orientation = Orientation.Horizontal };
-        row.Children.Add(MainWindow.ActionButton(Lang.T("添加阶段"), () => { if (stages.Count >= Schemes.MaxStages) { MessageBox.Show(this, Storage.Why(SchemeProblem.TooManyStages)); return; } stages.Add(Lang.T("新阶段")); Build(); }));
+        row.Children.Add(MainWindow.ActionButton(Lang.T("添加阶段"), () => { if (stages.Count >= Schemes.MaxStages) { ThemeMessageBox.Show(this, Storage.Why(SchemeProblem.TooManyStages)); return; } stages.Add(Lang.T("新阶段")); Build(); }));
         if (!schemeMode)
             row.Children.Add(MainWindow.ActionButton(Lang.T("另存为方案…"), () =>
             {
                 string name = AskName(Lang.T("另存为方案"), Lang.T("给这套阶段起个名字，以后别的论文可以直接选它。"), "");
                 if (name.Length == 0) return;
-                if (!Validate(name, true, out string why)) { MessageBox.Show(this, why); return; }
+                if (!Validate(name, true, out string why)) { ThemeMessageBox.Show(this, why); return; }
                 SavedScheme = new StageScheme(name, stages.ToList());
-                MessageBox.Show(this, Lang.T("已经存成一个方案了，保存这篇论文之后就能在别的论文里选它。"));
+                ThemeMessageBox.Show(this, Lang.T("已经存成一个方案了，保存这篇论文之后就能在别的论文里选它。"));
             }));
         body.Children.Add(row);
         actions.Children.Add(MainWindow.ActionButton(Lang.T("取消"), () => DialogResult = false));
         actions.Children.Add(MainWindow.ActionButton(Lang.T("保存"), () =>
         {
             string name = schemeMode ? schemeName.Text.Trim() : ResultSchemeName;
-            if (!Validate(name, schemeMode, out string why)) { MessageBox.Show(this, why); return; }
+            if (!Validate(name, schemeMode, out string why)) { ThemeMessageBox.Show(this, why); return; }
             ResultSchemeName = name; ResultStages = stages.ToList(); DialogResult = true;
         }, true));
         Build();
@@ -134,10 +135,10 @@ public sealed class StageEditorDialog : Window
         name.TextChanged += (_, _) => { if (slot < stages.Count) stages[slot] = name.Text; };
         var remove = MainWindow.ActionButton("✕", () =>
         {
-            if (stages.Count <= Schemes.MinStages) { MessageBox.Show(this, Storage.Why(SchemeProblem.TooFewStages)); return; }
+            if (stages.Count <= Schemes.MinStages) { ThemeMessageBox.Show(this, Storage.Why(SchemeProblem.TooFewStages)); return; }
             // 删掉一个已经打了勾的阶段会让那一步的勾消失：先说清楚，再动手。
             if (stageIsChecked(stages[slot])
-                && MessageBox.Show(this, Lang.F("『{0}』已经打了勾，删掉之后这一步的勾会消失，其余阶段不动。", Lang.T(Schemes.Display(stages[slot]))) + "\n\n" + Lang.T("要继续吗？"),
+                && ThemeMessageBox.Show(this, Lang.F("『{0}』已经打了勾，删掉之后这一步的勾会消失，其余阶段不动。", Lang.T(Schemes.Display(stages[slot]))) + "\n\n" + Lang.T("要继续吗？"),
                     Lang.T("删掉这个阶段"), MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK) return;
             stages.RemoveAt(slot); Build();
         });
@@ -149,10 +150,10 @@ public sealed class StageEditorDialog : Window
         var card = new Border
         {
             Child = dock, Margin = new Thickness(0, 0, 0, 6),
-            Background = Appearance.Paint(Appearance.Current.Card, Appearance.Opacity),
-            BorderBrush = Appearance.Paint(Appearance.Current.Border, .9), BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8), Padding = new Thickness(10, 7, 10, 7)
         };
+        card.SetResourceReference(Border.BackgroundProperty, "Card"); card.SetResourceReference(Border.BorderBrushProperty, "Line");
         bool dragging = false, moved = false;
         Point start = default;
         int target = slot;

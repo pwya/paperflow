@@ -20,5 +20,13 @@ static class PaperOrderTests
         PaperOrder.MoveVisible(papers, new[] { "b", "c" }, "c", "b", true);
         check(Order() == "b,hidden,a,c", "filtered move preserves other visible-hidden positions");
         check(papers.All(p => p.Title == titles[p.Id]) && papers.Single(p => p.Id == "hidden").Archived, "reorder preserves paper contents");
+        check(PaperOrder.MoveFirst(papers, new[] { "b", "a", "c" }, "c"), "one-click moves last visible paper to front");
+        check(Order() == "c,hidden,b,a", "move to front preserves hidden slot and remaining relative order");
+        check(!PaperOrder.MoveFirst(papers, new[] { "c", "b", "a" }, "c"), "already first manual paper is a no-op");
+        check(PaperOrder.MoveFirst(papers, new[] { "b", "a", "c" }, "b"), "already first sorted paper still becomes first in manual order");
+        check(Order() == "b,hidden,a,c", "sorted move materializes the entire visible order");
+        check(!PaperOrder.MoveFirst(papers, Array.Empty<string>(), "b") && !PaperOrder.MoveFirst(papers, new[] { "a", "c" }, "b"), "empty or stale filtered source is ignored");
+        check(PaperOrder.MoveFirst(papers, new[] { "a", "c", "c", "missing" }, "c") && Order() == "b,hidden,c,a", "priority-page move only changes its own slots");
+        check(papers.All(p => p.Title == titles[p.Id]) && papers.Single(p => p.Id == "hidden").Archived, "move to front preserves contents and archive flags");
     }
 }

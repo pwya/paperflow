@@ -301,8 +301,8 @@ public sealed class SettingsWindow : Window
                 {
                     string wanted = (box.Text ?? "").Trim();
                     if (wanted == original) return;
-                    if (!Schemes.IsValidTagName(wanted)) { MessageBox.Show(this, Lang.T("标签名不能为空，也不能超过六个汉字那么宽。")); RebuildTags(); return; }
-                    if (Result.CustomTags.Contains(wanted)) { MessageBox.Show(this, Lang.T("已经有同名的标签了。")); RebuildTags(); return; }
+                    if (!Schemes.IsValidTagName(wanted)) { ThemeMessageBox.Show(this, Lang.T("标签名不能为空，也不能超过六个汉字那么宽。")); RebuildTags(); return; }
+                    if (Result.CustomTags.Contains(wanted)) { ThemeMessageBox.Show(this, Lang.T("已经有同名的标签了。")); RebuildTags(); return; }
                     int at = Result.CustomTags.IndexOf(original);
                     if (at >= 0) Result.CustomTags[at] = wanted;
                     for (int i = 0; i < Result.HiddenTags.Count; i++) if (Result.HiddenTags[i] == original) Result.HiddenTags[i] = wanted;
@@ -316,18 +316,18 @@ public sealed class SettingsWindow : Window
                 if (Result.CustomTags.Contains(original))
                     row.Children.Add(B(Lang.T("删掉"), () => { Result.CustomTags.Remove(original); Result.HiddenTags.Remove(original); RebuildTags(); }));
                 else
-                    row.Children.Add(new TextBlock { Text = Lang.F("还贴在 {0} 篇论文上", carried.TryGetValue(original, out int count) ? count : 0), Foreground = MainWindow.Brush("#78867F"), FontSize = 11 * scale, VerticalAlignment = VerticalAlignment.Center });
+                    row.Children.Add(MainWindow.Text(Lang.F("还贴在 {0} 篇论文上", carried.TryGetValue(original, out int count) ? count : 0), 11, "#78867F", scale));
                 tagRows.Children.Add(row);
             }
-            if (known.Count == 0) tagRows.Children.Add(new TextBlock { Text = Lang.T("还没有标签。"), Foreground = MainWindow.Brush("#78867F"), FontSize = 11 * scale });
+            if (known.Count == 0) tagRows.Children.Add(MainWindow.Text(Lang.T("还没有标签。"), 11, "#78867F", scale));
         }
         tagAdd.Click += (_, _) =>
         {
             string wanted = (tagInput.Text ?? "").Trim();
             if (wanted.Length == 0) return;
-            if (!Schemes.IsValidTagName(wanted)) { MessageBox.Show(this, Lang.T("标签名不能为空，也不能超过六个汉字那么宽。")); return; }
-            if (Result.CustomTags.Contains(wanted)) { MessageBox.Show(this, Lang.T("已经有同名的标签了。")); return; }
-            if (Result.CustomTags.Count >= Schemes.MaxCustomTags) { MessageBox.Show(this, Lang.F("自建标签最多 {0} 个。", Schemes.MaxCustomTags)); return; }
+            if (!Schemes.IsValidTagName(wanted)) { ThemeMessageBox.Show(this, Lang.T("标签名不能为空，也不能超过六个汉字那么宽。")); return; }
+            if (Result.CustomTags.Contains(wanted)) { ThemeMessageBox.Show(this, Lang.T("已经有同名的标签了。")); return; }
+            if (Result.CustomTags.Count >= Schemes.MaxCustomTags) { ThemeMessageBox.Show(this, Lang.F("自建标签最多 {0} 个。", Schemes.MaxCustomTags)); return; }
             Result.CustomTags.Add(wanted); tagInput.Clear(); RebuildTags();
         };
         RebuildTags();
@@ -407,7 +407,7 @@ public sealed class SettingsWindow : Window
                         var (usingCount, editedCount) = schemeUsage(current.Name);
                         if (usingCount > 0)
                         {
-                            var answer = MessageBox.Show(this,
+                            var answer = ThemeMessageBox.Show(this,
                                 Lang.F("有 {0} 篇论文在用《{1}》，其中 {2} 篇你单独改过。\n\n“是”：一起更新（单独改过的会被覆盖）\n“否”：只更新没单独改过的\n“取消”：都不动，只改方案库", usingCount, Lang.T(editor.ResultSchemeName), editedCount),
                                 Lang.T("改方案"), MessageBoxButton.YesNoCancel, MessageBoxImage.Question);
                             if (answer == MessageBoxResult.Yes) SchemeStageUpdates.Add((editor.ResultSchemeName, current.StageNames, editor.ResultStages, false));
@@ -420,18 +420,18 @@ public sealed class SettingsWindow : Window
                 row.Children.Add(B(Lang.T("删掉"), () =>
                 {
                     int used = schemeUsage(current.Name).Using;
-                    if (used > 0) { MessageBox.Show(this, Lang.F("还有 {0} 篇论文在用《{1}》，先给它们换一个方案，再删这个方案。", used, Lang.T(current.Name))); return; }
+                    if (used > 0) { ThemeMessageBox.Show(this, Lang.F("还有 {0} 篇论文在用《{1}》，先给它们换一个方案，再删这个方案。", used, Lang.T(current.Name))); return; }
                     Result.CustomSchemes.Remove(current); RebuildSchemes();
                 }));
                 schemeRows.Children.Add(row);
             }
-            if (Result.CustomSchemes.Count == 0) schemeRows.Children.Add(new TextBlock { Text = Lang.T("还没有自己的方案。"), Foreground = MainWindow.Brush("#78867F"), FontSize = 11 * scale });
+            if (Result.CustomSchemes.Count == 0) schemeRows.Children.Add(MainWindow.Text(Lang.T("还没有自己的方案。"), 11, "#78867F", scale));
         }
         bool AddScheme(string rawName, IReadOnlyList<string> stageNames)
         {
             string name = (rawName ?? "").Trim();
-            if (!Schemes.IsValidSchemeName(name)) { MessageBox.Show(this, Storage.Why(SchemeProblem.NameTooWide)); return false; }
-            if (Schemes.IsBuiltIn(name) || Result.CustomSchemes.Any(s => s.Name == name)) { MessageBox.Show(this, Lang.T("已经有同名的方案了。")); return false; }
+            if (!Schemes.IsValidSchemeName(name)) { ThemeMessageBox.Show(this, Storage.Why(SchemeProblem.NameTooWide)); return false; }
+            if (Schemes.IsBuiltIn(name) || Result.CustomSchemes.Any(s => s.Name == name)) { ThemeMessageBox.Show(this, Lang.T("已经有同名的方案了。")); return false; }
             Result.CustomSchemes.Add(new StageScheme(name, stageNames.ToList()));
             return true;
         }
@@ -526,7 +526,7 @@ public sealed class SettingsWindow : Window
                 if (desktop != Shortcuts.Exists(Shortcuts.DesktopPath()) || menu != Shortcuts.Exists(Shortcuts.StartMenuPath())) Shortcuts.Apply(desktop, menu, Result.LauncherPath);
                 DialogResult = true;
             }
-            catch (Exception ex) { MessageBox.Show(this, Lang.T("设置未能保存。\n") + ex.Message); }
+            catch (Exception ex) { ThemeMessageBox.Show(this, Lang.T("设置未能保存。\n") + ex.Message); }
         }, true)); ready = true; RefreshFit();
     }
     private static void OpenFolder(string folder) { Directory.CreateDirectory(folder); OpenUrl(folder); }

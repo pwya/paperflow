@@ -56,7 +56,7 @@ public sealed class PaperEditor : Window
                 if (tagPicks.Count(x => x.IsChecked == true) > Schemes.MaxTags)
                 {
                     pick.IsChecked = false;
-                    MessageBox.Show(this, Lang.F("一篇论文最多贴 {0} 个标签。", Schemes.MaxTags));
+                    ThemeMessageBox.Show(this, Lang.F("一篇论文最多贴 {0} 个标签。", Schemes.MaxTags));
                 }
             };
             tagPicks.Add(pick); tagRow.Children.Add(pick);
@@ -95,7 +95,7 @@ public sealed class PaperEditor : Window
                 string question = kept == 0
                     ? Lang.F("《{0}》和《{1}》没有同名阶段，换过去以后这篇论文的进度会回到 0%，需要重新勾。", Lang.T(paper.SchemeName), Lang.T(name))
                     : Lang.F("换成《{0}》后，能对上的阶段会保留勾选；对不上的 {1} 个阶段会变回未勾，进度跟着变。", Lang.T(name), lost);
-                if (MessageBox.Show(this, question + "\n\n" + Lang.T("要继续吗？"), Lang.T("换阶段方案"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
+                if (ThemeMessageBox.Show(this, question + "\n\n" + Lang.T("要继续吗？"), Lang.T("换阶段方案"), MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK)
                 { schemePicker.SelectedIndex = schemeIndex; return; }
             }
             paper.Stages = Schemes.Switch(paper.Stages, scheme.StageNames);
@@ -121,7 +121,7 @@ public sealed class PaperEditor : Window
             foreach (var removed in before.Except(editor.ResultStages)) paper.Record("删掉阶段 · " + Schemes.Display(removed));
             if (editor.SavedScheme != null) SavedScheme = editor.SavedScheme;
             else if (!editor.ResultStages.SequenceEqual(before)
-                && MessageBox.Show(this, Lang.T("要不要把现在的阶段存成一个方案？起个名字，以后别的论文也能直接用。"), Lang.T("另存为方案"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
+                && ThemeMessageBox.Show(this, Lang.T("要不要把现在的阶段存成一个方案？起个名字，以后别的论文也能直接用。"), Lang.T("另存为方案"), MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
                 SavedScheme = AskForScheme(editor.ResultStages);
             RebuildStageChecks(); RefreshSchemes();
         }
@@ -130,9 +130,9 @@ public sealed class PaperEditor : Window
             var prompt = new TextPrompt(Lang.T("另存为方案"), Lang.T("给这套阶段起个名字，以后别的论文可以直接选它。"), "") { Owner = this };
             if (prompt.ShowDialog() != true) return null;
             string name = prompt.Value;
-            if (!Schemes.IsValidSchemeName(name)) { MessageBox.Show(this, Storage.Why(SchemeProblem.NameTooWide)); return null; }
-            if (Schemes.IsBuiltIn(name) || Schemes.All(knownSchemes).Any(s => s.Name == name)) { MessageBox.Show(this, Lang.T("已经有同名的方案了。")); return null; }
-            MessageBox.Show(this, Lang.T("已经存成一个方案了，保存之后就能在别的论文里选它。"));
+            if (!Schemes.IsValidSchemeName(name)) { ThemeMessageBox.Show(this, Storage.Why(SchemeProblem.NameTooWide)); return null; }
+            if (Schemes.IsBuiltIn(name) || Schemes.All(knownSchemes).Any(s => s.Name == name)) { ThemeMessageBox.Show(this, Lang.T("已经有同名的方案了。")); return null; }
+            ThemeMessageBox.Show(this, Lang.T("已经存成一个方案了，保存之后就能在别的论文里选它。"));
             return new StageScheme(name, stageNames.ToList());
         }
         RefreshSchemes();
@@ -184,9 +184,9 @@ public sealed class PaperEditor : Window
         var save = MainWindow.ActionButton(Lang.T("保存资料"), () =>
         {
             // DatePicker commits edited text on focus loss before this click handler.
-            if (string.IsNullOrWhiteSpace(title.Text)) { MessageBox.Show(this, Lang.T("请填写论文标题。")); title.Focus(); return; }
-            if (invalidDate || start.SelectedDate == null || (!string.IsNullOrWhiteSpace(due.Text) && due.SelectedDate == null)) { MessageBox.Show(this, Lang.T("请填写有效日期，截止日期也可以留空。")); return; }
-            if (start.SelectedDate.Value.Year < 1900 || start.SelectedDate.Value.Year > 2200 || due.SelectedDate?.Year < 1900 || due.SelectedDate?.Year > 2200) { MessageBox.Show(this, Lang.T("日期需在 1900—2200 年之间。")); return; }
+            if (string.IsNullOrWhiteSpace(title.Text)) { ThemeMessageBox.Show(this, Lang.T("请填写论文标题。")); title.Focus(); return; }
+            if (invalidDate || start.SelectedDate == null || (!string.IsNullOrWhiteSpace(due.Text) && due.SelectedDate == null)) { ThemeMessageBox.Show(this, Lang.T("请填写有效日期，截止日期也可以留空。")); return; }
+            if (start.SelectedDate.Value.Year < 1900 || start.SelectedDate.Value.Year > 2200 || due.SelectedDate?.Year < 1900 || due.SelectedDate?.Year > 2200) { ThemeMessageBox.Show(this, Lang.T("日期需在 1900—2200 年之间。")); return; }
             paper.Title = title.Text.Trim(); paper.Subject = subject.Text.Trim(); paper.Language = language.Text.Trim(); paper.Collaborators = collaborators.Text.Trim();
             paper.Priority = (priority.SelectedItem as Choice)?.Value ?? "中";
             paper.Journal = journal.Text.Trim(); paper.Status = (status.SelectedItem as Choice)?.Value ?? "准备中"; paper.NextAction = next.Text.Trim();

@@ -76,7 +76,7 @@ public sealed class MainWindow : Window
     public static TextBlock Text(string text, double size = 13, string color = "#24352F", double scale = -1, string role = "body")
     {
         string custom = Appearance.RoleColor(role);
-        return new TextBlock
+        var block = new TextBlock
         {
             Text = text,
             FontFamily = new FontFamily(Appearance.FamilyFor(role)),
@@ -84,6 +84,15 @@ public sealed class MainWindow : Window
             Foreground = custom == "" ? Brush(color) : Appearance.Paint(custom),
             VerticalAlignment = VerticalAlignment.Center
         };
+        var resource = color switch
+        {
+            "#24352F" => "Ink",
+            "#78867F" or "#62766A" or "#8A948C" or "#6C7C70" or "#99A49B" or "#567062" => "Muted",
+            "#21846B" or "#2F8B6D" or "#4A9E83" => "Accent",
+            _ => null
+        };
+        if (resource != null) block.SetResourceReference(TextBlock.ForegroundProperty, role + resource);
+        return block;
     }
     public static Button ActionButton(string text, Action action, bool primary = false, double scale = -1)
     {
@@ -233,7 +242,7 @@ public sealed class MainWindow : Window
         LayoutUpdated += (_, _) => UpdateMinimumHeight();
 
         tray = new Forms.NotifyIcon { Icon = CreateTrayIcon(), Text = Lang.T("PaperFlow · 双击打开") + (Product.Demo ? Lang.T("（试用）") : ""), Visible = !demonstration };
-        var trayMenu = new Forms.ContextMenuStrip();
+        var trayMenu = new ThemeTrayMenu();
         trayMenu.Items.Add(Lang.T("显示 PaperFlow"), null, (_, _) => Dispatcher.Invoke(Reveal));
         trayMenu.Items.Add(Lang.T("始终置顶 / 取消置顶"), null, (_, _) => Dispatcher.Invoke(TogglePin));
         trayMenu.Items.Add(Lang.T("放好桌面和开始菜单快捷方式"), null, (_, _) => Dispatcher.Invoke(CreateShortcuts));
@@ -337,7 +346,7 @@ public sealed class MainWindow : Window
         catch (Exception ex)
         {
             Render(); footer.Text = Lang.T("保存失败 · 本次修改未生效");
-            MessageBox.Show(this, Lang.T("无法保存，本次修改没有写入。\n\n") + ex.Message, Lang.T("保存失败"), MessageBoxButton.OK, MessageBoxImage.Error); return false;
+            ThemeMessageBox.Show(this, Lang.T("无法保存，本次修改没有写入。\n\n") + ex.Message, Lang.T("保存失败"), MessageBoxButton.OK, MessageBoxImage.Error); return false;
         }
     }
     private bool SaveWindow() => Commit(l =>
@@ -929,6 +938,7 @@ public sealed class MainWindow : Window
         Item(Lang.T("编辑论文资料"), () => EditPaper(p));
         Item(Lang.T("查看修改记录"), () => ShowHistory(p));
         menu.Items.Add(new Separator());
+        Item(Lang.T("移到最前面"), () => MovePaperFirst(p.Id));
         Item(Lang.T("上移一位"), () => MovePaper(p.Id, -1)); Item(Lang.T("下移一位"), () => MovePaper(p.Id, 1));
         Item(Lang.T("复制为新论文（阶段清零）"), () =>
         {
@@ -955,12 +965,26 @@ public sealed class MainWindow : Window
             item.Click += (_, _) => Commit(l => { var paper = l.Papers.Single(x => x.Id == p.Id); if (paper.Priority != value) { paper.Priority = value; paper.Record("优先级设为" + value); } });
             menu.Items.Add(item);
         }
+        anchor.ContextMenu = menu;
         menu.IsOpen = true;
     }
     private void MovePaper(string id, int delta)
     {
         sort.SelectedIndex = 0;
         Commit(l => { int index = l.Papers.FindIndex(p => p.Id == id); int next = index + delta; if (next >= 0 && next < l.Papers.Count) (l.Papers[index], l.Papers[next]) = (l.Papers[next], l.Papers[index]); });
+    }
+    private void MovePaperFirst(string id)
+    {
+        var visible = ViewRules.Apply(Candidates(), library.Settings).Select(p => p.Id).ToList();
+        if (!visible.Contains(id)) return;
+        if (!Commit(l =>
+        {
+            if (PaperOrder.MoveFirst(l.Papers, visible, id)) l.Papers.Single(p => p.Id == id).Record("调整论文优先顺序");
+            l.Settings.SortMode = ViewRules.SortModes[0];
+        }, Lang.T("已移到最前面"))) return;
+        sort.SelectedIndex = 0;
+        Render();
+        scroller.ScrollToTop();
     }
     private void EditPaper(Paper original)
         => EditPaperInWindow(original, this);
@@ -1072,7 +1096,7 @@ public sealed class MainWindow : Window
             Shortcuts.Apply(true, true, library.Settings.LauncherPath);
             tray.ShowBalloonTip(6000, Product.Name, Lang.T("桌面和开始菜单各放好一个入口。要固定在任务栏，右键那个快捷方式选“固定到任务栏”。"), Forms.ToolTipIcon.Info);
         }
-        catch (Exception ex) { MessageBox.Show(this, Lang.T("快捷方式未能创建。\n") + ex.Message, Product.Name, MessageBoxButton.OK, MessageBoxImage.Warning); }
+        catch (Exception ex) { ThemeMessageBox.Show(this, Lang.T("快捷方式未能创建。\n") + ex.Message, Product.Name, MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
     private void OpenMinimalMenu()
     {
@@ -1170,7 +1194,7 @@ public sealed class MainWindow : Window
             if (Path.GetFullPath(dialog.FileName).Equals(Path.GetFullPath(store.FilePath), StringComparison.OrdinalIgnoreCase) || Path.GetFullPath(dialog.FileName).Equals(Path.GetFullPath(store.BackupPath), StringComparison.OrdinalIgnoreCase)) throw new IOException(Lang.T("请另选位置，不要覆盖正在使用的资料文件。"));
             File.WriteAllText(dialog.FileName, System.Text.Json.JsonSerializer.Serialize(library, Storage.JsonOptions), System.Text.Encoding.UTF8); footer.Text = Lang.T("完整备份已导出");
         }
-        catch (Exception ex) { MessageBox.Show(this, ex.Message, Lang.T("导出失败")); }
+        catch (Exception ex) { ThemeMessageBox.Show(this, ex.Message, Lang.T("导出失败")); }
     }
     private void Import()
     {
@@ -1184,9 +1208,9 @@ public sealed class MainWindow : Window
             incoming.Papers.RemoveAll(p => deleted.Contains(p.Id));
             var merged = Storage.Merge(library, incoming); int added = merged.Papers.Count - library.Papers.Count;
             if (Commit(l => l.Papers = merged.Papers, Lang.F("导入了 {0} 篇新论文", added)))
-                MessageBox.Show(this, Lang.F("新增 {0} 篇，已有编号的记录保持原样。\n导入前资料已自动备份。", added), Lang.T("导入完成"));
+                ThemeMessageBox.Show(this, Lang.F("新增 {0} 篇，已有编号的记录保持原样。\n导入前资料已自动备份。", added), Lang.T("导入完成"));
         }
-        catch (Exception ex) { MessageBox.Show(this, Lang.T("文件没有导入，原资料保持原样。\n") + ex.Message, Lang.T("导入失败")); }
+        catch (Exception ex) { ThemeMessageBox.Show(this, Lang.T("文件没有导入，原资料保持原样。\n") + ex.Message, Lang.T("导入失败")); }
     }
     private void AddExamples() => Commit(l =>
     {

@@ -11,6 +11,78 @@
     <CornerRadius x:Key="ButtonCorner">8</CornerRadius>
     <CornerRadius x:Key="InputCorner">8</CornerRadius>
 
+    <!-- Popups have their own visual tree; bind their colors directly to the theme. -->
+    <Style TargetType="ContextMenu">
+      <Setter Property="Background" Value="{DynamicResource Card}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="FontSize" Value="{DynamicResource PopupFontSize}"/>
+      <Setter Property="FontFamily" Value="{DynamicResource PopupFontFamily}"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu">
+        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{DynamicResource InputCorner}" Padding="4">
+          <ScrollViewer CanContentScroll="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/></ScrollViewer>
+        </Border>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="MenuItem">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="Padding" Value="8,7"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem">
+        <Border x:Name="Body" Background="Transparent" CornerRadius="{DynamicResource ButtonCorner}" Padding="{TemplateBinding Padding}">
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="12"/></Grid.ColumnDefinitions>
+            <ContentPresenter x:Name="Icon" ContentSource="Icon" VerticalAlignment="Center"/>
+            <Path x:Name="Tick" Data="M1,5 L4,8 L11,1" Stroke="{DynamicResource Accent}" StrokeThickness="2" Visibility="Collapsed" VerticalAlignment="Center"/>
+            <ContentPresenter Grid.Column="1" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+            <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}" Foreground="{DynamicResource Muted}" Margin="16,0,0,0" VerticalAlignment="Center"/>
+            <Path x:Name="Arrow" Grid.Column="3" Data="M0,0 L4,4 L0,8" Stroke="{DynamicResource Muted}" StrokeThickness="1.5" Visibility="Collapsed" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+            <Popup x:Name="PART_Popup" Grid.Column="1" AllowsTransparency="True" Placement="Right" IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}" Focusable="False">
+              <Border Background="{DynamicResource Card}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="{DynamicResource InputCorner}" Padding="4"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/></Border>
+            </Popup>
+          </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Body" Property="Background" Value="{DynamicResource Soft}"/></Trigger>
+          <Trigger Property="IsChecked" Value="True"><Setter TargetName="Tick" Property="Visibility" Value="Visible"/><Setter TargetName="Icon" Property="Visibility" Value="Collapsed"/></Trigger>
+          <Trigger Property="HasItems" Value="True"><Setter TargetName="Arrow" Property="Visibility" Value="Visible"/></Trigger>
+          <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="MenuSeparator" TargetType="Separator">
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Separator"><Border Height="1" Background="{DynamicResource Line}" Margin="8,4"/></ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="Separator" BasedOn="{StaticResource MenuSeparator}"/>
+    <Style x:Key="{x:Static MenuItem.SeparatorStyleKey}" TargetType="Separator" BasedOn="{StaticResource MenuSeparator}"/>
+    <Style TargetType="ToolTip">
+      <Setter Property="Background" Value="{DynamicResource Card}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="FontSize" Value="{DynamicResource PopupFontSize}"/>
+      <Setter Property="MaxWidth" Value="520"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToolTip">
+        <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="{DynamicResource InputCorner}" Padding="10,7"><ContentPresenter><ContentPresenter.Resources><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style></ContentPresenter.Resources></ContentPresenter></Border>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="ScrollBar">
+      <Setter Property="Width" Value="12"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar">
+        <Grid Background="{TemplateBinding Background}">
+          <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="{TemplateBinding Orientation}" Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" Value="{TemplateBinding Value}" ViewportSize="{TemplateBinding ViewportSize}">
+            <Track.DecreaseRepeatButton><RepeatButton x:Name="Decrease" Command="ScrollBar.PageUpCommand" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.DecreaseRepeatButton>
+            <Track.Thumb><Thumb MinHeight="18" MinWidth="8"><Thumb.Template><ControlTemplate TargetType="Thumb">
+              <Border x:Name="Grip" Background="{DynamicResource Muted}" CornerRadius="4" Margin="2" Opacity="0.5"/>
+              <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Grip" Property="Opacity" Value="0.8"/></Trigger><Trigger Property="IsDragging" Value="True"><Setter TargetName="Grip" Property="Background" Value="{DynamicResource Accent}"/><Setter TargetName="Grip" Property="Opacity" Value="1"/></Trigger></ControlTemplate.Triggers>
+            </ControlTemplate></Thumb.Template></Thumb></Track.Thumb>
+            <Track.IncreaseRepeatButton><RepeatButton x:Name="Increase" Command="ScrollBar.PageDownCommand" Focusable="False"><RepeatButton.Template><ControlTemplate TargetType="RepeatButton"><Border Background="Transparent"/></ControlTemplate></RepeatButton.Template></RepeatButton></Track.IncreaseRepeatButton>
+          </Track>
+        </Grid>
+        <ControlTemplate.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/><Setter TargetName="Decrease" Property="Command" Value="ScrollBar.PageLeftCommand"/><Setter TargetName="Increase" Property="Command" Value="ScrollBar.PageRightCommand"/></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+      <Style.Triggers><Trigger Property="Orientation" Value="Horizontal"><Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="12"/></Trigger></Style.Triggers>
+    </Style>
+
     <Style TargetType="Window">
       <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
       <Setter Property="FontSize" Value="13"/>
@@ -56,6 +128,15 @@
     </Style>
 
     <Style TargetType="TextBox">
+      <Setter Property="ContextMenu"><Setter.Value><ContextMenu>
+        <MenuItem Header="{DynamicResource EditUndo}" Command="ApplicationCommands.Undo" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+        <Separator/>
+        <MenuItem Header="{DynamicResource EditCut}" Command="ApplicationCommands.Cut" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+        <MenuItem Header="{DynamicResource EditCopy}" Command="ApplicationCommands.Copy" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+        <MenuItem Header="{DynamicResource EditPaste}" Command="ApplicationCommands.Paste" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+        <Separator/>
+        <MenuItem Header="{DynamicResource EditSelectAll}" Command="ApplicationCommands.SelectAll" CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+      </ContextMenu></Setter.Value></Setter>
       <Setter Property="Padding" Value="10,7"/>
       <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
       <Setter Property="BorderThickness" Value="1"/>
@@ -67,6 +148,80 @@
         <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="{DynamicResource InputCorner}">
           <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" VerticalAlignment="Center"/>
         </Border>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+
+    <Style TargetType="CalendarDayButton" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="MinWidth" Value="30"/><Setter Property="MinHeight" Value="28"/>
+      <Setter Property="Padding" Value="5,3"/><Setter Property="Margin" Value="1"/>
+      <Setter Property="Background" Value="Transparent"/>
+      <Style.Triggers>
+        <Trigger Property="IsInactive" Value="True"><Setter Property="Foreground" Value="{DynamicResource Muted}"/></Trigger>
+        <Trigger Property="IsToday" Value="True"><Setter Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter Property="BorderThickness" Value="1"/></Trigger>
+        <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="{DynamicResource AccentText}"/></Trigger>
+        <Trigger Property="IsBlackedOut" Value="True"><Setter Property="Opacity" Value="0.35"/></Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style TargetType="CalendarButton" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="Transparent"/><Setter Property="Margin" Value="2"/>
+      <Style.Triggers>
+        <Trigger Property="IsInactive" Value="True"><Setter Property="Foreground" Value="{DynamicResource Muted}"/></Trigger>
+        <Trigger Property="HasSelectedDays" Value="True"><Setter Property="Background" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="{DynamicResource AccentText}"/></Trigger>
+      </Style.Triggers>
+    </Style>
+    <Style TargetType="CalendarItem">
+      <Setter Property="Background" Value="{DynamicResource Card}"/>
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CalendarItem">
+        <ControlTemplate.Resources><DataTemplate x:Key="{x:Static CalendarItem.DayTitleTemplateResourceKey}"><TextBlock Text="{Binding}" Foreground="{DynamicResource Muted}" HorizontalAlignment="Center" Margin="0,6"/></DataTemplate></ControlTemplate.Resources>
+        <Border x:Name="PART_Root" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="{DynamicResource InputCorner}" Padding="8">
+          <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <Button x:Name="PART_PreviousButton" Content="‹" Padding="8,3" Focusable="False"/>
+              <Button x:Name="PART_HeaderButton" Grid.Column="1" Background="Transparent" Padding="8,3" Focusable="False"/>
+              <Button x:Name="PART_NextButton" Grid.Column="2" Content="›" Padding="8,3" Focusable="False"/>
+            </Grid>
+            <Grid x:Name="PART_MonthView" Grid.Row="1">
+              <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+            </Grid>
+            <Grid x:Name="PART_YearView" Grid.Row="1" Visibility="Hidden">
+              <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition/><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+            </Grid>
+            <Rectangle x:Name="PART_DisabledVisual" Grid.RowSpan="2" Fill="{DynamicResource Card}" Opacity="0" IsHitTestVisible="False"/>
+          </Grid>
+        </Border>
+        <ControlTemplate.Triggers>
+          <Trigger Property="IsEnabled" Value="False"><Setter TargetName="PART_DisabledVisual" Property="Opacity" Value="0.5"/></Trigger>
+          <DataTrigger Binding="{Binding DisplayMode, RelativeSource={RelativeSource AncestorType=Calendar}}" Value="Year"><Setter TargetName="PART_MonthView" Property="Visibility" Value="Hidden"/><Setter TargetName="PART_YearView" Property="Visibility" Value="Visible"/></DataTrigger>
+          <DataTrigger Binding="{Binding DisplayMode, RelativeSource={RelativeSource AncestorType=Calendar}}" Value="Decade"><Setter TargetName="PART_MonthView" Property="Visibility" Value="Hidden"/><Setter TargetName="PART_YearView" Property="Visibility" Value="Visible"/></DataTrigger>
+        </ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="Calendar">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="FontSize" Value="{DynamicResource PopupFontSize}"/>
+      <Setter Property="CalendarItemStyle" Value="{StaticResource {x:Type CalendarItem}}"/>
+      <Setter Property="CalendarDayButtonStyle" Value="{StaticResource {x:Type CalendarDayButton}}"/>
+      <Setter Property="CalendarButtonStyle" Value="{StaticResource {x:Type CalendarButton}}"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Calendar"><StackPanel x:Name="PART_Root"><CalendarItem x:Name="PART_CalendarItem" Style="{TemplateBinding CalendarItemStyle}"/></StackPanel></ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style TargetType="DatePickerTextBox" BasedOn="{StaticResource {x:Type TextBox}}"/>
+    <Style TargetType="DatePicker">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}"/>
+      <Setter Property="Background" Value="{DynamicResource Card}"/>
+      <Setter Property="CalendarStyle" Value="{StaticResource {x:Type Calendar}}"/>
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DatePicker">
+        <Grid x:Name="PART_Root"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+          <DatePickerTextBox x:Name="PART_TextBox" HorizontalContentAlignment="Stretch"/>
+          <Button x:Name="PART_Button" Grid.Column="1" Focusable="False" Padding="9,6" Margin="4,0,0,0">
+            <Path Data="M0,3 L14,3 14,15 0,15 Z M0,7 L14,7 M4,0 L4,5 M10,0 L10,5" Stroke="{DynamicResource Ink}" StrokeThickness="1.5" Width="16" Height="16"/>
+          </Button>
+          <Popup x:Name="PART_Popup" AllowsTransparency="True" Placement="Bottom" StaysOpen="False"/>
+        </Grid>
+        <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger></ControlTemplate.Triggers>
       </ControlTemplate></Setter.Value></Setter>
     </Style>
 

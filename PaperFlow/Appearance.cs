@@ -131,6 +131,17 @@ public static class Appearance
         foreach (var pair in new Dictionary<string, string> { ["Ink"] = Current.Ink, ["Muted"] = Current.Muted, ["Accent"] = Current.Accent, ["AccentText"] = AccentText, ["Soft"] = Current.Soft, ["Card"] = Current.Card, ["Line"] = Current.Border, ["WindowBackground"] = Current.Window }) resources[pair.Key] = Paint(pair.Value);
         resources["ButtonCorner"] = new CornerRadius(ButtonRadius);
         resources["InputCorner"] = new CornerRadius(ButtonRadius);
+        resources["PopupFontSize"] = 13 * DialogScale;
+        resources["PopupFontFamily"] = new FontFamily(baseFont);
+        resources["EditUndo"] = Lang.T("撤销"); resources["EditCut"] = Lang.T("剪切");
+        resources["EditCopy"] = Lang.T("复制"); resources["EditPaste"] = Lang.T("粘贴"); resources["EditSelectAll"] = Lang.T("全选");
+        foreach (var role in new[] { "title", "body", "caption" })
+        {
+            var custom = RoleColor(role);
+            resources[role + "Ink"] = Paint(custom == "" ? Current.Ink : custom);
+            resources[role + "Muted"] = Paint(custom == "" ? Current.Muted : custom);
+            resources[role + "Accent"] = Paint(custom == "" ? Current.Accent : custom);
+        }
     }
     public static SolidColorBrush Map(string original) => Paint(original switch
     {

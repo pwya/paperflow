@@ -82,6 +82,11 @@ static class SyncTests
         check(b.Snapshot().Papers.Select(p => p.Id).SequenceEqual(a.Snapshot().Papers.Select(p => p.Id)), "drag order synchronizes");
         check(a.Snapshot().Papers.Single(p => p.Id == ids[0]).Stages[4].Done, "reordering preserves remote stage edit");
         check(new SyncEngine(Local("a"), shared, seed).Snapshot().Papers[0].Id == ids[2], "drag order survives restart");
+        current = a.Snapshot(); edit = Storage.CloneLibrary(current);
+        PaperOrder.MoveFirst(edit.Papers, current.Papers.Select(p => p.Id).ToArray(), ids[1]); a.Commit(current, edit);
+        a.Poll(); b.Poll();
+        check(b.Snapshot().Papers[0].Id == ids[1], "one-click move to front synchronizes");
+        check(new SyncEngine(Local("a"), shared, seed).Snapshot().Papers.Select(p => p.Id).SequenceEqual(a.Snapshot().Papers.Select(p => p.Id)), "one-click order survives restart");
         current = a.Snapshot(); edit = Storage.CloneLibrary(current); edit.Papers[0].Priority = "高"; a.Commit(current, edit);
         oldB = b.Snapshot(); nextB = Storage.CloneLibrary(oldB); nextB.Papers[0].Notes = "Concurrent synthetic note"; b.Commit(oldB, nextB);
         a.Poll(); b.Poll(); a.Poll();

@@ -165,8 +165,8 @@ public partial class App : Application
             var window = new MainWindow(storage, library, sync);
             MainWindow = window;
             window.Show();
-            if (storage.RecoveryNotice != null) MessageBox.Show(window, storage.RecoveryNotice, Lang.T("已恢复备份"));
-            else if (migrationNotice != null) MessageBox.Show(window, migrationNotice + Lang.T("\n\n原目录 %LOCALAPPDATA%\\PaperProgress 未被修改，确认新版本正常后可以自行删除。"), Lang.T("PaperFlow 已升级"), MessageBoxButton.OK, MessageBoxImage.Information);
+            if (storage.RecoveryNotice != null) ThemeMessageBox.Show(window, storage.RecoveryNotice, Lang.T("已恢复备份"));
+            else if (migrationNotice != null) ThemeMessageBox.Show(window, migrationNotice + Lang.T("\n\n原目录 %LOCALAPPDATA%\\PaperProgress 未被修改，确认新版本正常后可以自行删除。"), Lang.T("PaperFlow 已升级"), MessageBoxButton.OK, MessageBoxImage.Information);
             // 启动后过几秒再看更新：不挡启动，也不在演示导出里联网。
             var updateTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
             updateTimer.Tick += (_, _) => { updateTimer.Stop(); _ = window.CheckForUpdatesAsync(false); };

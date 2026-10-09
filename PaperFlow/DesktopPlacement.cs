@@ -22,6 +22,7 @@ internal sealed class DesktopPlacement : IDisposable
     private string mode = "window";
     private bool failed;
     private const uint NoMoveSizeActivate = 0x0001 | 0x0002 | 0x0010 | 0x0200;
+    private const int ExtendedStyle = -20, TopmostStyle = 0x00000008;
 
     public DesktopPlacement(Window window, Action<string> report)
     {
@@ -54,47 +55,35 @@ internal sealed class DesktopPlacement : IDisposable
         if (failed || mode != "desktop" || !window.IsVisible) return;
         IntPtr foreground = GetForegroundWindow();
         if (foreground == IntPtr.Zero) return;
-        if (Owns(foreground)) { lastForeground = foreground; return; }
         var name = new StringBuilder(256);
         GetClassName(foreground, name, name.Capacity);
         bool desktop = name.ToString() is "Progman" or "WorkerW";
         bool minimized = IsIconic(handle);
-        // Explorer may raise its desktop instead of minimizing tool windows. Check
-        // both cases, including a second Show Desktop while Explorer keeps focus.
-        bool obscured = desktop && Behind(handle, foreground);
-        if (desktop && (minimized || obscured || foreground != lastForeground))
+        if (desktop)
         {
             if (minimized) ShowWindow(handle, 4); // SW_SHOWNOACTIVATE
-            // Show Desktop can raise the shell above the entire ordinary-window band.
-            // Raise only while the desktop is foreground; demote on the next foreign
-            // foreground event, not by repeatedly stealing focus from applications.
-            Place(new IntPtr(-1));
+            bool shellTopmost = IsTopmost(foreground);
+            if (!shellTopmost && IsTopmost(handle)) Place(new IntPtr(-2));
+            // Stay immediately above the shell, below windows already above it.
+            // Show Desktop may raise either a regular or a topmost shell window;
+            // focusing an exposed desktop beside an app must not raise us over it.
+            IntPtr preceding = GetWindow(foreground, 3); // GW_HWNDPREV
+            if (preceding != handle)
+            {
+                if (shellTopmost) Place(preceding == IntPtr.Zero ? new IntPtr(-1) : preceding);
+                else Place(preceding == IntPtr.Zero || IsTopmost(preceding) ? IntPtr.Zero : preceding);
+            }
         }
-        else if (!desktop && foreground != lastForeground && !minimized)
+        // Activating our widget or an owned dialog can also raise its native window.
+        // Lower the widget without changing focus or the dialog's own window order.
+        else if (!minimized && (foreground != lastForeground || IsTopmost(handle)))
         {
             Place(new IntPtr(1)); // HWND_BOTTOM: ordinary applications cover us
         }
         lastForeground = foreground;
     }
 
-    private bool Owns(IntPtr foreground)
-    {
-        int remaining = 64;
-        for (var cursor = GetAncestor(foreground, 2); cursor != IntPtr.Zero && remaining-- > 0; cursor = GetWindow(cursor, 4))
-            if (cursor == handle) return true;
-        return false;
-    }
-
-    private static bool Behind(IntPtr own, IntPtr other)
-    {
-        // Bounded walk over top-level windows; no titles or application data are read.
-        int remaining = 2048;
-        for (IntPtr cursor = GetWindow(own, 3); cursor != IntPtr.Zero && remaining-- > 0; cursor = GetWindow(cursor, 3))
-        {
-            if (cursor == other) return true;
-        }
-        return false;
-    }
+    private static bool IsTopmost(IntPtr window) => (GetWindowLong(window, ExtendedStyle) & TopmostStyle) != 0;
 
     private void Place(IntPtr after)
     {
@@ -107,8 +96,8 @@ internal sealed class DesktopPlacement : IDisposable
     private delegate void WinEventCallback(IntPtr hook, uint eventId, IntPtr window, int objectId, int childId, uint threadId, uint time);
     [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventCallback callback, uint process, uint thread, uint flags);
     [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hook);
-    [DllImport("user32.dll")] private static extern IntPtr GetAncestor(IntPtr window, uint flags);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr window, int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int count);
     [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);

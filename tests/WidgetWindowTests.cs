@@ -20,8 +20,8 @@ internal static class WidgetWindowTests
     [STAThread]
     public static int Main(string[] args)
     {
-        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only" or "--updates-only" or "--themes-order-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only, --paper-management-only, --updates-only or --themes-order-only."); return 2; }
-        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only"), UpdatesOnly = args.Contains("--updates-only"), ThemesOrderOnly = args.Contains("--themes-order-only") };
+        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only" or "--updates-only" or "--themes-order-only" or "--desktop-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only, --paper-management-only, --updates-only, --themes-order-only or --desktop-only."); return 2; }
+        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only"), UpdatesOnly = args.Contains("--updates-only"), ThemesOrderOnly = args.Contains("--themes-order-only"), DesktopOnly = args.Contains("--desktop-only") };
         var source = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PaperFlow", "App.xaml"));
         System.Xml.Linq.XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         var resources = new System.Xml.Linq.XElement(wpf + "ResourceDictionary",
@@ -39,6 +39,7 @@ internal static class WidgetWindowTests
         public bool ManagementOnly;
         public bool UpdatesOnly;
         public bool ThemesOrderOnly;
+        public bool DesktopOnly;
         private int checks;
         private readonly List<string> observations = new();
         private void Check(bool ok, string label)
@@ -72,6 +73,7 @@ internal static class WidgetWindowTests
                 widget.Show(); widget.Activate();
                 await Task.Delay(700);
                 var cards = Field<StackPanel>(widget, "cards");
+                if (DesktopOnly) { await CheckDesktopPlacement(widget); Finish(widget); return; }
                 if (ThemesOrderOnly) { await CheckThemesAndOrder(widget, storage, cards); Finish(widget); return; }
                 if (UpdatesOnly) { await CheckManualUpdates(widget, storage); Finish(widget); return; }
                 if (ManagementOnly) { await CheckManagement(widget, storage, cards); Finish(widget); return; }
@@ -83,6 +85,7 @@ internal static class WidgetWindowTests
                     Finish(widget); return;
                 }
                 var scroll = Field<ScrollViewer>(widget, "scroller");
+                await CheckDesktopPlacement(widget);
                 widget.Height = widget.MinHeight;
                 await Task.Delay(350);
                 Check(cards.Children.Count == 6, "small window keeps the whole unpaged list");
@@ -158,7 +161,7 @@ internal static class WidgetWindowTests
                 finally { shell.ToggleDesktop(); shell.UndoMinimizeALL(); Marshal.FinalReleaseComObject(shell); }
                 await Task.Delay(500);
                 var ordinary = new Window { Title = "Synthetic foreground app", Width = 300, Height = 220, Left = widget.Left, Top = widget.Top, Content = "Synthetic foreground window" };
-                ordinary.Show(); bool activated = ordinary.Activate();
+                ordinary.Show(); bool activated = ActivateTestWindow(ordinary);
                 for (int attempt = 0; attempt < 20 && (GetWindowLong(handle, -20) & 8) != 0; attempt++) await Task.Delay(100);
                 observations.Add("Ordinary test window activated=" + activated + "; foreground is test window=" + (GetForegroundWindow() == new WindowInteropHelper(ordinary).Handle));
                 Check(activated && GetForegroundWindow() == new WindowInteropHelper(ordinary).Handle, "interactive desktop must allow the ordinary test window to gain focus");
@@ -193,6 +196,87 @@ internal static class WidgetWindowTests
                 if (widget != null) { FieldInfo? quitting = typeof(MainWindow).GetField("quitting", BindingFlags.NonPublic | BindingFlags.Instance); quitting?.SetValue(widget, true); widget.Close(); }
                 Shutdown(1);
             }
+        }
+        private async Task CheckDesktopPlacement(MainWindow widget)
+        {
+            var current = Field<Library>(widget, "library");
+            current.Settings.WindowMode = "desktop";
+            Invoke(widget, "Render");
+            var area = SystemParameters.WorkArea;
+            double originalLeft = widget.Left, originalTop = widget.Top;
+            widget.Left = area.Left + area.Width / 2 - 100;
+            widget.Top = area.Top + 80;
+            var handle = new WindowInteropHelper(widget).Handle;
+            var ordinary = new Window { Title = "Synthetic half-screen app", Width = area.Width / 2, Height = area.Height,
+                Left = area.Left + area.Width / 2, Top = area.Top, Content = "Synthetic content", ShowInTaskbar = false };
+            dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+            bool showingDesktop = false;
+            try
+            {
+                ordinary.Show(); ActivateTestWindow(ordinary); await Task.Delay(500);
+                var ordinaryHandle = new WindowInteropHelper(ordinary).Handle;
+                Check(GetForegroundWindow() == ordinaryHandle, "half-screen application can gain focus");
+                ActivateTestWindow(widget); await Task.Delay(500);
+                Check(GetForegroundWindow() == handle, "desktop widget remains interactive when it is below application windows");
+                Check(Behind(handle, ordinaryHandle) && (GetWindowLong(handle, -20) & 8) == 0, "activating the widget does not cover the half-screen application");
+                var dialog = new Window { Owner = widget, Title = "Synthetic owned dialog", Width = 220, Height = 120, ShowInTaskbar = false };
+                try
+                {
+                    dialog.Show(); ActivateTestWindow(dialog); await Task.Delay(300);
+                    Check(GetForegroundWindow() == new WindowInteropHelper(dialog).Handle, "owned dialogs remain usable in desktop mode");
+                    Check(Behind(handle, ordinaryHandle), "opening an owned dialog keeps the desktop widget below applications");
+                }
+                finally { dialog.Close(); }
+                ActivateTestWindow(ordinary); await Task.Delay(300);
+                var desktop = GetShellWindow();
+                Check(desktop != IntPtr.Zero && (GetWindowLong(desktop, -20) & 8) == 0, "ordinary desktop is not the raised Show Desktop shell");
+                Check(SetForegroundWindow(desktop), "the exposed desktop can gain focus beside an open application");
+                await Task.Delay(600);
+                Check(GetForegroundWindow() == desktop, "desktop remains foreground without the widget stealing focus");
+                Check(IsWindowVisible(ordinaryHandle) && !IsIconic(ordinaryHandle), "half-screen application stays open while desktop is focused");
+                Check((GetWindowLong(handle, -20) & 8) == 0, "clicking the exposed desktop never makes the widget natively topmost");
+                Check(Behind(handle, ordinaryHandle), "half-screen application stays above the desktop widget");
+                Check(IsWindowVisible(handle) && !IsIconic(handle) && !Behind(handle, desktop), "widget remains visible over the exposed desktop");
+                var placement = Field<object>(widget, "desktopPlacement");
+                Invoke(placement, "Refresh"); await Task.Delay(300);
+                Check(Behind(handle, ordinaryHandle) && (GetWindowLong(handle, -20) & 8) == 0, "repeated refresh preserves application coverage while desktop keeps focus");
+                shell.ToggleDesktop(); showingDesktop = true; await Task.Delay(900);
+                var raised = GetForegroundWindow();
+                var className = new StringBuilder(256); GetClassName(raised, className, 256);
+                Check(className.ToString() is "Progman" or "WorkerW", "Windows actually entered Show Desktop in the desktop regression");
+                Check(IsWindowVisible(handle) && !IsIconic(handle) && !Behind(handle, raised), "Show Desktop still exposes the widget");
+                shell.ToggleDesktop(); showingDesktop = false; await Task.Delay(300);
+                ActivateTestWindow(ordinary); await Task.Delay(500);
+                Check((GetWindowLong(handle, -20) & 8) == 0 && Behind(handle, ordinaryHandle), "restoring an application removes any temporary Show Desktop elevation");
+                current.Settings.WindowMode = "topmost"; Invoke(widget, "Render"); await Task.Delay(300);
+                Check(widget.Topmost && (GetWindowLong(handle, -20) & 8) != 0, "explicit always-on-top remains an independent mode");
+                current.Settings.WindowMode = "desktop"; Invoke(widget, "Render"); await Task.Delay(300);
+                Check(!widget.Topmost && (GetWindowLong(handle, -20) & 8) == 0 && Behind(handle, ordinaryHandle), "turning off explicit pinning returns to the desktop band");
+                widget.Hide(); SetForegroundWindow(desktop); await Task.Delay(400);
+                Check(!IsWindowVisible(handle), "focusing the desktop never reopens a widget hidden in the tray");
+                widget.Show(); await Task.Delay(300);
+                Check(!Field<bool>(placement, "failed"), "native desktop placement succeeds throughout the regression");
+            }
+            finally
+            {
+                if (showingDesktop) shell.ToggleDesktop();
+                Marshal.FinalReleaseComObject(shell);
+                ordinary.Close(); widget.Left = originalLeft; widget.Top = originalTop;
+                current.Settings.WindowMode = "window"; Invoke(widget, "Render"); widget.Show(); widget.Activate();
+            }
+        }
+        private static bool ActivateTestWindow(Window window)
+        {
+            var handle = new WindowInteropHelper(window).Handle;
+            GetWindowThreadProcessId(handle, out uint process);
+            if (process != Environment.ProcessId) throw new InvalidOperationException("Only this runner's synthetic windows may be activated.");
+            if (window.Activate()) return true;
+            // Returning focus from Explorer after Show Desktop can be refused by the
+            // foreground lock. Temporarily join input queues for this test window only.
+            uint currentThread = GetCurrentThreadId(), foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
+            if (foregroundThread == 0 || foregroundThread == currentThread || !AttachThreadInput(currentThread, foregroundThread, true)) return false;
+            try { return SetForegroundWindow(handle); }
+            finally { AttachThreadInput(currentThread, foregroundThread, false); }
         }
         private async Task CheckManualUpdates(MainWindow widget, Storage storage)
         {
@@ -709,6 +793,11 @@ internal static class WidgetWindowTests
     private static object? Invoke(object target, string name, params object[] args) => target.GetType().GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!.Invoke(target, args);
     private static bool Behind(IntPtr own, IntPtr other) { int left = 2048; for (var w = GetWindow(own, 3); w != IntPtr.Zero && left-- > 0; w = GetWindow(w, 3)) if (w == other) return true; return false; }
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern IntPtr GetShellWindow();
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint from, uint to, bool attach);
     [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr window, int index);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetClassName(IntPtr window, System.Text.StringBuilder name, int count);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);

@@ -13,13 +13,14 @@ namespace PaperFlow;
 public sealed class PaperEditor : Window
 {
     public Paper Result { get; }
+    public PaperResource? ResourceResult { get; private set; }
     // 用户在"编辑阶段"里另存出来的新方案，保存时并进本机方案库。
     public StageScheme? SavedScheme { get; private set; }
     private readonly System.Windows.Controls.WrapPanel doneRow = new() { Margin = new Thickness(0, 5, 0, 14) };
     private readonly System.Windows.Controls.WrapPanel skipRow = new() { Margin = new Thickness(0, 5, 0, 14) };
     // knownTags：本机自建的标签 + 论文上已经贴过的标签。这里只负责"贴"，造标签在设置里。
     // knownSchemes：本机自建的方案（内置两套在 Schemes 里）。这里能换方案、能编辑这一篇的阶段。
-    public PaperEditor(Paper paper, IReadOnlyList<string> knownTags, IReadOnlyList<StageScheme> knownSchemes, Func<Window, bool>? deletePaper = null)
+    public PaperEditor(Paper paper, IReadOnlyList<string> knownTags, IReadOnlyList<StageScheme> knownSchemes, Func<Window, bool>? deletePaper = null, PaperResource? resource = null)
     {
         Result = paper;
         Title = Lang.T("论文资料"); Width = Math.Min(660 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40); Height = Math.Min(780 * Appearance.DialogScale, SystemParameters.WorkArea.Height - 30); MinHeight = 430 * Appearance.DialogScale; MinWidth = Math.Min(530 * Appearance.DialogScale, SystemParameters.WorkArea.Width - 40);
@@ -150,6 +151,21 @@ public sealed class PaperEditor : Window
             AutomationProperties.SetName(input, label); body.Children.Add(input); return input;
         }
         var title = Field(Lang.T("论文标题"), paper.Title);
+        var entry = Field(Lang.T("快捷入口"), resource?.Target ?? "");
+        entry.MaxLength = 8192; entry.Margin = new Thickness(0, 0, 8, 0);
+        body.Children.Remove(entry);
+        var entryRow = new Grid { Margin = new Thickness(0, 0, 0, 5) };
+        entryRow.ColumnDefinitions.Add(new ColumnDefinition());
+        entryRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        entryRow.Children.Add(entry);
+        var browse = MainWindow.ActionButton(Lang.T("选择文件夹"), () =>
+        {
+            var picker = new OpenFolderDialog { Title = Lang.T("选择文件夹"), Multiselect = false };
+            if (picker.ShowDialog(this) == true) entry.Text = picker.FolderName;
+        });
+        Grid.SetColumn(browse, 1); entryRow.Children.Add(browse); body.Children.Add(entryRow);
+        var entryHint = Label(Lang.T("这个入口仅在本机生效，不随论文同步；换电脑后需重新设置。"), 11);
+        entryHint.TextWrapping = TextWrapping.Wrap; entryHint.Margin = new Thickness(0, 0, 0, 12); body.Children.Add(entryHint);
         body.Children.Add(Label(Lang.T("优先级")));
         // 下拉框显示跟着语言走，存进资料的仍是中文规范值。
         var priority = new ComboBox { ItemsSource = Lang.Choices(Paper.Priorities), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(Paper.Priorities, paper.Priority)), Margin = new Thickness(0, 5, 0, 12) }; body.Children.Add(priority);
@@ -161,10 +177,14 @@ public sealed class PaperEditor : Window
         var status = new ComboBox { ItemsSource = Lang.Choices(Paper.Statuses), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(Paper.Statuses, paper.Status)), Margin = new Thickness(0, 5, 0, 12) }; body.Children.Add(status);
         var next = Field(Lang.T("下一步行动"), paper.NextAction);
         var dates = new Grid { Margin = new Thickness(0, 0, 0, 12) }; dates.ColumnDefinitions.Add(new ColumnDefinition()); dates.ColumnDefinitions.Add(new ColumnDefinition());
-        var startPanel = new StackPanel { Margin = new Thickness(0, 0, 10, 0) }; startPanel.Children.Add(Label(Lang.T("开始日期")));
+        var startPanel = new StackPanel { Margin = new Thickness(0, 0, 10, 0) }; startPanel.Children.Add(Label(Lang.T("项目开始日期")));
         var start = new DatePicker { SelectedDate = paper.StartDate, Margin = new Thickness(0, 5, 0, 0) }; startPanel.Children.Add(start); dates.Children.Add(startPanel);
-        var duePanel = new StackPanel(); duePanel.Children.Add(Label(Lang.T("下一步截止日期（可留空）")));
+        AutomationProperties.SetName(start, Lang.T("项目开始日期"));
+        var duePanel = new StackPanel(); duePanel.Children.Add(Label(Lang.T("倒数日（选填）")));
         var due = new DatePicker { SelectedDate = paper.DueDate, Margin = new Thickness(0, 5, 0, 0) }; duePanel.Children.Add(due); Grid.SetColumn(duePanel, 1); dates.Children.Add(duePanel); body.Children.Add(dates);
+        AutomationProperties.SetName(due, Lang.T("倒数日（选填）"));
+        var dueHint = Label(Lang.T("可用于会议投稿截止、返修截止或其他需要提醒的日期。"), 11);
+        dueHint.TextWrapping = TextWrapping.Wrap; dueHint.Margin = new Thickness(0, 0, 0, 12); body.Children.Add(dueHint);
         bool invalidDate = false;
         start.DateValidationError += (_, _) => invalidDate = true;
         due.DateValidationError += (_, _) => invalidDate = true;
@@ -187,6 +207,15 @@ public sealed class PaperEditor : Window
             if (string.IsNullOrWhiteSpace(title.Text)) { ThemeMessageBox.Show(this, Lang.T("请填写论文标题。")); title.Focus(); return; }
             if (invalidDate || start.SelectedDate == null || (!string.IsNullOrWhiteSpace(due.Text) && due.SelectedDate == null)) { ThemeMessageBox.Show(this, Lang.T("请填写有效日期，截止日期也可以留空。")); return; }
             if (start.SelectedDate.Value.Year < 1900 || start.SelectedDate.Value.Year > 2200 || due.SelectedDate?.Year < 1900 || due.SelectedDate?.Year > 2200) { ThemeMessageBox.Show(this, Lang.T("日期需在 1900—2200 年之间。")); return; }
+            // Saving unrelated paper changes must still work if an existing folder moved.
+            if (resource != null && entry.Text.Trim() == resource.Target && resource.Target.Length > 0)
+                ResourceResult = new PaperResource { Kind = resource.Kind, Target = resource.Target };
+            else
+            {
+                if (!PaperResources.TryResolve(entry.Text, out var selectedResource))
+                { ThemeMessageBox.Show(this, Lang.T("请输入 HTTP/HTTPS 网址或有效文件夹路径，也可以点击“选择文件夹”。")); entry.Focus(); return; }
+                ResourceResult = selectedResource;
+            }
             paper.Title = title.Text.Trim(); paper.Subject = subject.Text.Trim(); paper.Language = language.Text.Trim(); paper.Collaborators = collaborators.Text.Trim();
             paper.Priority = (priority.SelectedItem as Choice)?.Value ?? "中";
             paper.Journal = journal.Text.Trim(); paper.Status = (status.SelectedItem as Choice)?.Value ?? "准备中"; paper.NextAction = next.Text.Trim();

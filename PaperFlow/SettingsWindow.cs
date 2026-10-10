@@ -113,7 +113,7 @@ public sealed class SettingsWindow : Window
         var displayPicker = new ComboBox { ItemsSource = displayModes, DisplayMemberPath = "Label", SelectedIndex = Result.DisplayMode == "minimal" ? 1 : 0 };
         look.Children.Add(displayPicker);
         displayPicker.SelectionChanged += (_, _) => { Result.DisplayMode = displayModes[Math.Max(0, displayPicker.SelectedIndex)].Value; Preview(); };
-        Label(look, Lang.T("极简模式只显示论文标题和进度，双击标题可编辑资料；完整模式保留阶段勾选。"), 11);
+        Label(look, Lang.T("极简模式保留标题和进度，也可显示快捷入口与时间；双击标题可编辑资料，完整模式保留阶段勾选。"), 11);
         Label(look, Lang.T("布局"));
         var layoutPicker = new ComboBox { ItemsSource = Lang.Choices(Themes.Layouts), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(Themes.Layouts, Result.ListLayout)) }; look.Children.Add(layoutPicker);
         layoutPicker.SelectionChanged += (_, _) => { Result.ListLayout = Themes.Layouts[Math.Max(0, layoutPicker.SelectedIndex)]; Preview(); };

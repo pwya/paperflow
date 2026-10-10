@@ -213,7 +213,7 @@ public sealed class MainWindow : Window
         filter.ItemsSource = new[] { Lang.T("全部论文"), Lang.T("进行中"), Lang.T("已完成"), Lang.T("已归档") }; filter.SelectedIndex = 0; filter.Margin = new Thickness(7, 0, 0, 0);
         filter.SelectionChanged += (_, _) => { if (ready) Render(); };
         // 显示按语言走，值还是原来的规范值，所以下面的索引逻辑一个字都不用改。
-        sort.ItemsSource = Lang.Choices(ViewRules.SortModes); sort.DisplayMemberPath = "Label"; sort.SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SortModes, library.Settings.SortMode)); sort.Margin = new Thickness(7, 0, 0, 0);
+        sort.ItemsSource = ViewRules.SortChoices(); sort.DisplayMemberPath = "Label"; sort.SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.SortModes, library.Settings.SortMode)); sort.Margin = new Thickness(7, 0, 0, 0);
         // 排序方式会保存下来，否则重启就悄悄回到手动排序，用户会以为顺序没同步。
         sort.SelectionChanged += (_, _) => { if (ready && ViewRules.SortModes[Math.Max(0, sort.SelectedIndex)] != library.Settings.SortMode) Commit(l => l.Settings.SortMode = ViewRules.SortModes[Math.Max(0, sort.SelectedIndex)]); };
         DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
@@ -267,7 +267,7 @@ public sealed class MainWindow : Window
             try
             {
                 bool changed = await Task.Run(sync.Poll);
-                if (changed) { library.Papers = sync.Snapshot().Papers; store.Save(library); Render(); }
+                if (changed) { library.Papers = sync.Snapshot().Papers; RemoveDeletedResources(library); store.Save(library); Render(); }
                 footer.Text = sync.Status;
                 footer.ToolTip = sync.Folder == "" ? store.DirectoryPath : Lang.T("资料文件夹：") + sync.Folder + Lang.T("\n跨设备到达时间由你的网盘客户端决定，文件夹更新不等于云端上传已完成。");
             }
@@ -338,7 +338,7 @@ public sealed class MainWindow : Window
         try
         {
             var candidate = Storage.CloneLibrary(library); edit(candidate);
-            sync.Commit(library, candidate); candidate.Papers = sync.Snapshot().Papers; library = candidate;
+            sync.Commit(library, candidate); candidate.Papers = sync.Snapshot().Papers; RemoveDeletedResources(candidate); library = candidate;
             try { store.Save(candidate); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { footer.Text = Lang.T("修改已记录，快照备份待重试 · ") + ex.Message; Render(); return true; }
             footer.Text = store.BackupNotice == null ? Lang.F("{0} · {1:HH:mm} · 本地自动备份", notice, DateTime.Now) : Lang.T("已保存 · ") + store.BackupNotice;
             footer.ToolTip = store.BackupNotice; Render(); return true;
@@ -439,7 +439,7 @@ public sealed class MainWindow : Window
         var pagePapers = ViewRules.Apply(candidates, library.Settings);
         summary.Text = Lang.P(active.Count, "{0} 篇论文 · 当前显示 {1} 篇", "{0} paper · showing {1}", "{0} papers · showing {1}", active.Count, pagePapers.Count)
             + (hiddenCount > 0 && !library.Settings.ShowHiddenNow ? Lang.F(" · 按标签隐藏 {0} 篇", hiddenCount) : "")
-            + (library.Settings.SortMode == ViewRules.SortModes[0] ? "" : Lang.T(" · 排序：") + Lang.Value(library.Settings.SortMode));
+            + (library.Settings.SortMode == ViewRules.SortModes[0] ? "" : Lang.T(" · 排序：") + ViewRules.SortLabel(library.Settings.SortMode));
         summary.ToolTip = Lang.T("隐藏和翻页仅改变显示，不删除论文。点击论文选项调整。");
         pager.Visibility = ViewRules.PageCount(library.Settings) > 1 ? Visibility.Visible : Visibility.Collapsed;
         pageLabel.Text = $"{ViewRules.PageTitle(library.Settings)} · {library.Settings.PageIndex + 1}/{ViewRules.PageCount(library.Settings)}";
@@ -663,7 +663,7 @@ public sealed class MainWindow : Window
         if (filter.SelectedIndex == 2) visible = visible.Where(p => p.IsComplete);
         var term = search.Text.Trim();
         if (term != "") visible = visible.Where(p => string.Join(" ", p.Title, p.Subject, p.Language, p.Collaborators, p.Journal, p.Notes, p.Status, p.NextAction).Contains(term, StringComparison.OrdinalIgnoreCase));
-        return (sort.SelectedIndex switch { 1 => visible.OrderByDescending(p => p.UpdatedAt), 2 => visible.OrderBy(p => p.DueDate ?? DateTime.MaxValue), 3 => visible.OrderByDescending(p => p.Progress), _ => visible }).ToList();
+        return ViewRules.Order(visible, library.Settings.SortMode).ToList();
     }
 
     private Border BuildCard(Paper p)
@@ -703,6 +703,16 @@ public sealed class MainWindow : Window
         var titleArea = new DockPanel { Background = Brushes.Transparent, Cursor = Cursors.SizeAll, Margin = new Thickness(0, 0, 0, 1) };
         var dots = PriorityDots(p);
         if (!minimal) titleArea.Children.Add(dots);
+        if (library.Settings.ShowResourceLinks && library.Settings.PaperResources.TryGetValue(p.Id, out var resource) && resource != null)
+        {
+            var open = ActionButton(Lang.T("打开"), () => OpenResource(p));
+            open.Padding = new Thickness(5 * Appearance.Scale, 1 * Appearance.Scale, 5 * Appearance.Scale, 1 * Appearance.Scale);
+            open.FontSize = 10.5 * Appearance.RoleScale("caption") * Appearance.TextScale;
+            open.VerticalAlignment = VerticalAlignment.Center; open.Margin = new Thickness(5, 0, 0, 0);
+            open.ToolTip = Lang.T("打开快捷入口") + "\n" + resource.Target;
+            AutomationProperties.SetName(open, Lang.F("打开 {0} 的快捷入口", p.Title));
+            DockPanel.SetDock(open, Dock.Right); titleArea.Children.Add(open);
+        }
         var name = ScrollingTitle(p.Title, library.Settings.TitleBold, small ? 14 : 15);
         name.VerticalAlignment = VerticalAlignment.Center;
         name.ToolTip = p.Title + Lang.T(minimal ? "\n双击编辑论文资料；右键打开论文菜单" : "\n按住拖动调整优先顺序；标题太长时，鼠标停在这里会滚动显示全名");
@@ -756,11 +766,13 @@ public sealed class MainWindow : Window
         stack.Children.Add(progressRow);
         if (minimal)
         {
+            var time = CardTime(p);
+            if (time != null) stack.Children.Add(time);
             titleArea.Cursor = Cursors.Hand;
             card.Focusable = true;
             AutomationProperties.SetName(card, Lang.F("{0} 进度 {1}%", p.Title, p.Progress));
-            card.MouseLeftButtonDown += (_, e) => { e.Handled = true; card.Focus(); if (e.ClickCount == 2) EditPaper(p); };
-            card.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; EditPaper(p); } };
+            card.MouseLeftButtonDown += (_, e) => { if (InteractiveSource(e.OriginalSource as DependencyObject)) return; e.Handled = true; card.Focus(); if (e.ClickCount == 2) EditPaper(p); };
+            card.KeyDown += (_, e) => { if (e.Key == Key.Enter && !InteractiveSource(e.OriginalSource as DependencyObject)) { e.Handled = true; EditPaper(p); } };
             card.MouseRightButtonUp += (_, e) => { e.Handled = true; PaperMenu(p, card); };
             return card;
         }
@@ -787,8 +799,6 @@ public sealed class MainWindow : Window
             cb.Unchecked += (_, _) => Toggle(false);
             checks.Children.Add(cb);
         }
-        var due = Text(p.DueDate != null && !p.IsComplete ? p.DeadlineText : Lang.P(p.ElapsedDays, "已开始 {0} 天", "Started {0} day ago", "Started {0} days ago", p.ElapsedDays), 11, p.DueDate?.Date < DateTime.Today && !p.IsComplete ? "#BE624C" : "#8A948C");
-        due.Margin = new Thickness(4, 0, 5, 3); due.ToolTip = Lang.P(p.ElapsedDays, "开始日期：{0:yyyy-MM-dd}\n已开始 {1} 天", "Started {0:yyyy-MM-dd}\n{1} day in", "Started {0:yyyy-MM-dd}\n{1} days in", p.StartDate, p.ElapsedDays); checks.Children.Add(due);
         if (!string.IsNullOrWhiteSpace(p.NextAction))
         {
             var next = Text(Lang.T("下一步 ") + p.NextAction, 11, "#6C7C70"); next.MaxWidth = 150 * Appearance.TextScale; next.TextTrimming = TextTrimming.CharacterEllipsis; next.ToolTip = p.NextAction; next.Margin = new Thickness(4, 0, 0, 3); checks.Children.Add(next); checks.OptionalTail = next;
@@ -802,8 +812,43 @@ public sealed class MainWindow : Window
         settings.Click += (_, _) => PaperMenu(p, settings);
         AutomationProperties.SetName(settings, Lang.F("{0} 的论文设置", p.Title));
         Grid.SetColumn(settings, 1); bottom.Children.Add(settings); stack.Children.Add(bottom);
+        var cardTime = CardTime(p);
+        if (cardTime != null) stack.Children.Add(cardTime);
         AttachPaperDrag(card, p.Id, dots, () => PriorityMenu(p, dots));
         return card;
+    }
+
+    private TextBlock? CardTime(Paper p)
+    {
+        string mode = library.Settings.TimeDisplayMode;
+        string value = ViewRules.TimeText(p, mode);
+        if (value.Length == 0) return null;
+        var text = Text(value, 11, ViewRules.ShowsCountdown(p, mode) && p.DueDate?.Date < DateTime.Today ? "#BE624C" : "#8A948C", -1, "caption");
+        text.TextWrapping = TextWrapping.Wrap; text.Margin = new Thickness(0, 1, 0, 3);
+        text.ToolTip = Lang.F("项目开始日期：{0:yyyy-MM-dd}", p.StartDate) +
+            (p.DueDate != null ? "\n" + Lang.F("倒数日：{0:yyyy-MM-dd}", p.DueDate) : "");
+        AutomationProperties.SetName(text, Lang.F("{0} 的时间提醒", p.Title));
+        return text;
+    }
+
+    private void OpenResource(Paper p)
+    {
+        if (!library.Settings.PaperResources.TryGetValue(p.Id, out var resource) || resource == null) return;
+        try
+        {
+            string target = PaperResources.LaunchTarget(resource) ?? throw new IOException();
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(target) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or System.ComponentModel.Win32Exception or InvalidOperationException or NotSupportedException)
+        {
+            ShowNotice(Lang.T("无法打开快捷入口，请检查网址或文件夹位置。"), Lang.T("修改入口"), () => EditPaper(p));
+        }
+    }
+
+    private void RemoveDeletedResources(Library target)
+    {
+        foreach (string id in target.Settings.PaperResources.Keys.Where(sync.DeletedPaperIds.Contains).ToList())
+            target.Settings.PaperResources.Remove(id);
     }
 
     // Priority is shown as three dots at the left edge of the title row; the filled
@@ -936,6 +981,8 @@ public sealed class MainWindow : Window
         var menu = new ContextMenu { PlacementTarget = anchor };
         void Item(string title, Action action) { var item = new MenuItem { Header = title }; item.Click += (_, _) => action(); menu.Items.Add(item); }
         Item(Lang.T("编辑论文资料"), () => EditPaper(p));
+        if (library.Settings.PaperResources.TryGetValue(p.Id, out var resource) && resource != null)
+            Item(Lang.T("打开快捷入口"), () => OpenResource(p));
         Item(Lang.T("查看修改记录"), () => ShowHistory(p));
         menu.Items.Add(new Separator());
         Item(Lang.T("移到最前面"), () => MovePaperFirst(p.Id));
@@ -994,7 +1041,7 @@ public sealed class MainWindow : Window
         var paper = library.Papers.SingleOrDefault(p => p.Id == id);
         if (paper == null) { ShowNotice(Lang.T("这篇论文已被删除。")); return false; }
         if (new DeletePaperDialog(paper.Title) { Owner = owner }.ShowDialog() != true) return false;
-        if (!Commit(l => l.Papers.RemoveAll(p => p.Id == id), Lang.T("论文已删除"))) return false;
+        if (!Commit(l => { l.Papers.RemoveAll(p => p.Id == id); l.Settings.PaperResources.Remove(id); }, Lang.T("论文已删除"))) return false;
         ShowNotice(Lang.T("论文已删除")); return true;
     }
 
@@ -1019,11 +1066,12 @@ public sealed class MainWindow : Window
         var knownTags = library.Settings.CustomTags.Concat(library.Papers.SelectMany(x => x.Tags)).Distinct(StringComparer.Ordinal).Where(t => t.Length > 0).ToList();
         // 方案列表＝本机自建的 + 论文身上带着的（多半来自另一台电脑，用的方案也要能选、能认出）。
         var knownSchemes = library.Settings.CustomSchemes.Concat(Schemes.FromPapers(library.Papers, library.Settings.CustomSchemes)).ToList();
-        var dialog = new PaperEditor(Storage.Clone(original), knownTags, knownSchemes, window => DeletePaper(original.Id, window)) { Owner = owner };
+        library.Settings.PaperResources.TryGetValue(original.Id, out var resource);
+        var dialog = new PaperEditor(Storage.Clone(original), knownTags, knownSchemes, window => DeletePaper(original.Id, window), resource) { Owner = owner };
         if (dialog.ShowDialog() == true)
         {
             if (!library.Papers.Any(p => p.Id == original.Id)) { ShowNotice(Lang.T("这篇论文已被删除。")); return; }
-            Commit(l => { dialog.Result.Record("更新论文资料"); var before = new Library { Papers = new() { original } }; var after = new Library { Papers = new() { dialog.Result } }; SyncProtocol.ApplyEdits(l, SyncProtocol.Diff(before, after)); });
+            if (!Commit(l => PaperEditorChanges.Apply(l, original, dialog.Result, dialog.ResourceResult))) return;
             // 论文里另存出来的方案，并进本机方案库（重名在对话框里已经拦过）。
             if (dialog.SavedScheme is StageScheme added && !library.Settings.CustomSchemes.Any(s => s.Name == added.Name))
                 Commit(l => l.Settings.CustomSchemes.Add(added));
@@ -1132,11 +1180,17 @@ public sealed class MainWindow : Window
         body.Children.Add(Text(Lang.T("显示范围"), 12)); filter.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(filter);
         body.Children.Add(ActionButton(Lang.T("查看全部归档论文"), () => OpenArchive(window)));
         body.Children.Add(Text(Lang.T("排序方式"), 12)); sort.Margin = new Thickness(0, 5, 0, 12); body.Children.Add(sort);
-        var minimal = new CheckBox { Content = Lang.T("极简模式（只显示标题和进度）"), IsChecked = library.Settings.DisplayMode == "minimal" };
+        var minimal = new CheckBox { Content = Lang.T("极简模式"), IsChecked = library.Settings.DisplayMode == "minimal" };
         minimal.Click += (_, _) => Commit(l => l.Settings.DisplayMode = minimal.IsChecked == true ? "minimal" : "full"); body.Children.Add(minimal);
         var small = new CheckBox { Content = Lang.T("紧凑视图（阶段标签更小）"), IsChecked = library.Settings.Compact }; small.Click += (_, _) => Commit(l => l.Settings.Compact = small.IsChecked == true); body.Children.Add(small);
+        var showResources = new CheckBox { Content = Lang.T("显示快捷入口"), IsChecked = library.Settings.ShowResourceLinks, Margin = new Thickness(0, 8, 0, 0) };
+        showResources.Click += (_, _) => Commit(l => l.Settings.ShowResourceLinks = showResources.IsChecked == true); body.Children.Add(showResources);
         void Label(string text) { var label = Text(text, 13); label.Margin = new Thickness(0, 16, 0, 7); body.Children.Add(label); }
         void ChangeView(Action<Preferences> change) => Commit(l => { change(l.Settings); l.Settings.PageIndex = 0; });
+        Label(Lang.T("时间显示"));
+        var timeMode = new ComboBox { ItemsSource = ViewRules.TimeChoices(), DisplayMemberPath = "Label", SelectedValuePath = "Value", SelectedValue = library.Settings.TimeDisplayMode };
+        AutomationProperties.SetName(timeMode, Lang.T("时间显示")); body.Children.Add(timeMode);
+        timeMode.SelectionChanged += (_, _) => { if (timeMode.SelectedItem is Choice selected) Commit(l => l.Settings.TimeDisplayMode = selected.Value); };
         Label(Lang.T("只显示这些优先级"));
         var priorities = new WrapPanel(); body.Children.Add(priorities);
         foreach (var value in Paper.Priorities)
@@ -1161,11 +1215,20 @@ public sealed class MainWindow : Window
         peek.TextWrapping = TextWrapping.Wrap; peek.Margin = new Thickness(0, 6, 0, 0); body.Children.Add(peek);
         Label(Lang.T("翻页方式"));
         var paging = new ComboBox { ItemsSource = Lang.Choices(ViewRules.PageModes), DisplayMemberPath = "Label", SelectedIndex = Math.Max(0, Array.IndexOf(ViewRules.PageModes, library.Settings.PageMode)) }; body.Children.Add(paging);
-        paging.SelectionChanged += (_, _) => ChangeView(p => p.PageMode = ViewRules.PageModes[Math.Max(0, paging.SelectedIndex)]);
+        paging.SelectionChanged += (_, _) => { if (paging.IsEnabled) ChangeView(p => p.PageMode = ViewRules.PageModes[Math.Max(0, paging.SelectedIndex)]); };
         var pageHint = Text(Lang.T("优先级：高 → 中 → 低。\n隐藏用标签和优先级筛选同时生效。"), 11, "#78867F"); pageHint.TextWrapping = TextWrapping.Wrap; pageHint.Margin = new Thickness(0, 8, 0, 0); body.Children.Add(pageHint);
+        void RefreshPaging()
+        {
+            bool countdown = library.Settings.SortMode == ViewRules.SortModes[2];
+            paging.IsEnabled = !countdown;
+            if (countdown) paging.SelectedIndex = 0;
+            pageHint.Text = Lang.T(countdown ? "倒数日优先显示当前筛选范围的全部论文，停用优先级分页；隐藏规则继续生效。" : "优先级：高 → 中 → 低。\n隐藏用标签和优先级筛选同时生效。");
+        }
+        void SortChanged(object sender, SelectionChangedEventArgs args) => RefreshPaging();
+        sort.SelectionChanged += SortChanged; RefreshPaging();
         controls.Children.Add(ActionButton(Lang.T("显示全部"), () => { search.Clear(); filter.SelectedIndex = 0; sort.SelectedIndex = 0; ChangeView(p => { p.HiddenTags.Clear(); p.PageMode = ViewRules.PageModes[0]; p.VisiblePriorities = Paper.Priorities.ToList(); }); window.Close(); }));
         controls.Children.Add(ActionButton(Lang.T("完成"), window.Close, true));
-        window.Closed += (_, _) => { body.Children.Remove(search); body.Children.Remove(filter); body.Children.Remove(sort); };
+        window.Closed += (_, _) => { sort.SelectionChanged -= SortChanged; body.Children.Remove(search); body.Children.Remove(filter); body.Children.Remove(sort); };
         window.Loaded += (_, _) => search.Focus();
         window.ShowDialog();
         // 关掉这个窗口就算看过了（不是鼠标停上去，也不是一打开就消）。

@@ -20,8 +20,8 @@ internal static class WidgetWindowTests
     [STAThread]
     public static int Main(string[] args)
     {
-        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only" or "--updates-only" or "--themes-order-only" or "--desktop-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only, --paper-management-only, --updates-only, --themes-order-only or --desktop-only."); return 2; }
-        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only"), UpdatesOnly = args.Contains("--updates-only"), ThemesOrderOnly = args.Contains("--themes-order-only"), DesktopOnly = args.Contains("--desktop-only") };
+        if (args.Length is < 1 or > 2 || (args.Length == 2 && args[1] is not ("--paper-details-only" or "--minimal-only" or "--paper-management-only" or "--updates-only" or "--themes-order-only" or "--desktop-only" or "--resource-time-only"))) { Console.Error.WriteLine("Supply an output directory for synthetic screenshots, optionally followed by --paper-details-only, --minimal-only, --paper-management-only, --updates-only, --themes-order-only, --desktop-only or --resource-time-only."); return 2; }
+        var app = new CheckApp { Output = Path.GetFullPath(args[0]), PaperDetailsOnly = args.Contains("--paper-details-only"), MinimalOnly = args.Contains("--minimal-only"), ManagementOnly = args.Contains("--paper-management-only"), UpdatesOnly = args.Contains("--updates-only"), ThemesOrderOnly = args.Contains("--themes-order-only"), DesktopOnly = args.Contains("--desktop-only"), ResourceTimeOnly = args.Contains("--resource-time-only") };
         var source = System.Xml.Linq.XDocument.Load(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "PaperFlow", "App.xaml"));
         System.Xml.Linq.XNamespace wpf = "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
         var resources = new System.Xml.Linq.XElement(wpf + "ResourceDictionary",
@@ -40,6 +40,7 @@ internal static class WidgetWindowTests
         public bool UpdatesOnly;
         public bool ThemesOrderOnly;
         public bool DesktopOnly;
+        public bool ResourceTimeOnly;
         private int checks;
         private readonly List<string> observations = new();
         private void Check(bool ok, string label)
@@ -73,6 +74,7 @@ internal static class WidgetWindowTests
                 widget.Show(); widget.Activate();
                 await Task.Delay(700);
                 var cards = Field<StackPanel>(widget, "cards");
+                if (ResourceTimeOnly) { await CheckResourceTime(widget, storage, cards); Finish(widget); return; }
                 if (DesktopOnly) { await CheckDesktopPlacement(widget); Finish(widget); return; }
                 if (ThemesOrderOnly) { await CheckThemesAndOrder(widget, storage, cards); Finish(widget); return; }
                 if (UpdatesOnly) { await CheckManualUpdates(widget, storage); Finish(widget); return; }
@@ -185,7 +187,9 @@ internal static class WidgetWindowTests
                 Check(!IsWindowVisible(handle), "explicit hide is never undone by desktop placement");
                 Invoke(widget, "SaveWindow");
                 var saved = storage.Load();
-                Check(saved.Settings.Width == widget.Width && saved.Settings.Height < 400, "small window geometry survives save and reload");
+                Check(saved.Settings.Width == widget.Width && saved.Settings.Height == widget.Height, "window geometry survives save and reload");
+                widget.Show();
+                await CheckResourceTime(widget, storage, cards);
                 Finish(widget);
             }
             catch (Exception ex)
@@ -197,6 +201,155 @@ internal static class WidgetWindowTests
                 Shutdown(1);
             }
         }
+        private async Task CheckResourceTime(MainWindow widget, Storage storage, StackPanel cards)
+        {
+            var paper = new Paper { Title = "Synthetic resource A", StartDate = DateTime.Today.AddDays(-10) };
+            var noDate = new Paper { Title = "Synthetic resource B" };
+            var todayPaper = new Paper { Title = "Synthetic today", DueDate = DateTime.Today, Priority = "低" };
+            var overdue = new Paper { Title = "Synthetic overdue", DueDate = DateTime.Today.AddDays(-2), Priority = "中" };
+            var complete = new Paper { Title = "Synthetic complete", DueDate = DateTime.Today.AddDays(-20) };
+            foreach (var stage in complete.Stages) stage.Done = true;
+            Field<TextBox>(widget, "search").Clear(); Field<ComboBox>(widget, "filter").SelectedIndex = 0;
+            Field<ComboBox>(widget, "sort").SelectedIndex = 0;
+            Invoke(widget, "Commit", (Action<Library>)(l =>
+            {
+                l.Papers = new() { paper, noDate, todayPaper, overdue, complete };
+                l.Settings.WindowMode = "window"; l.Settings.DisplayMode = "full";
+                l.Settings.PageMode = ViewRules.PageModes[0]; l.Settings.VisiblePriorities = Paper.Priorities.ToList();
+                l.Settings.TagHidingEnabled = false; l.Settings.ShowHiddenNow = false;
+                l.Settings.PaperResources.Clear(); l.Settings.TimeDisplayMode = "auto"; l.Settings.ShowResourceLinks = true;
+            }), null!);
+            widget.Width = 380; widget.Height = 390; await Task.Delay(180);
+            var folder = Path.Combine(storage.DirectoryPath, "示例 论文资源"); Directory.CreateDirectory(folder);
+            string id = paper.Id;
+            Border Card(string target) => cards.Children.OfType<Border>().Single(b => Equals(b.Tag, target));
+            Button OpenButton() => Descendants<Button>(Card(id)).Single(b => Equals(b.Content, Lang.T("打开")));
+            TextBox Entry(PaperEditor editor) => Descendants<TextBox>(editor).Single(t => System.Windows.Automation.AutomationProperties.GetName(t) == Lang.T("快捷入口"));
+            void Edit(Action<PaperEditor> edit, bool save = true)
+            {
+                Exception? failure = null;
+                _ = Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    PaperEditor? editor = null;
+                    try
+                    {
+                        editor = Windows.OfType<PaperEditor>().Single();
+                        Check(Descendants<Button>(editor).Any(b => Equals(b.Content, Lang.T("选择文件夹"))), "editor offers a folder picker");
+                        Check(Descendants<TextBlock>(editor).Any(t => t.Text == Lang.T("这个入口仅在本机生效，不随论文同步；换电脑后需重新设置。")), "editor explains local-only link");
+                        edit(editor); Click(editor, save ? "保存资料" : "取消");
+                    }
+                    catch (Exception ex) { failure = ex; if (editor != null && editor.IsVisible) editor.DialogResult = false; }
+                }));
+                Invoke(widget, "EditPaper", Field<Library>(widget, "library").Papers.Single(p => p.Id == id));
+                if (failure != null) throw failure;
+            }
+            int Events() => Directory.GetFiles(Path.Combine(storage.DirectoryPath, "journal"), "*.json").Length;
+            var original = storage.Load().Papers.Single(p => p.Id == id); int events = Events();
+            Edit(editor => Entry(editor).Text = "https://example.com/submission");
+            var saved = storage.Load();
+            Check(saved.Settings.PaperResources[id].Kind == "web" && OpenButton().IsVisible, "web link save adds the title button");
+            Check(saved.Papers.Single(p => p.Id == id).UpdatedAt == original.UpdatedAt && Events() == events, "real resource save leaves timestamp and event count unchanged");
+            Check(!Descendants<Button>(Card(noDate.Id)).Any(b => Equals(b.Content, Lang.T("打开"))), "unconfigured paper has no open button");
+            Edit(editor => Entry(editor).Text = folder);
+            Check(storage.Load().Settings.PaperResources[id].Target == folder && Events() == events, "real editor accepts Chinese folder with spaces without a shared edit");
+            Edit(editor => Entry(editor).Clear(), false);
+            Check(storage.Load().Settings.PaperResources.ContainsKey(id), "cancel preserves local link");
+            Directory.Delete(folder);
+            OpenButton().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(Field<TextBlock>(widget, "toastText").Text.Contains("无法打开") && Equals(Field<Button>(widget, "toastAction").Content, Lang.T("修改入口")), "unavailable folder offers an edit action");
+            Check(storage.Load().Settings.PaperResources[id].Target == folder, "opening failure preserves saved target");
+            Edit(_ => { });
+            Check(storage.Load().Settings.PaperResources[id].Target == folder && Events() == events, "unchanged unavailable folder does not block saving or create events");
+            Directory.CreateDirectory(folder);
+            Edit(editor => Entry(editor).Clear());
+            Check(!storage.Load().Settings.PaperResources.ContainsKey(id) && !Descendants<Button>(Card(id)).Any(b => Equals(b.Content, Lang.T("打开"))), "clear and save removes the title button");
+            Edit(editor =>
+            {
+                Entry(editor).Text = folder;
+                Descendants<DatePicker>(editor).Single(p => System.Windows.Automation.AutomationProperties.GetName(p) == Lang.T("倒数日（选填）")).SelectedDate = DateTime.Today.AddDays(4);
+                Check(Descendants<DatePicker>(editor).Single(p => System.Windows.Automation.AutomationProperties.GetName(p) == Lang.T("项目开始日期")).SelectedDate == original.StartDate, "date controls keep the independent start date");
+                Snapshot(editor, "resources-editor");
+            });
+            Check(storage.Load().Settings.SortMode == ViewRules.SortModes[0], "saving countdown does not enable automatic sorting");
+            Field<Button>(widget, "toastClose").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+            foreach (string layout in new[] { "full", "minimal" })
+            foreach (string mode in ViewRules.TimeModes)
+            {
+                Invoke(widget, "Commit", (Action<Library>)(l => { l.Settings.DisplayMode = layout; l.Settings.TimeDisplayMode = mode; }), null!);
+                await Task.Delay(100);
+                var texts = Descendants<TextBlock>(Card(id)).Where(t => System.Windows.Automation.AutomationProperties.GetName(t).EndsWith("的时间提醒")).ToList();
+                string expected = mode switch { "elapsed" => "已开始 10 天", "both" => "还剩 4 天 · 已开始 10 天", "hidden" => "", _ => "还剩 4 天" };
+                Check(expected.Length == 0 ? texts.Count == 0 : texts.Single().Text == expected, "native " + layout + " time mode " + mode);
+                Check(texts.All(t => t.TextWrapping == TextWrapping.Wrap && t.ActualWidth <= Card(id).ActualWidth), "time text wraps within the card");
+                Check(OpenButton().IsVisible, "title entry works in " + layout + " mode");
+                if (mode == "both") Snapshot(widget, "resources-" + layout + "-both");
+            }
+            var normal = Storage.CloneLibrary(Field<Library>(widget, "library")).Settings;
+            foreach (string layout in new[] { "full", "minimal" })
+            {
+                var large = Storage.CloneLibrary(new Library { Settings = normal }).Settings;
+                large.DisplayMode = layout; large.TimeDisplayMode = "both"; large.CaptionScale = 2; large.TextSize = 26;
+                Invoke(widget, "PreviewAppearance", large); widget.Width = widget.MinWidth; await Task.Delay(150);
+                var time = Descendants<TextBlock>(Card(id)).Single(t => System.Windows.Automation.AutomationProperties.GetName(t).EndsWith("的时间提醒"));
+                Check(time.ActualHeight > time.FontSize * 1.5 && time.ActualWidth <= Card(id).ActualWidth, "large time text wraps without clipping in narrow " + layout);
+                Snapshot(widget, "resources-" + layout + "-wrapped");
+            }
+            Invoke(widget, "PreviewAppearance", normal); widget.Width = 380; widget.Height = 390; await Task.Delay(150);
+            Invoke(widget, "Commit", (Action<Library>)(l => { l.Settings.ShowResourceLinks = false; }), null!);
+            Check(!Descendants<Button>(Card(id)).Any(b => Equals(b.Content, Lang.T("打开"))) && storage.Load().Settings.PaperResources.ContainsKey(id), "global hide removes the button but keeps binding");
+            Invoke(widget, "PaperMenu", Field<Library>(widget, "library").Papers.Single(p => p.Id == id), Card(id));
+            Check(Card(id).ContextMenu.Items.OfType<MenuItem>().Any(i => Equals(i.Header, Lang.T("打开快捷入口"))), "hidden shortcut remains available in paper menu");
+            Card(id).ContextMenu.IsOpen = false;
+            Invoke(widget, "Commit", (Action<Library>)(l => l.Settings.ShowResourceLinks = true), null!);
+            Check(OpenButton().IsVisible, "global restore shows the existing binding");
+
+            Invoke(widget, "Commit", (Action<Library>)(l => { l.Settings.PageMode = ViewRules.PageModes[1]; l.Settings.PageIndex = 0; }), null!);
+            Field<ComboBox>(widget, "sort").SelectedIndex = 2;
+            var order = cards.Children.OfType<Border>().Select(b => (string)b.Tag).ToArray();
+            Check(order.SequenceEqual(new[] { overdue.Id, todayPaper.Id, id, noDate.Id, complete.Id }), "native countdown order includes all priorities and excludes completion");
+            Check(!Field<StackPanel>(widget, "pager").IsVisible && storage.Load().Settings.PageMode == ViewRules.PageModes[0], "countdown choice disables paging and persists");
+            Check(storage.Load().Settings.TimeDisplayMode == "hidden", "hidden time does not prevent sorting");
+            Field<ComboBox>(widget, "sort").SelectedIndex = 0;
+            Check(cards.Children.OfType<Border>().Select(b => (string)b.Tag).SequenceEqual(new[] { id, noDate.Id, todayPaper.Id, overdue.Id, complete.Id }), "switching back restores the manual arrangement");
+
+            Exception? optionsFailure = null;
+            _ = Dispatcher.BeginInvoke(new Action(() =>
+            {
+                Window? options = null;
+                try
+                {
+                    options = Windows.OfType<Window>().Single(w => w.Title == Lang.T("论文选项"));
+                    var time = Descendants<ComboBox>(options).Single(c => System.Windows.Automation.AutomationProperties.GetName(c) == Lang.T("时间显示"));
+                    time.SelectedValue = "both";
+                    Check(storage.Load().Settings.TimeDisplayMode == "both", "options time picker saves local preference");
+                    var toggle = Descendants<CheckBox>(options).Single(c => Equals(c.Content, Lang.T("显示快捷入口")));
+                    toggle.IsChecked = false; toggle.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    Check(!storage.Load().Settings.ShowResourceLinks, "options toggle saves hidden preference");
+                    toggle.IsChecked = true; toggle.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                    Field<ComboBox>(widget, "sort").SelectedIndex = 2;
+                    var paging = Descendants<ComboBox>(options).Single(c => c.Items.OfType<Choice>().Any(v => v.Value == ViewRules.PageModes[1]));
+                    Check(!paging.IsEnabled && paging.SelectedIndex == 0, "options explains inactive priority paging while sorted by countdown");
+                    Snapshot(options, "resources-options"); options.Close();
+                }
+                catch (Exception ex) { optionsFailure = ex; options?.Close(); }
+            }));
+            Invoke(widget, "OpenOptions"); if (optionsFailure != null) throw optionsFailure;
+
+            Invoke(widget, "Commit", (Action<Library>)(l => { l.Settings.TimeDisplayMode = "auto"; l.Papers.Single(p => p.Id == id).DueDate = DateTime.Today; }), null!);
+            // Simulate yesterday's rendered label while retaining the real journal state.
+            Descendants<TextBlock>(Card(id)).Single(t => t.Text == "今天截止").Text = "还剩 1 天";
+            typeof(MainWindow).GetField("displayDate", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(widget, DateTime.Today.AddDays(-1));
+            await Task.Delay(2300);
+            Check(Descendants<TextBlock>(Card(id)).Any(t => t.Text == "今天截止"), "daily timer refreshes the countdown without reopening the app");
+            Invoke(widget, "Commit", (Action<Library>)(l => { foreach (var s in l.Papers.Single(p => p.Id == id).Stages) s.Done = true; }), null!);
+            Check(!Descendants<TextBlock>(Card(id)).Any(t => t.Text == "今天截止") && storage.Load().Papers.Single(p => p.Id == id).DueDate == DateTime.Today, "completion stops reminder but keeps countdown date");
+            Invoke(widget, "Commit", (Action<Library>)(l => l.Papers.Single(p => p.Id == id).Stages[0].Done = false), null!);
+            Check(Descendants<TextBlock>(Card(id)).Any(t => t.Text == "今天截止"), "reopening restores native countdown reminder");
+            var final = storage.Load();
+            Check(final.Settings.SortMode == ViewRules.SortModes[2] && final.Settings.ShowResourceLinks && final.Settings.PaperResources[id].Target == folder, "restart snapshot retains sorting, visibility and local binding");
+        }
+
         private async Task CheckDesktopPlacement(MainWindow widget)
         {
             var current = Field<Library>(widget, "library");

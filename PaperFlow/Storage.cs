@@ -120,6 +120,12 @@ public sealed class Storage
         s.VisiblePriorities = (s.VisiblePriorities ?? Paper.Priorities.ToList()).Where(Paper.Priorities.Contains).Distinct().ToList();
         if (!ViewRules.PageModes.Contains(s.PageMode)) s.PageMode = "不翻页";
         if (!ViewRules.SortModes.Contains(s.SortMode)) s.SortMode = ViewRules.SortModes[0];
+        if (s.SortMode == ViewRules.SortModes[2]) s.PageMode = ViewRules.PageModes[0];
+        s.TimeDisplayMode = ViewRules.NormalizeTimeMode(s.TimeDisplayMode);
+        s.PaperResources ??= new();
+        // Preserve unavailable targets: users can repair them in the paper editor.
+        foreach (var resource in s.PaperResources.Values.Where(r => r != null))
+        { resource.Kind ??= "web"; resource.Target ??= ""; }
         s.PageIndex = Math.Clamp(s.PageIndex, 0, ViewRules.PageCount(s) - 1);
         s.Theme = Themes.IsKnown(s.Theme ?? "") ? Themes.Migrate(s.Theme!) : Themes.Default;
         if (!Themes.Layouts.Contains(s.ListLayout)) s.ListLayout = Themes.CardLayout;

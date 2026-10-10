@@ -12,6 +12,48 @@ public static class ViewRules
     // 2.0.0 起没有"按阶段分组翻页"了：翻页只剩不翻页和按优先级。
     public static readonly string[] PageModes = { "不翻页", "按优先级翻页" };
     public static readonly string[] SortModes = { "手动排序", "最近修改", "截止日期", "进度优先" };
+    public static readonly string[] TimeModes = { "auto", "countdown", "elapsed", "both", "hidden" };
+    public static string NormalizeTimeMode(string? mode) => TimeModes.Contains(mode) ? mode! : "auto";
+    public static IReadOnlyList<Choice> TimeChoices() => new[]
+    {
+        new Choice("auto", Lang.T("倒数日优先")), new Choice("countdown", Lang.T("只显示倒数日")),
+        new Choice("elapsed", Lang.T("只显示已开始天数")), new Choice("both", Lang.T("两者都显示")),
+        new Choice("hidden", Lang.T("都隐藏"))
+    };
+    // Preserve the stored sort code so older clients still recognise the preference.
+    public static string SortLabel(string mode) => Lang.T(mode == SortModes[2] ? "倒数日优先" : mode);
+    public static IReadOnlyList<Choice> SortChoices() => SortModes.Select(v => new Choice(v, SortLabel(v))).ToList();
+    public static IEnumerable<Paper> Order(IEnumerable<Paper> source, string mode) => mode switch
+    {
+        "最近修改" => source.OrderByDescending(p => p.UpdatedAt),
+        "截止日期" => source.OrderBy(p => p.IsComplete ? DateTime.MaxValue : p.DueDate?.Date ?? DateTime.MaxValue),
+        "进度优先" => source.OrderByDescending(p => p.Progress),
+        _ => source
+    };
+    public static bool ShowsCountdown(Paper paper, string mode) => !paper.IsComplete && paper.DueDate != null &&
+        NormalizeTimeMode(mode) is "auto" or "countdown" or "both";
+    public static string CountdownText(Paper paper, DateTime today)
+    {
+        if (paper.DueDate == null) return "";
+        int days = (paper.DueDate.Value.Date - today.Date).Days;
+        return days < 0 ? Lang.P(-days, "已逾期 {0} 天", "Overdue by {0} day", "Overdue by {0} days", -days)
+            : days == 0 ? Lang.T("今天截止")
+            : Lang.P(days, "还剩 {0} 天", "{0} day left", "{0} days left", days);
+    }
+    public static string TimeText(Paper paper, string mode, DateTime? date = null)
+    {
+        var today = (date ?? DateTime.Today).Date;
+        int days = Math.Max(0, (today - paper.StartDate.Date).Days);
+        string elapsed = Lang.P(days, "已开始 {0} 天", "Started {0} day ago", "Started {0} days ago", days);
+        string countdown = !paper.IsComplete ? CountdownText(paper, today) : "";
+        return NormalizeTimeMode(mode) switch
+        {
+            "countdown" => countdown, "elapsed" => elapsed, "hidden" => "",
+            "both" => countdown.Length == 0 ? elapsed : countdown + " · " + elapsed,
+            _ => countdown.Length == 0 ? elapsed : countdown
+        };
+    }
+    public static bool PriorityPaging(Preferences p) => p.PageMode == PageModes[1] && p.SortMode != SortModes[2];
     public static readonly string[] SoundModes = { "关", "只完成时", "完成和取消都响" };
     public static readonly string[] SoundStyles = { "木质", "清脆", "水滴" };
     // 该不该响、响哪一种。null 表示不响。
@@ -30,7 +72,7 @@ public static class ViewRules
         if (cardCount <= 0 || cardHeight <= 1 || viewportHeight <= 1) return 0;
         return Math.Clamp((int)Math.Floor(viewportHeight / cardHeight), 0, 999);
     }
-    public static int PageCount(Preferences p) => p.PageMode == PageModes[1] ? 3 : 1;
+    public static int PageCount(Preferences p) => PriorityPaging(p) ? 3 : 1;
     // 收起论文只认"隐藏用标签"：总开关打开，并且这篇论文带着所选的某个标签。
     public static bool HiddenByTag(Paper paper, Preferences p) =>
         p.TagHidingEnabled && p.HiddenTags.Count > 0 && paper.Tags.Any(p.HiddenTags.Contains);
@@ -41,13 +83,13 @@ public static class ViewRules
         var papers = source.Where(x => p.VisiblePriorities.Contains(x.Priority));
         // 临时展开（ShowHiddenNow）只影响这一次显示，不改动长期设置。
         if (!p.ShowHiddenNow) papers = papers.Where(x => !HiddenByTag(x, p));
-        if (p.PageMode == PageModes[1]) papers = papers.Where(x => x.Priority == Paper.Priorities[index]);
+        if (PriorityPaging(p)) papers = papers.Where(x => x.Priority == Paper.Priorities[index]);
         return papers.ToList();
     }
     public static string PageTitle(Preferences p, int? page = null)
     {
         int index = Math.Clamp(page ?? p.PageIndex, 0, PageCount(p) - 1);
-        if (p.PageMode == PageModes[1]) return Lang.F("{0}优先级", Lang.Value(Paper.Priorities[index]));
+        if (PriorityPaging(p)) return Lang.F("{0}优先级", Lang.Value(Paper.Priorities[index]));
         return Lang.T("论文列表");
     }
     // 贴上标签之后：还在眼前就不吭声；被收起来了就说清楚，并给一个"立即显示"。

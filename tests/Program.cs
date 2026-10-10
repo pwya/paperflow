@@ -72,6 +72,7 @@ SchemeTests.Run(Check);
 WhatsNewTests.Run(Check);
 PaperOrderTests.Run(Check);
 ViewTests.Run(Check);
+ResourceTimeTests.Run(Check);
 ShortcutTests.Run(Check);
 LangTests.Run(Check);
 UpdateTests.Run(Check);

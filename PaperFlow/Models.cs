@@ -56,13 +56,7 @@ public sealed class Paper
     [JsonIgnore] public string NextStage => Stages.FindIndex(s => !s.Done && !s.Skipped) is int i && i >= 0 ? Lang.T(Schemes.Display(Stages[i].Name)) : Lang.T("阶段已全部完成");
     [JsonIgnore] public int CurrentStageIndex => Math.Max(0, Stages.FindLastIndex(s => s.Done && !s.Skipped));
     [JsonIgnore] public string EffectiveStatus => Stages.Last().Done ? "已录用" : Status;
-    [JsonIgnore] public string DeadlineText => DueDate is null ? "" : (DueDate.Value.Date - DateTime.Today).Days switch
-    {
-        < 0 => Lang.P((DateTime.Today - DueDate.Value.Date).Days, "已逾期 {0} 天", "Overdue by {0} day", "Overdue by {0} days", (DateTime.Today - DueDate.Value.Date).Days),
-        0 => Lang.T("今天截止"),
-        1 => Lang.T("明天截止"),
-        var days => Lang.P(days, "还剩 {0} 天", "{0} day left", "{0} days left", days)
-    };
+    [JsonIgnore] public string DeadlineText => ViewRules.CountdownText(this, DateTime.Today);
 
     public void Record(string message)
     {
@@ -94,6 +88,10 @@ public sealed class Preferences
     public string PageMode { get; set; } = "不翻页";
     // 排序方式是本机偏好，但必须保存下来，否则重启就悄悄回到手动排序。
     public string SortMode { get; set; } = "手动排序";
+    // These bindings and display choices belong to this device, never to paper events.
+    public Dictionary<string, PaperResource> PaperResources { get; set; } = new();
+    public bool ShowResourceLinks { get; set; } = true;
+    public string TimeDisplayMode { get; set; } = "auto";
     public int PageIndex { get; set; }
     public string Theme { get; set; } = Themes.Default;
     public string ListLayout { get; set; } = Themes.CardLayout;
